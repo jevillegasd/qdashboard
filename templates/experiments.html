@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<!--
+QDashboard - Quantum Computing Dashboard
+Built on flask-file-server foundation by Wildog: https://github.com/Wildog/flask-file-server
+Extended with quantum computing specific features:
+- Real-time QPU monitoring and package version tracking
+- SLURM integration and job queue management
+- Enhanced report rendering with Plotly support
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Experiment Builder - QDashboard</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="{{url_for('static', filename='css/dashboard.css')}}">
+    <link rel="stylesheet" href="{{url_for('static', filename='css/menu.css')}}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        .experiment-card {
+            cursor: grab;
+            transition: background-color 0.2s ease;
+            border: 1px solid #444;
+            background-color: #2c2c2c;
+        }
+        .experiment-card:hover {
+            background-color: #3a3a3a;
+        }
+        .action-item {
+            border: 1px solid #444;
+            background-color: #2c2c2c;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0.25rem;
+        }
+        .action-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+        }
+        .config-panel .form-group {
+            margin-bottom: 1.5rem;
+        }
+        .config-panel label {
+            font-weight: bold;
+            color: #ccc;
+        }
+        .experiment-library {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .action-card-builder {
+            min-height: 400px;
+            border: 2px dashed #444;
+            background-color: #1a1a1a;
+            padding: 1rem;
+            border-radius: 0.25rem;
+        }
+        .drop-zone-empty {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 200px;
+            color: #666;
+            text-align: center;
+        }
+    </style>
+</head>
+<body class="dashboard-page">
+    <div class="d-flex" id="wrapper">
+        <!-- Sidebar -->
+        <div id="sidebar-wrapper">
+            <div class="sidebar-heading">QDashboard</div>
+            <div class="list-group list-group-flush">
+                <a href="/" class="list-group-item list-group-item-action" id="nav-dashboard"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
+                <a href="/files" class="list-group-item list-group-item-action" id="nav-files"><i class="fas fa-folder"></i> File Browser</a>
+                <a href="/latest" class="list-group-item list-group-item-action" id="nav-latest"><i class="fas fa-file-alt"></i> Latest Report</a>
+                <a href="/qpus" class="list-group-item list-group-item-action" id="nav-qpus"><i class="fas fa-microchip"></i> QPU Status</a>
+                <a href="/experiments" class="list-group-item list-group-item-action active" id="nav-experiments"><i class="fas fa-flask"></i> Experiments</a>
+            </div>
+        </div>
+
+        <!-- Page Content -->
+        <div id="page-content-wrapper">
+            <nav class="navbar navbar-expand-lg navbar-dark">
+                <button class="btn btn-dark" id="menu-toggle"><i class="fas fa-bars"></i></button>
+                <h4 class="navbar-text ml-3 mb-0">Experiment Builder</h4>
+            </nav>
+
+            <div class="container-fluid mt-4">
+    <h1 class="mb-4">Experiment Builder</h1>
+
+    <div class="row">
+        <!-- Left Panel: Experiment Library -->
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-header">
+                    <i class="fas fa-book"></i> Experiment Library
+                </div>
+                <div class="card-body">
+                    <input type="text" class="form-control mb-3" placeholder="Search experiments..." id="experiment-search">
+                    
+                    <div id="experiment-library" class="experiment-library">
+                        {% for category, experiments in protocols.items() %}
+                        <h6 class="mt-3 mb-2">{{ category }}</h6>
+                        {% for experiment in experiments %}
+                        <div class="experiment-card p-2 mb-2" 
+                             draggable="true" 
+                             data-experiment-id="{{ experiment.id }}"
+                             data-experiment-name="{{ experiment.name }}">
+                            <i class="fas fa-flask mr-2"></i>{{ experiment.name }}
+                        </div>
+                        {% endfor %}
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Panel: Action Card Builder -->
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <i class="fas fa-tasks"></i> Action Card Builder
+                </div>
+                <div class="card-body">
+                    <div id="action-card-builder" class="action-card-builder">
+                        <div class="drop-zone-empty" id="empty-state">
+                            <div>
+                                <i class="fas fa-plus-circle fa-3x mb-3"></i>
+                                <p>Drag experiments here to build your action card</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <button class="btn btn-primary" id="generate-yaml-btn" disabled>
+                            <i class="fas fa-cogs"></i> Generate YAML
+                        </button>
+                        <button class="btn btn-success" id="run-experiment-btn" disabled>
+                            <i class="fas fa-play"></i> Run Experiment
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel: QPU & Qubit Configuration -->
+        <div class="col-md-3">
+            <div class="card config-panel">
+                <div class="card-header">
+                    <i class="fas fa-sliders-h"></i> Configuration
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="qpu-select">QPU Platform</label>
+                        <select class="form-control" id="qpu-select" onchange="loadQpuParameters()">
+                            {% for qpu in qpus %}
+                            <option value="{{ qpu }}" {% if loop.first %}selected{% endif %}>{{ qpu }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="qubit-select">Target Qubits</label>
+                        <select multiple class="form-control" id="qubit-select" onchange="updateQubitParameters()">
+                            <!-- Options will be populated dynamically -->
+                        </select>
+                    </div>
+                    <hr>
+                    <div id="qubit-parameters">
+                        <p class="text-muted">Select qubits to configure parameters</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer mt-auto py-3">
+        <div class="container text-center">
+            <span class="text-muted">QDashboard - Quantum Computing Dashboard</span>
+        </div>
+    </footer>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+
+    <!-- Menu Toggle Script -->
+    <script>
+    $("#menu-toggle").click(function(e) {
+        e.preventDefault();
+        $("#wrapper").toggleClass("toggled");
+    });
+
+    let currentQpuParams = {};
+    let actionItems = [];
+
+    // Load QPU parameters when page loads or QPU changes
+    function loadQpuParameters() {
+        const qpuSelect = document.getElementById('qpu-select');
+        const selectedQpu = qpuSelect.value;
+        
+        fetch(`/api/qpu_parameters/${selectedQpu}`)
+            .then(response => response.json())
+            .then(data => {
+                currentQpuParams = data;
+                updateQubitDropdown();
+                updateQubitParameters();
+            })
+            .catch(error => {
+                console.error('Error loading QPU parameters:', error);
+            });
+    }
+
+    // Update qubit dropdown with available qubits for selected QPU
+    function updateQubitDropdown() {
+        const qubitSelect = document.getElementById('qubit-select');
+        qubitSelect.innerHTML = '';
+        
+        if (currentQpuParams.qubits) {
+            Object.keys(currentQpuParams.qubits).forEach(qubit => {
+                const option = document.createElement('option');
+                option.value = qubit;
+                option.textContent = `Qubit ${qubit}`;
+                if (qubit === '0') option.selected = true; // Select qubit 0 by default
+                qubitSelect.appendChild(option);
+            });
+        }
+    }
+
+    // Update qubit parameters display
+    function updateQubitParameters() {
+        const qubitSelect = document.getElementById('qubit-select');
+        const selectedQubits = Array.from(qubitSelect.selectedOptions).map(option => option.value);
+        const parametersDiv = document.getElementById('qubit-parameters');
+        
+        if (selectedQubits.length === 0) {
+            parametersDiv.innerHTML = '<p class="text-muted">Select qubits to configure parameters</p>';
+            return;
+        }
+
+        let html = '';
+        selectedQubits.forEach(qubit => {
+            const params = currentQpuParams.qubits[qubit] || {};
+            html += `
+                <h6>Qubit ${qubit} Parameters</h6>
+                <div class="form-group">
+                    <label>Readout Frequency (GHz)</label>
+                    <input type="number" step="0.001" class="form-control" 
+                           value="${params.readout_frequency || ''}" 
+                           data-qubit="${qubit}" data-param="readout_frequency">
+                </div>
+                <div class="form-group">
+                    <label>Drive Amplitude</label>
+                    <input type="number" step="0.01" class="form-control" 
+                           value="${params.drive_amplitude || ''}" 
+                           data-qubit="${qubit}" data-param="drive_amplitude">
+                </div>
+            `;
+        });
+        
+        parametersDiv.innerHTML = html;
+    }
+
+    // Basic drag and drop functionality
+    document.addEventListener('DOMContentLoaded', function() {
+        // Load initial QPU parameters
+        loadQpuParameters();
+
+        // Set up drag and drop
+        const experimentCards = document.querySelectorAll('.experiment-card');
+        const dropZone = document.getElementById('action-card-builder');
+
+        experimentCards.forEach(card => {
+            card.addEventListener('dragstart', function(e) {
+                e.dataTransfer.setData('text/plain', JSON.stringify({
+                    id: this.dataset.experimentId,
+                    name: this.dataset.experimentName
+                }));
+            });
+        });
+
+        dropZone.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            this.style.backgroundColor = '#2a2a2a';
+        });
+
+        dropZone.addEventListener('dragleave', function(e) {
+            this.style.backgroundColor = '#1a1a1a';
+        });
+
+        dropZone.addEventListener('drop', function(e) {
+            e.preventDefault();
+            this.style.backgroundColor = '#1a1a1a';
+            
+            const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+            addExperimentToActionCard(data);
+        });
+    });
+
+    function addExperimentToActionCard(experiment) {
+        const emptyState = document.getElementById('empty-state');
+        const actionBuilder = document.getElementById('action-card-builder');
+        
+        // Remove empty state if present
+        if (emptyState) {
+            emptyState.remove();
+        }
+
+        // Create action item
+        const actionItem = document.createElement('div');
+        actionItem.className = 'action-item';
+        actionItem.innerHTML = `
+            <div class="action-item-header">
+                <h5>${experiment.name}</h5>
+                <button class="btn btn-sm btn-danger" onclick="removeActionItem(this)">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+            <div class="action-item-body mt-3">
+                <div class="form-group">
+                    <label>Number of Shots</label>
+                    <input type="number" class="form-control" value="2000">
+                </div>
+                <!-- Additional parameters will be added dynamically based on experiment type -->
+            </div>
+        `;
+
+        actionBuilder.appendChild(actionItem);
+        actionItems.push(experiment);
+        
+        // Enable buttons
+        document.getElementById('generate-yaml-btn').disabled = false;
+        document.getElementById('run-experiment-btn').disabled = false;
+    }
+
+    function removeActionItem(button) {
+        const actionItem = button.closest('.action-item');
+        actionItem.remove();
+        
+        // If no more action items, show empty state and disable buttons
+        const remaining = document.querySelectorAll('.action-item');
+        if (remaining.length === 0) {
+            const actionBuilder = document.getElementById('action-card-builder');
+            actionBuilder.innerHTML = `
+                <div class="drop-zone-empty" id="empty-state">
+                    <div>
+                        <i class="fas fa-plus-circle fa-3x mb-3"></i>
+                        <p>Drag experiments here to build your action card</p>
+                    </div>
+                </div>
+            `;
+            document.getElementById('generate-yaml-btn').disabled = true;
+            document.getElementById('run-experiment-btn').disabled = true;
+        }
+    }
+    </script>
+</body>
+</html>

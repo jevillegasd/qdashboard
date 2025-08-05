@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<!--
+QDashboard - Quantum Computing Dashboard
+Built on flask-file-server foundation by Wildog: https://github.com/Wildog/flask-file-server
+Extended with quantum computing specific features:
+- Real-time QPU monitoring and package version tracking
+- SLURM integration and job queue management
+- Enhanced report rendering with Plotly support
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QDashboard - Quantum Computing Dashboard</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="{{url_for('static', filename='css/dashboard.css')}}">
+    <link rel="stylesheet" href="{{url_for('static', filename='css/menu.css')}}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="d-flex" id="wrapper">
+        <!-- Sidebar -->
+        <div id="sidebar-wrapper">
+            <div class="sidebar-heading">QDashboard</div>
+            <div class="list-group list-group-flush">
+                <a href="/" class="list-group-item list-group-item-action" id="nav-dashboard"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
+                <a href="/files" class="list-group-item list-group-item-action" id="nav-files"><i class="fas fa-folder"></i> File Browser</a>
+                <a href="/latest" class="list-group-item list-group-item-action" id="nav-latest"><i class="fas fa-file-alt"></i> Latest Report</a>
+                <a href="/qpus" class="list-group-item list-group-item-action" id="nav-qpus"><i class="fas fa-microchip"></i> QPU Status</a>
+            </div>
+        </div>
+        <!-- /#sidebar-wrapper -->
+
+        <!-- Page Content -->
+        <div id="page-content-wrapper">
+            <nav class="navbar navbar-expand-lg navbar-dark">
+                <button class="btn btn-primary" id="menu-toggle"><i class="fas fa-bars"></i></button>
+            </nav>
+
+            <div class="container-fluid">
+                <h1 class="mt-4">Dashboard</h1>
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="card text-white bg-ibm-blue mb-3">
+                            <div class="card-body">
+                                <h5 class="card-title"><i class="fas fa-heartbeat"></i> QPU Health</h5>
+                                <p class="card-text">{{ qpu_health }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <a href="/qpus" class="card-link">
+                            <div class="card text-white bg-ibm-purple mb-3">
+                                <div class="card-body">
+                                    <h5 class="card-title"><i class="fas fa-microchip"></i> Available QPUs</h5>
+                                    <p class="card-text">{{ available_qpus }}</p>
+                                </div>
+                            </div>
+                        </a>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card text-white bg-ibm-teal mb-3">
+                            <div class="card-body">
+                                <h5 class="card-title"><i class="fas fa-code-branch"></i> Package Versions</h5>
+                                <div class="card-text">
+                                    <div style="font-size: 0.9rem;">
+                                        <div class="mb-1"><strong>Qibo:</strong> <span class="badge badge-light text-dark">{{ qibo_versions.qibo }}</span></div>
+                                        <div class="mb-1"><strong>Qibolab:</strong> <span class="badge badge-light text-dark">{{ qibo_versions.qibolab }}</span></div>
+                                        <div class="mb-1"><strong>Qibocal:</strong> <span class="badge badge-light text-dark">{{ qibo_versions.qibocal }}</span></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mt-4">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <i class="fas fa-tasks"></i> SLURM Queue
+                            </div>
+                            <div class="card-body">
+                                {% if slurm_queue_status %}
+                                <div class="table-responsive">
+                                    <table class="table table-dark table-striped table-hover">
+                                        <thead>
+                                            <tr>
+                                                <th>Job ID</th>
+                                                <th>Name</th>
+                                                <th>User</th>
+                                                <th>State</th>
+                                                <th>Time</th>
+                                                <th>Time Limit</th>
+                                                <th>Nodes</th>
+                                                <th>Node List</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for job in slurm_queue_status %}
+                                            <tr>
+                                                <td>{{ job.job_id }}</td>
+                                                <td>{{ job.name }}</td>
+                                                <td>{{ job.user }}</td>
+                                                <td>
+                                                    {% if job.state == 'RUNNING' %}
+                                                        <span class="badge badge-success">{{ job.state }}</span>
+                                                    {% elif job.state == 'PENDING' %}
+                                                        <span class="badge badge-warning">{{ job.state }}</span>
+                                                    {% elif job.state in ['COMPLETED', 'COMPLETING'] %}
+                                                        <span class="badge badge-info">{{ job.state }}</span>
+                                                    {% elif job.state in ['FAILED', 'CANCELLED', 'TIMEOUT'] %}
+                                                        <span class="badge badge-danger">{{ job.state }}</span>
+                                                    {% else %}
+                                                        <span class="badge badge-secondary">{{ job.state }}</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td>{{ job.time }}</td>
+                                                <td>{{ job.time_limit }}</td>
+                                                <td>{{ job.nodes }}</td>
+                                                <td>{{ job.nodelist }}</td>
+                                                <td>
+                                                    {% if job.is_current_user and job.state in ['RUNNING', 'PENDING'] %}
+                                                        <button class="btn btn-sm btn-danger" 
+                                                                onclick="cancelJob('{{ job.job_id }}')"
+                                                                title="Cancel job">
+                                                            <i class="fas fa-times"></i>
+                                                        </button>
+                                                    {% else %}
+                                                        <span class="text-muted">—</span>
+                                                    {% endif %}
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                {% else %}
+                                <div class="text-center text-muted">
+                                    <i class="fas fa-inbox fa-2x mb-2"></i>
+                                    <p>No jobs in queue</p>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <i class="fas fa-file-code"></i> Last SLURM Log
+                            </div>
+                            <div class="card-body">
+                                <pre class="log-box"><code>{{ last_slurm_log | safe }}</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- /#page-content-wrapper -->
+    </div>
+    <!-- /#wrapper -->
+
+    <!-- Footer with attribution -->
+    <footer class="text-center text-muted py-3" style="font-size: 0.8rem; background-color: #1a1a1a;">
+        <div class="container">
+            QDashboard - Built on <a href="https://github.com/Wildog/flask-file-server" target="_blank" class="text-info">flask-file-server</a> by Wildog
+        </div>
+    </footer>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+
+    <!-- Menu Toggle Script -->
+    <script>
+    $("#menu-toggle").click(function(e) {
+        e.preventDefault();
+        $("#wrapper").toggleClass("toggled");
+    });
+
+    // Job cancellation function
+    function cancelJob(jobId) {
+        if (!confirm(`Are you sure you want to cancel job ${jobId}?`)) {
+            return;
+        }
+
+        fetch('/cancel_job', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                job_id: jobId
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                alert(data.message);
+                // Refresh the page to update the job list
+                location.reload();
+            } else {
+                alert(`Error: ${data.message}`);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred while cancelling the job.');
+        });
+    }
+    </script>
+</body>
+</html>

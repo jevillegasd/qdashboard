@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<!--
+QDashboard - Latest Report Template
+Enhanced with quantum computing dashboard integration, dark theme, and consistent formatting
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QDashboard - Latest Report</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="{{url_for('static', filename='css/dashboard.css')}}">
+    <link rel="stylesheet" href="{{url_for('static', filename='css/menu.css')}}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Include report-specific head content -->
+    QQREPORT_HEAD
+</head>
+<body class="dashboard-page">
+    <div class="d-flex" id="wrapper">
+        <!-- Sidebar -->
+        <div id="sidebar-wrapper">
+            <div class="sidebar-heading">QDashboard</div>
+            <div class="list-group list-group-flush">
+                <a href="/" class="list-group-item list-group-item-action" id="nav-dashboard"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
+                <a href="/files" class="list-group-item list-group-item-action" id="nav-files"><i class="fas fa-folder"></i> File Browser</a>
+                <a href="/latest" class="list-group-item list-group-item-action" id="nav-latest"><i class="fas fa-file-alt"></i> Latest Report</a>
+                <a href="/qpus" class="list-group-item list-group-item-action" id="nav-qpus"><i class="fas fa-microchip"></i> QPU Status</a>
+            </div>
+        </div>
+        <!-- /#sidebar-wrapper -->
+
+        <!-- Page Content -->
+        <div id="page-content-wrapper">
+            <nav class="navbar navbar-expand-lg navbar-dark">
+                <button class="btn btn-primary" id="menu-toggle"><i class="fas fa-bars"></i></button>
+            </nav>
+
+            <div class="container-fluid">
+                <h1 class="mt-4">Qibocal Report</h1>
+                <p class="text-muted">Report path: <a href="/files/QQREPORT_PATH" target="_blank" class="text-info"><code>QQREPORT_PATH</code></a></p>
+                
+                <div class="row mt-4">
+                    <div class="col-md-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <i class="fas fa-file-alt"></i> Report Content
+                            </div>
+                            <div class="card-body report-content">
+                                QQREPORT_BODY
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+        <!-- /#page-content-wrapper -->
+    </div>
+    <!-- /#wrapper -->
+
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+
+    <!-- Menu Toggle Script -->
+    <script>
+    $("#menu-toggle").click(function(e) {
+        e.preventDefault();
+        $("#wrapper").toggleClass("toggled");
+    });
+
+    // Plotly support - ensure plots are properly rendered and responsive
+    $(document).ready(function() {
+        console.log('Document ready, checking for Plotly plots...');
+        
+        // First, let's see what plot elements we have
+        var plotElements = $('div[id^="plotly"], .plotly-graph-div, .js-plotly-plot, .plotly');
+        console.log('Found ' + plotElements.length + ' potential plot elements');
+        
+        // Force re-render of any Plotly plots after page load
+        setTimeout(function() {
+            if (typeof Plotly !== 'undefined') {
+                console.log('Plotly is available, attempting to redraw plots...');
+                plotElements.each(function(index) {
+                    console.log('Processing plot element ' + index + ':', this);
+                    try {
+                        // Try different methods to redraw the plot
+                        if (this._fullLayout) {
+                            Plotly.redraw(this);
+                            console.log('Redrew plot using Plotly.redraw');
+                        } else if (this._fullData) {
+                            Plotly.newPlot(this, this._fullData, this._fullLayout, this._fullConfig);
+                            console.log('Redrew plot using Plotly.newPlot');
+                        }
+                    } catch (e) {
+                        console.log('Plotly redraw error for element ' + index + ':', e);
+                    }
+                });
+            } else {
+                console.log('Plotly is not available - checking for plot divs to force reload...');
+                // If Plotly isn't loaded, try to trigger any embedded scripts
+                plotElements.each(function() {
+                    var scripts = $(this).find('script');
+                    scripts.each(function() {
+                        try {
+                            eval(this.innerHTML);
+                        } catch (e) {
+                            console.log('Script execution error:', e);
+                        }
+                    });
+                });
+            }
+        }, 1000);
+        
+        // Handle window resize for responsive plots
+        $(window).resize(function() {
+            if (typeof Plotly !== 'undefined') {
+                plotElements.each(function() {
+                    try {
+                        Plotly.Plots.resize(this);
+                    } catch (e) {
+                        console.log('Plotly resize error:', e);
+                    }
+                });
+            }
+        });
+        
+        // Additional check - sometimes plots are in iframes or other containers
+        setTimeout(function() {
+            $('iframe').each(function() {
+                try {
+                    var iframeDoc = this.contentDocument || this.contentWindow.document;
+                    var iframePlots = $(iframeDoc).find('div[id^="plotly"], .plotly-graph-div, .js-plotly-plot');
+                    if (iframePlots.length > 0) {
+                        console.log('Found plots in iframe, attempting to process...');
+                    }
+                } catch (e) {
+                    console.log('Cannot access iframe content:', e);
+                }
+            });
+        }, 1500);
+    });
+    </script>
+</body>
+</html>

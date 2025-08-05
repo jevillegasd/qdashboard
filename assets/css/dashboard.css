@@ -1,0 +1,626 @@
+body {
+    overflow-x: hidden;
+    background-color: #1a1a1a;
+    color: #f0f0f0;
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 0.875rem; /* Smaller, more compact size */
+}
+
+h1 {
+    font-size: 1.75rem; /* Compact size */
+}
+
+h2 {
+    font-size: 1.5rem; /* Compact size */
+}
+
+h3 {
+    font-size: 1.25rem; /* Reduced from default 1.75rem */
+}
+
+h4 {
+    font-size: 1.125rem; /* Reduced from default 1.5rem */
+}
+
+h5 {
+    font-size: 1rem; /* Reduced from default 1.25rem */
+}
+
+.card-title {
+    font-size: 1rem; /* Reduced card titles */
+}
+
+.breadcrumb {
+    font-size: 0.8rem; /* Smaller breadcrumb text */
+}
+
+.table {
+    font-size: 0.8rem; /* Smaller table text */
+}
+
+.btn {
+    font-size: 0.8rem; /* Smaller button text */
+    padding: 0.375rem 0.75rem; /* Adjusted padding */
+}
+
+.log-box {
+    font-size: 0.75rem; /* Smaller log text */
+}
+
+.modal-title {
+    font-size: 1.125rem; /* Smaller modal titles */
+}
+
+/*
+The styles for the sidebar menu have been moved to /assets/css/menu.css
+to ensure consistency across all pages.
+*/
+
+#page-content-wrapper {
+    min-width: 100vw;
+    background-color: #1a1a1a;
+}
+
+#wrapper.toggled #sidebar-wrapper {
+    margin-left: 0;
+}
+
+/* Ensure main content area has consistent background */
+.container-fluid {
+    background-color: #1a1a1a;
+}
+
+/* Override any potential Bootstrap defaults */
+.table-responsive {
+    background-color: #1a1a1a !important;
+}
+
+.table-dark {
+    background-color: #2c2c2c !important;
+}
+
+.table-dark td, .table-dark th {
+    background-color: #2c2c2c !important;
+    color: #f0f0f0 !important;
+    border-color: #444 !important;
+}
+
+@media (min-width: 768px) {
+    #sidebar-wrapper {
+        margin-left: 0;
+    }
+
+    #page-content-wrapper {
+        min-width: 0;
+        width: 100%;
+    }
+
+    #wrapper.toggled #sidebar-wrapper {
+        margin-left: -15rem;
+    }
+}
+
+.navbar {
+    background-color: #2c2c2c !important;
+    border-bottom: 1px solid #444 !important;
+}
+
+.card {
+    border: 1px solid #444;
+}
+
+.card-header {
+    background-color: #383838;
+    color: #f0f0f0;
+    border-bottom: 1px solid #444;
+}
+
+.card-body {
+     background-color: #2c2c2c;
+}
+
+.log-box {
+    background-color: #222;
+    border: 1px solid #444;
+    color: #f0f0f0;
+    padding: 10px;
+    height: 300px;
+    overflow-y: scroll;
+    font-family: monospace;
+}
+
+.card-link {
+    text-decoration: none;
+    color: inherit;
+}
+
+.card-link:hover .card {
+    transform: translateY(-5px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.bg-ibm-blue {
+    background-color: #0043ce !important;
+}
+
+.bg-ibm-purple {
+    background-color: #6f2dbd !important;
+}
+
+.bg-ibm-teal {
+    background-color: #009d9a !important;
+}
+
+/* Report-specific styling */
+.report-content {
+    color: #f0f0f0;
+}
+
+.report-content h1, .report-content h2, .report-content h3, .report-content h4, .report-content h5, .report-content h6 {
+    color: #fff;
+}
+
+.report-content table {
+    background-color: #2c2c2c;
+    color: #f0f0f0;
+}
+
+.report-content table th {
+    background-color: #383838;
+    color: #fff;
+    border-color: #444;
+}
+
+.report-content table td {
+    border-color: #444;
+}
+
+.report-content pre {
+    background-color: #222;
+    color: #f0f0f0;
+    border: 1px solid #444;
+}
+
+.report-content code {
+    background-color: #333;
+    color: #f0f0f0;
+}
+
+.report-menu a {
+    color: #ccc;
+}
+
+.report-menu a:hover {
+    color: #fff;
+}
+
+/* Override any light-themed styles from the report */
+.report-content .bg-light {
+    background-color: #383838 !important;
+}
+
+.report-content .text-dark {
+    color: #f0f0f0 !important;
+}
+
+.report-content .text-muted {
+    color: #aaa !important;
+}
+
+.report-content a {
+    color: #4dabf7; /* A bright blue for links */
+}
+
+.report-content a:hover {
+    color: #74c0fc;
+}
+
+.report-content .border {
+    border-color: #444 !important;
+}
+
+/* More specific table overrides */
+.report-content .table-striped tbody tr:nth-of-type(odd) {
+    background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+.report-content .table-hover tbody tr:hover {
+    background-color: rgba(255, 255, 255, 0.1) !important;
+    color: #fff !important;
+}
+
+.report-content .card {
+    background-color: #3c3c3c !important;
+    border: 1px solid #555 !important;
+}
+
+.report-content .card-header {
+    background-color: #484848 !important;
+    border-bottom: 1px solid #555 !important;
+}
+
+.report-content .list-group-item {
+    background-color: #3c3c3c !important;
+    border-color: #555 !important;
+    color: #f0f0f0 !important;
+}
+
+/* Fix for report container layout issues */
+.report-content .container-fluid {
+    padding: 0 !important;
+    margin: 0 !important;
+    background-color: #2c2c2c !important;
+    color: #f0f0f0 !important;
+}
+
+.report-content main {
+    background-color: #2c2c2c !important;
+    color: #f0f0f0 !important;
+}
+
+.report-content .card {
+    background-color: #2c2c2c;
+    border-color: #444;
+}
+
+.report-content .card-header {
+    background-color: #383838;
+    border-color: #444;
+}
+
+.report-content .card-body {
+    background-color: #2c2c2c;
+}
+
+/* Comprehensive report content styling to override external CSS */
+.report-content p, .report-content h1, .report-content h2, .report-content h3, 
+.report-content h4, .report-content h5, .report-content h6, .report-content span:not(.plotly *), 
+.report-content div:not(.plotly):not(.plotly *):not(.js-plotly-plot):not(.js-plotly-plot *):not([id*="plotly"]):not([id*="plotly"] *) {
+    background-color: inherit !important;
+    color: #f0f0f0 !important;
+}
+
+.report-content .card-body *:not(.plotly):not(.plotly *):not(.js-plotly-plot):not(.js-plotly-plot *):not([id*="plotly"]):not([id*="plotly"] *) {
+    background-color: #2c2c2c !important;
+}
+
+/* Specific overrides for common report elements */
+.report-content div:not(.plotly):not(.plotly *):not(.js-plotly-plot):not(.js-plotly-plot *):not([id*="plotly"]):not([id*="plotly"] *), 
+.report-content p, .report-content span:not(.plotly *), 
+.report-content section, .report-content article {
+    background-color: #2c2c2c !important;
+    color: #f0f0f0 !important;
+}
+
+/* Fix plotly/bokeh charts for dark theme */
+.report-content .plotly, .report-content .bk-root, 
+.report-content .js-plotly-plot, .report-content .plotly-graph-div {
+    background-color: #ffffff !important;
+    border: 1px solid #444 !important;
+    border-radius: 4px !important;
+    padding: 10px !important;
+    margin: 10px 0 !important;
+}
+
+/* Allow Plotly internal elements to use their own styling */
+.report-content .plotly *, .report-content .js-plotly-plot *, 
+.report-content .plotly-graph-div * {
+    background-color: inherit !important;
+    color: inherit !important;
+}
+
+/* Specific Plotly SVG and Canvas styling */
+.report-content .plotly svg, .report-content .js-plotly-plot svg,
+.report-content .plotly canvas, .report-content .js-plotly-plot canvas {
+    background-color: transparent !important;
+}
+
+/* Plotly text elements */
+.report-content .plotly text, .report-content .js-plotly-plot text {
+    color: inherit !important;
+}
+
+/* Plotly container for proper sizing */
+.report-content div[id*="plotly"], .report-content .plotly-graph-div {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 400px !important;
+}
+
+/* Ensure Plotly modebar (toolbar) is visible */
+.report-content .modebar {
+    background-color: rgba(255, 255, 255, 0.9) !important;
+    border: 1px solid #ccc !important;
+}
+
+/* File browser specific styling */
+.breadcrumb {
+    background-color: #2c2c2c !important;
+    border: 1px solid #444 !important;
+}
+
+.breadcrumb-item a {
+    color: #ccc !important;
+}
+
+.breadcrumb-item a:hover {
+    color: #fff !important;
+}
+
+.breadcrumb-item.active {
+    color: #f0f0f0 !important;
+}
+
+.form-control {
+    background-color: #2c2c2c !important;
+    border: 1px solid #444 !important;
+    color: #f0f0f0 !important;
+}
+
+.form-control:focus {
+    background-color: #383838 !important;
+    border-color: #0043ce !important;
+    color: #fff !important;
+    box-shadow: 0 0 0 0.2rem rgba(0, 67, 206, 0.25) !important;
+}
+
+.form-control::placeholder {
+    color: #999 !important;
+}
+
+.table-dark {
+    background-color: #2c2c2c !important;
+}
+
+.table-dark th,
+.table-dark td {
+    border-color: #444 !important;
+}
+
+.table-dark thead th {
+    background-color: #383838 !important;
+    border-color: #444 !important;
+}
+
+.table-hover tbody tr:hover {
+    background-color: #383838 !important;
+}
+
+.btn-secondary {
+    background-color: #6c757d !important;
+    border-color: #6c757d !important;
+}
+
+.btn-secondary:hover {
+    background-color: #5a6268 !important;
+    border-color: #545b62 !important;
+}
+
+.modal-content {
+    background-color: #2c2c2c !important;
+    border: 1px solid #444 !important;
+}
+
+.modal-header {
+    background-color: #383838 !important;
+    border-bottom: 1px solid #444 !important;
+}
+
+.modal-body {
+    background-color: #2c2c2c !important;
+}
+
+.modal-footer {
+    background-color: #383838 !important;
+    border-top: 1px solid #444 !important;
+}
+
+.close {
+    color: #fff !important;
+    text-shadow: none !important;
+}
+
+.close:hover {
+    color: #ccc !important;
+}
+
+/* Override any remaining light theme elements */
+.bg-light {
+    background-color: #383838 !important;
+}
+
+.text-muted {
+    color: #999 !important;
+}
+
+.border {
+    border-color: #444 !important;
+}
+
+/* Ensure all links in tables are properly styled */
+.table a {
+    color: #ccc;
+}
+
+.table a:hover {
+    color: #fff;
+}
+
+/* Dashboard Page Specific Overrides */
+/* Override listr.pack.css conflicting styles */
+.dashboard-page {
+    font-family: 'IBM Plex Sans', sans-serif !important;
+    font-size: 0.875rem !important;
+}
+
+.dashboard-page h1 {
+    font-size: 1.75rem !important;
+    color: #f0f0f0 !important;
+    font-family: 'IBM Plex Sans', sans-serif !important;
+}
+
+.dashboard-page .card-header {
+    background-color: #2a2a2a !important;
+    border-color: #444 !important;
+    color: #f0f0f0 !important;
+    font-size: 0.875rem !important;
+}
+
+.dashboard-page .breadcrumb {
+    background-color: transparent !important;
+    margin-bottom: 0 !important;
+    font-size: 0.8rem !important;
+    font-family: 'IBM Plex Sans', sans-serif !important;
+}
+
+.dashboard-page .breadcrumb a {
+    color: #66b3ff !important;
+}
+
+.dashboard-page .breadcrumb .active {
+    color: #f0f0f0 !important;
+}
+
+.dashboard-page .table {
+    font-size: 0.8rem !important;
+    font-family: 'IBM Plex Sans', sans-serif !important;
+}
+
+.dashboard-page .table a {
+    color: #66b3ff !important;
+}
+
+.dashboard-page .table a:hover {
+    color: #99ccff !important;
+}
+
+.dashboard-page .btn {
+    font-size: 0.8rem !important;
+    font-family: 'IBM Plex Sans', sans-serif !important;
+    padding: 0.375rem 0.75rem !important;
+}
+
+.dashboard-page .form-control {
+    font-size: 0.875rem !important;
+    font-family: 'IBM Plex Sans', sans-serif !important;
+}
+
+.dashboard-page .modal-title {
+    font-size: 1.125rem !important;
+    font-family: 'IBM Plex Sans', sans-serif !important;
+    color: #f0f0f0 !important;
+}
+
+.dashboard-page .modal-body {
+    font-family: 'IBM Plex Sans', sans-serif !important;
+}
+
+/* Override any inherited text colors */
+.dashboard-page td,
+.dashboard-page th,
+.dashboard-page p,
+.dashboard-page span {
+    color: #f0f0f0 !important;
+}
+
+.dashboard-page .text-warning {
+    color: #ffc107 !important;
+}
+
+.dashboard-page .text-info {
+    color: #17a2b8 !important;
+}
+
+/* Latest Report Specific Overrides */
+.dashboard-page .report-content {
+    font-family: 'IBM Plex Sans', sans-serif !important;
+    font-size: 0.875rem !important;
+}
+
+.dashboard-page .report-content h1,
+.dashboard-page .report-content h2,
+.dashboard-page .report-content h3,
+.dashboard-page .report-content h4,
+.dashboard-page .report-content h5,
+.dashboard-page .report-content h6 {
+    font-family: 'IBM Plex Sans', sans-serif !important;
+    color: #f0f0f0 !important;
+}
+
+.dashboard-page .report-content h1 {
+    font-size: 1.75rem !important;
+}
+
+.dashboard-page .report-content h2 {
+    font-size: 1.5rem !important;
+}
+
+.dashboard-page .report-content h3 {
+    font-size: 1.25rem !important;
+}
+
+.dashboard-page .report-content h4 {
+    font-size: 1.125rem !important;
+}
+
+.dashboard-page .report-content h5 {
+    font-size: 1rem !important;
+}
+
+.dashboard-page .report-content p,
+.dashboard-page .report-content div,
+.dashboard-page .report-content span,
+.dashboard-page .report-content td,
+.dashboard-page .report-content th {
+    font-family: 'IBM Plex Sans', sans-serif !important;
+    font-size: 0.875rem !important;
+    color: #f0f0f0 !important;
+}
+
+.dashboard-page .report-content table {
+    font-size: 0.8rem !important;
+}
+
+.dashboard-page .report-content pre,
+.dashboard-page .report-content code {
+    font-size: 0.75rem !important;
+    background-color: #2a2a2a !important;
+    color: #f0f0f0 !important;
+}
+
+.dashboard-page .report-content a {
+    color: #66b3ff !important;
+}
+
+.dashboard-page .report-content a:hover {
+    color: #99ccff !important;
+}
+
+/* SLURM Queue Table Styling */
+.table .btn-sm {
+    padding: 0.25rem 0.375rem !important;
+    font-size: 0.7rem !important;
+    line-height: 1.2 !important;
+}
+
+.table .btn-danger {
+    background-color: #dc3545 !important;
+    border-color: #dc3545 !important;
+}
+
+.table .btn-danger:hover {
+    background-color: #c82333 !important;
+    border-color: #bd2130 !important;
+}
+
+.table td {
+    vertical-align: middle !important;
+}
+
+/* Actions column should be narrow */
+.table th:last-child,
+.table td:last-child {
+    width: 80px !important;
+    text-align: center !important;
+}
