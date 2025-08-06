@@ -23,11 +23,27 @@ Extended with quantum computing specific features:
         <!-- Sidebar -->
         <div id="sidebar-wrapper">
             <div class="sidebar-heading">QDashboard</div>
-            <div class="list-group list-group-flush">
-                <a href="/" class="list-group-item list-group-item-action" id="nav-dashboard"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
-                <a href="/files" class="list-group-item list-group-item-action" id="nav-files"><i class="fas fa-folder"></i> File Browser</a>
-                <a href="/latest" class="list-group-item list-group-item-action" id="nav-latest"><i class="fas fa-file-alt"></i> Latest Report</a>
-                <a href="/qpus" class="list-group-item list-group-item-action" id="nav-qpus"><i class="fas fa-microchip"></i> QPU Status</a>
+            <div class="sidebar-nav">
+                <div class="list-group list-group-flush">
+                    <a href="/" class="list-group-item list-group-item-action active" id="nav-dashboard"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
+                    <a href="/files" class="list-group-item list-group-item-action" id="nav-files"><i class="fas fa-folder"></i> File Browser</a>
+                    <a href="/latest" class="list-group-item list-group-item-action" id="nav-latest"><i class="fas fa-file-alt"></i> Latest Report</a>
+                    <a href="/qpus" class="list-group-item list-group-item-action" id="nav-qpus"><i class="fas fa-microchip"></i> QPU Status</a>
+                    <a href="/experiments" class="list-group-item list-group-item-action" id="nav-experiments"><i class="fas fa-flask"></i> Experiments</a>
+                </div>
+            </div>
+            
+            <!-- Package Versions Footer -->
+            <div class="sidebar-footer-versions">
+                <div class="version-title"><i class="fas fa-code"></i> Package Versions</div>
+                {% for package, version in qibo_versions.items() %}
+                <div class="version-item">
+                    <span class="version-name">{{ package }}</span>
+                    <span class="{% if 'Error' in version or 'error' in version %}version-error{% elif 'Not installed' in version %}version-not-installed{% else %}version-number{% endif %}">
+                        {{ version }}
+                    </span>
+                </div>
+                {% endfor %}
             </div>
         </div>
         <!-- /#sidebar-wrapper -->
@@ -35,11 +51,11 @@ Extended with quantum computing specific features:
         <!-- Page Content -->
         <div id="page-content-wrapper">
             <nav class="navbar navbar-expand-lg navbar-dark">
-                <button class="btn btn-primary" id="menu-toggle"><i class="fas fa-bars"></i></button>
+                <button class="btn" id="menu-toggle"><i class="fas fa-bars"></i></button>
             </nav>
 
             <div class="container-fluid">
-                <h1 class="mt-4">Dashboard</h1>
+                <h1 class="page-title">Dashboard</h1>
                 <div class="row">
                     <div class="col-md-4">
                         <div class="card text-white bg-ibm-blue mb-3">
@@ -58,20 +74,6 @@ Extended with quantum computing specific features:
                                 </div>
                             </div>
                         </a>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="card text-white bg-ibm-teal mb-3">
-                            <div class="card-body">
-                                <h5 class="card-title"><i class="fas fa-code-branch"></i> Package Versions</h5>
-                                <div class="card-text">
-                                    <div style="font-size: 0.9rem;">
-                                        <div class="mb-1"><strong>Qibo:</strong> <span class="badge badge-light text-dark">{{ qibo_versions.qibo }}</span></div>
-                                        <div class="mb-1"><strong>Qibolab:</strong> <span class="badge badge-light text-dark">{{ qibo_versions.qibolab }}</span></div>
-                                        <div class="mb-1"><strong>Qibocal:</strong> <span class="badge badge-light text-dark">{{ qibo_versions.qibocal }}</span></div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
                     </div>
                 </div>
 
@@ -160,14 +162,16 @@ Extended with quantum computing specific features:
             </div>
         </div>
         <!-- /#page-content-wrapper -->
+
+        
     </div>
     <!-- /#wrapper -->
 
-    <!-- Footer with attribution -->
+    <!-- Footer -->
     <footer class="text-center text-muted py-3" style="font-size: 0.8rem; background-color: #1a1a1a;">
-        <div class="container">
-            QDashboard - Built on <a href="https://github.com/Wildog/flask-file-server" target="_blank" class="text-info">flask-file-server</a> by Wildog
-        </div>
+            <div class="container">
+                TII QDashboard - Quantum Computing Dashboard built for the <a href="https://github.com/qiboteam/qibo">qibo</a> framework.
+            </div>
     </footer>
 
     <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>

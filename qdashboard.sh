@@ -7,6 +7,11 @@
 # https://github.com/Wildog/flask-file-server
 # Extended with quantum computing specific features
 
+#Only for Juan Villegas - delete after testing
+source ~/.env/qwork2/bin/activate
+export QIBOLAB_PLATFORMS=~/.repo/qibolab_platforms_qrc
+
+
 echo "Starting QDashboard..."
 echo "========================================"
 echo "QDashboard - Quantum Computing Dashboard"
@@ -26,8 +31,8 @@ if [ ! -f "$QD_FILE_PATH/requirements.txt" ]; then
     echo "Error: requirements.txt not found. Please ensure you are in the correct directory."
     exit 1
 else
-    echo "Checking for required packages..."
-    pip3 install -r "$QD_FILE_PATH/requirements.txt"
+    echo "Note: Skipping pip install to avoid environment changes."
+    echo "If you need to install requirements, run: pip3 install -r requirements.txt"
 fi
 # python3 -c "import flask, humanize, yaml" 2>/dev/null || {
 #     echo "Installing required dependencies..."
@@ -49,15 +54,20 @@ echo "  Bind Address: $QD_BIND"
 echo "  Port: $QD_PORT"
 echo "  Root Path: $QD_PATH"
 echo "  Platforms Path: $QIBOLAB_PLATFORMS"
+echo "  Python Path: $(which python3)"
+echo "  Process ID: $$"
 echo ""
 echo "Starting server..."
 echo "Access the dashboard at: http://$QD_BIND:$QD_PORT"
 echo ""
 
 # Start the dashboard from the current file path
-dashboard_file_path="$QD_FILE_PATH/quantum_dashboard.py"
+dashboard_file_path="$QD_FILE_PATH/app.py"
 if [ ! -f "$dashboard_file_path" ]; then
     echo "Error: Dashboard file not found at $dashboard_file_path"
     exit 1
 fi
-python3 "$dashboard_file_path"
+
+# Use exec to replace the shell process with Python to avoid signal handling issues
+# exec python "$dashboard_file_path"
+python "$dashboard_file_path"

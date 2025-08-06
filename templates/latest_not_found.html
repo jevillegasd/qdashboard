@@ -10,16 +10,31 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 </head>
-<body>
+<body class="dashboard-page">
     <div class="d-flex" id="wrapper">
         <!-- Sidebar -->
         <div id="sidebar-wrapper">
             <div class="sidebar-heading">QDashboard</div>
-            <div class="list-group list-group-flush">
-                <a href="/" class="list-group-item list-group-item-action" id="nav-dashboard"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
-                <a href="/files" class="list-group-item list-group-item-action" id="nav-files"><i class="fas fa-folder"></i> File Browser</a>
-                <a href="/latest" class="list-group-item list-group-item-action" id="nav-latest"><i class="fas fa-file-alt"></i> Latest Report</a>
-                <a href="/qpus" class="list-group-item list-group-item-action" id="nav-qpus"><i class="fas fa-microchip"></i> QPU Status</a>
+            <div class="sidebar-nav">
+                <div class="list-group list-group-flush">
+                    <a href="/" class="list-group-item list-group-item-action" id="nav-dashboard"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
+                    <a href="/files" class="list-group-item list-group-item-action" id="nav-files"><i class="fas fa-folder"></i> File Browser</a>
+                    <a href="/latest" class="list-group-item list-group-item-action active" id="nav-latest"><i class="fas fa-file-alt"></i> Latest Report</a>
+                    <a href="/qpus" class="list-group-item list-group-item-action" id="nav-qpus"><i class="fas fa-microchip"></i> QPU Status</a>
+                    <a href="/experiments" class="list-group-item list-group-item-action" id="nav-experiments"><i class="fas fa-flask"></i> Experiments</a>
+                </div>
+            </div>
+            <!-- Package Versions Footer -->
+            <div class="sidebar-footer-versions">
+                <div class="version-title"><i class="fas fa-code"></i> Package Versions</div>
+                {% for package, version in qibo_versions.items() %}
+                <div class="version-item">
+                    <span class="version-name">{{ package }}</span>
+                    <span class="{% if 'Error' in version or 'error' in version %}version-error{% elif 'Not installed' in version %}version-not-installed{% else %}version-number{% endif %}">
+                        {{ version }}
+                    </span>
+                </div>
+                {% endfor %}
             </div>
         </div>
         <!-- /#sidebar-wrapper -->
@@ -27,15 +42,21 @@
         <!-- Page Content -->
         <div id="page-content-wrapper">
             <nav class="navbar navbar-expand-lg navbar-dark">
-                <button class="btn btn-primary" id="menu-toggle"><i class="fas fa-bars"></i></button>
+                <button class="btn" id="menu-toggle"><i class="fas fa-bars"></i></button>
             </nav>
 
             <div class="container-fluid">
-                <h1 class="mt-4">Latest Result Not Available</h1>
-                <div class="alert alert-warning" role="alert">
-                    A page with the last report is not available.
+                <h1 class="page-title">Latest Result Not Available</h1>
+                {% if has_error %}
+                <div class="alert alert-danger" role="alert">
+                    <i class="fas fa-exclamation-triangle"></i> <strong>Error detected:</strong> {{ error_message }}
                 </div>
-                <p>Job information may be stored in: <a href="{{ last_path }}">{{ last_path }}</a></p>
+                {% else %}
+                <div class="alert alert-warning" role="alert">
+                    <i class="fas fa-info-circle"></i> {{ error_message if error_message else "A page with the last report is not available." }}
+                </div>
+                {% endif %}
+                <p>Job information may be stored in: <a href="/files{{ last_path }}">{{ last_path }}</a></p>
                 
                 <div class="row mt-4">
                     <div class="col-md-6">
@@ -44,7 +65,67 @@
                                 <i class="fas fa-tasks"></i> SLURM Queue
                             </div>
                             <div class="card-body">
-                                <pre class="log-box"><code>{{ slurm_queue_status | safe }}</code></pre>
+                                {% if slurm_queue_status %}
+                                <div class="table-responsive">
+                                    <table class="table table-dark table-striped table-hover">
+                                        <thead>
+                                            <tr>
+                                                <th>Job ID</th>
+                                                <th>Name</th>
+                                                <th>User</th>
+                                                <th>State</th>
+                                                <th>Time</th>
+                                                <th>Time Limit</th>
+                                                <th>Nodes</th>
+                                                <th>Node List</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for job in slurm_queue_status %}
+                                            <tr>
+                                                <td>{{ job.job_id }}</td>
+                                                <td>{{ job.name }}</td>
+                                                <td>{{ job.user }}</td>
+                                                <td>
+                                                    {% if job.state == 'RUNNING' %}
+                                                        <span class="badge badge-success">{{ job.state }}</span>
+                                                    {% elif job.state == 'PENDING' %}
+                                                        <span class="badge badge-warning">{{ job.state }}</span>
+                                                    {% elif job.state in ['COMPLETED', 'COMPLETING'] %}
+                                                        <span class="badge badge-info">{{ job.state }}</span>
+                                                    {% elif job.state in ['FAILED', 'CANCELLED', 'TIMEOUT'] %}
+                                                        <span class="badge badge-danger">{{ job.state }}</span>
+                                                    {% else %}
+                                                        <span class="badge badge-secondary">{{ job.state }}</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td>{{ job.time }}</td>
+                                                <td>{{ job.time_limit }}</td>
+                                                <td>{{ job.nodes }}</td>
+                                                <td>{{ job.nodelist }}</td>
+                                                <td>
+                                                    {% if job.is_current_user and job.state in ['RUNNING', 'PENDING'] %}
+                                                        <button class="btn btn-sm btn-danger" 
+                                                                onclick="cancelJob('{{ job.job_id }}')"
+                                                                title="Cancel job">
+                                                            <i class="fas fa-times"></i>
+                                                        </button>
+                                                    {% else %}
+                                                        <span class="text-muted">—</span>
+                                                    {% endif %}
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                {% else %}
+                                <div class="text-center text-muted">
+                                    <i class="fas fa-inbox fa-2x mb-2"></i>
+                                    <p>No jobs in queue</p>
+                                </div>
+                                {% endif %}
                             </div>
                         </div>
                     </div>
@@ -65,6 +146,13 @@
     </div>
     <!-- /#wrapper -->
 
+    <!-- Footer -->
+    <footer class="text-center text-muted py-3" style="font-size: 0.8rem; background-color: #1a1a1a;">
+            <div class="container">
+                TII QDashboard - Quantum Computing Dashboard built for the <a href="https://github.com/qiboteam/qibo">qibo</a> framework.
+            </div>
+    </footer>
+
     <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
@@ -75,6 +163,37 @@
         e.preventDefault();
         $("#wrapper").toggleClass("toggled");
     });
+
+    // Job cancellation function
+    function cancelJob(jobId) {
+        if (!confirm(`Are you sure you want to cancel job ${jobId}?`)) {
+            return;
+        }
+
+        fetch('/cancel_job', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                job_id: jobId
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                alert(data.message);
+                // Refresh the page to update the job list
+                location.reload();
+            } else {
+                alert(`Error: ${data.message}`);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred while cancelling the job.');
+        });
+    }
     </script>
 </body>
 </html>

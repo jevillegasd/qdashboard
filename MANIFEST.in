@@ -1,0 +1,28 @@
+# Include package data
+include README.md
+include LICENSE
+include requirements.txt
+include CHANGELOG.md
+
+# Include templates
+recursive-include templates *.html
+
+# Include static assets
+recursive-include assets *.css *.js *.ttf *.woff *.woff2 *.eot *.svg *.png *.jpg *.gif *.ico
+recursive-include assets/css *
+recursive-include assets/js *
+recursive-include assets/fonts *
+
+# Include configuration files
+include *.yml *.yaml *.toml *.cfg *.ini *.sh
+
+# Exclude unnecessary files
+exclude *.pyc
+exclude __pycache__
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
+recursive-exclude * .DS_Store
+exclude .git*
+exclude .pytest_cache
+exclude .coverage
+exclude .tox
