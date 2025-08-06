@@ -6,9 +6,15 @@ import os
 import json
 import subprocess
 from .slurm import check_queue_running_jobs
+from .platforms import get_platforms_path
 
-from qibolab._core.backends import QibolabBackend
-from qibolab._core.platform.platform import Platform as QibolabPlatform
+# Optional qibolab imports
+try:
+    from qibolab._core.backends import QibolabBackend
+    from qibolab._core.platform.platform import Platform as QibolabPlatform
+    QIBOLAB_AVAILABLE = True
+except ImportError:
+    QIBOLAB_AVAILABLE = False
 
 def get_qpu_health():
     """Get overall QPU health status."""
@@ -19,10 +25,10 @@ def get_qpu_health():
 def get_available_qpus():
     """Get count of available QPUs from the platforms directory."""
     root = os.path.normpath(os.environ.get('HOME'))
-    qrc_path = os.environ.get('QIBOLAB_PLATFORMS', os.path.join(root, 'qibolab_platforms_qrc'))
+    qrc_path = get_platforms_path(root)
     
     # Check if platforms directory exists
-    if not os.path.exists(qrc_path):
+    if not qrc_path or not os.path.exists(qrc_path):
         return "N/A"
     
     try:
@@ -99,10 +105,10 @@ def get_qibo_versions():
 def get_qpu_list():
     """Get list of available QPU platforms from the qibolab platforms directory."""
     root = os.path.normpath(os.environ.get('HOME'))
-    qrc_path = os.environ.get('QIBOLAB_PLATFORMS', os.path.join(root, 'qibolab_platforms_qrc'))
+    qrc_path = get_platforms_path(root)
     qpus = []
     
-    if os.path.exists(qrc_path):
+    if qrc_path and os.path.exists(qrc_path):
         try:
             for qpu_name in os.listdir(qrc_path):
                 if qpu_name.startswith(('_', '.')):
@@ -115,7 +121,7 @@ def get_qpu_list():
     
     # Fallback to default QPUs if directory doesn't exist or is empty
     if not qpus:
-        qpus = ["qpu_test"]
+        qpus = ["qpu_dummy"]
     
     return sorted(qpus)
 
@@ -123,7 +129,7 @@ def get_qpu_list():
 def get_qpu_details():
     """Get detailed information about all available QPUs."""
     root = os.path.normpath(os.environ.get('HOME'))
-    qrc_path = os.environ.get('QIBOLAB_PLATFORMS', os.path.join(root, 'qibolab_platforms_qrc'))
+    qrc_path = get_platforms_path(root)
     qpus_list = []
     qpu_names = get_qpu_list()
 
@@ -131,7 +137,7 @@ def get_qpu_details():
     git_branch = 'N/A'
     git_commit = 'N/A'
     
-    if os.path.exists(qrc_path):
+    if qrc_path and os.path.exists(qrc_path):
         try:
             # Check if the directory is a git repository
             git_dir = os.path.join(qrc_path, '.git')

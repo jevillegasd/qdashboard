@@ -120,9 +120,27 @@ def main(argv: Optional[List[str]] = None) -> None:
         from .core.app import create_app
         from .web.routes import register_routes
         from .web.file_browser import PathView
+        from .qpu.platforms import get_platforms_path
+        
+        # Ensure qibolab platforms directory is available
+        print('QDashboard - Quantum Computing Dashboard')
+        print('=' * 50)
+        print('Initializing QPU platforms...')
+        
+        try:
+            platforms_path = get_platforms_path(config['root'])
+            if platforms_path:
+                print(f'QPU platforms directory: {platforms_path}')
+            else:
+                print('Warning: Could not initialize QPU platforms directory')
+        except Exception as e:
+            print(f'Warning: Error setting up QPU platforms: {e}')
         
         # Create Flask application
-        app = create_app(config)
+        app = create_app()
+        
+        # Store config for routes to access
+        app.config['QDASHBOARD_CONFIG'] = config
         
         # Register routes
         register_routes(app, config)
@@ -132,7 +150,6 @@ def main(argv: Optional[List[str]] = None) -> None:
         app.add_url_rule('/files/<path:p>', view_func=PathView.as_view('path_view_with_path', root=config['root']))
         
         # Print startup information
-        print('QDashboard - Quantum Computing Dashboard')
         print('=' * 50)
         print(f'Server running on: http://{config["host"]}:{config["port"]}')
         print(f'Serving directory: {config["root"]}')

@@ -8,8 +8,8 @@
 # Extended with quantum computing specific features
 
 #Only for Juan Villegas - delete after testing
-source ~/.env/qwork2/bin/activate
-export QIBOLAB_PLATFORMS=~/.repo/qibolab_platforms_qrc
+#source ~/.env/qwork2/bin/activate
+#export QIBOLAB_PLATFORMS=~/.repo/qibolab_platforms_qrc
 
 
 echo "Starting QDashboard..."

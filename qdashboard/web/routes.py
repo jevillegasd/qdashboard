@@ -5,9 +5,10 @@ Main application routes and endpoints.
 import os
 import subprocess
 import json
-from flask import render_template, request, jsonify, send_file, make_response
+from flask import render_template, request, jsonify, send_file, make_response, current_app
 
 from ..qpu.monitoring import get_qpu_health, get_available_qpus, get_qibo_versions, get_qpu_details, get_qpu_list
+from ..qpu.platforms import get_platforms_path, list_repository_branches, switch_repository_branch, get_current_branch_info
 from ..qpu.slurm import get_slurm_status, get_slurm_output, parse_slurm_log_for_errors
 from ..qpu.topology import get_connectivity_data_from_qpu_config, get_topology_from_qpu_config, generate_topology_visualization
 from ..experiments.protocols import get_qibocal_protocols, get_qpu_parameters
@@ -17,6 +18,9 @@ from ..utils.formatters import yaml_response, json_response
 
 def register_routes(app, config):
     """Register all application routes."""
+    
+    # Store config in app for access in routes
+    app.config['QDASHBOARD_CONFIG'] = config
     
     @app.route("/")
     def dashboard():
@@ -37,6 +41,7 @@ def register_routes(app, config):
     @app.route("/qqsubmit")
     def qqsubmit():
         """Submit a job to the SLURM queue."""
+        config = current_app.config['QDASHBOARD_CONFIG']
         qpu = request.args.get('qpu')
         os_process = subprocess.Popen(
             ["bash", os.path.join(config['root'], "work/qqsubmit.sh"), config['home_path'], qpu],
@@ -50,6 +55,7 @@ def register_routes(app, config):
     @app.route("/latest")
     def latest():
         """View the latest report."""
+        config = current_app.config['QDASHBOARD_CONFIG']
         last_path = get_latest_report_path(config['home_path'])
         qibo_versions = get_qibo_versions()
         if not last_path:
@@ -94,6 +100,7 @@ def register_routes(app, config):
     @app.route("/report_assets/<path:filename>")
     def report_assets(filename):
         """Serve assets from the latest report directory."""
+        config = current_app.config['QDASHBOARD_CONFIG']
         try:
             latest_path = get_latest_report_path(config['home_path'])
             if latest_path:
@@ -126,14 +133,93 @@ def register_routes(app, config):
     @app.route("/qpus")
     def qpus():
         """QPU status and monitoring page."""
+        config = current_app.config['QDASHBOARD_CONFIG']
         qpu_details = get_qpu_details()
         qibo_versions = get_qibo_versions()
+        
+        # Get branch information for the dropdown
+        platforms_path = get_platforms_path(config['root'])
+        branches_info = list_repository_branches(platforms_path) if platforms_path else None
+        current_branch_info = get_current_branch_info(platforms_path) if platforms_path else None
+        
         return render_template('qpus.html', 
                                qpus=qpu_details['qpus'],
                                git_branch=qpu_details['git_branch'],
                                git_commit=qpu_details['git_commit'],
                                platforms_path=qpu_details['platforms_path'],
+                               branches_info=branches_info,
+                               current_branch_info=current_branch_info,
                                qibo_versions=qibo_versions)
+
+    @app.route("/api/platforms/branches")
+    def api_platforms_branches():
+        """API endpoint to get available branches."""
+        try:
+            config = current_app.config['QDASHBOARD_CONFIG']
+            platforms_path = get_platforms_path(config['root'])
+            if not platforms_path:
+                return jsonify({'error': 'Platforms directory not available'}), 404
+            
+            branches_info = list_repository_branches(platforms_path)
+            if not branches_info:
+                return jsonify({'error': 'Failed to retrieve branch information'}), 500
+            
+            return jsonify(branches_info)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route("/api/platforms/switch", methods=['POST'])
+    def api_platforms_switch():
+        """API endpoint to switch platform branch."""
+        try:
+            config = current_app.config['QDASHBOARD_CONFIG']
+            data = request.get_json()
+            if not data or 'branch' not in data:
+                return jsonify({'error': 'Branch name is required'}), 400
+            
+            branch_name = data['branch']
+            create_if_not_exists = data.get('create', False)
+            
+            platforms_path = get_platforms_path(config['root'])
+            if not platforms_path:
+                return jsonify({'error': 'Platforms directory not available'}), 404
+            
+            # Perform the switch
+            success = switch_repository_branch(platforms_path, branch_name, create_if_not_exists)
+            if not success:
+                return jsonify({'error': f'Failed to switch to branch: {branch_name}'}), 500
+            
+            # Get updated information
+            current_branch_info = get_current_branch_info(platforms_path)
+            qpu_details = get_qpu_details()  # Get updated QPU list
+            
+            return jsonify({
+                'success': True,
+                'branch': branch_name,
+                'branch_info': current_branch_info,
+                'qpus': qpu_details['qpus'],  # Return updated QPU list
+                'platforms_path': qpu_details['platforms_path']
+            })
+            
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route("/api/platforms/current")
+    def api_platforms_current():
+        """API endpoint to get current branch information."""
+        try:
+            config = current_app.config['QDASHBOARD_CONFIG']
+            platforms_path = get_platforms_path(config['root'])
+            if not platforms_path:
+                return jsonify({'error': 'Platforms directory not available'}), 404
+            
+            current_branch_info = get_current_branch_info(platforms_path)
+            if not current_branch_info:
+                return jsonify({'error': 'Failed to get current branch information'}), 500
+            
+            return jsonify(current_branch_info)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
 
     @app.route("/experiments")
     def experiments():
@@ -156,8 +242,12 @@ def register_routes(app, config):
     @app.route("/api/qpu_topology/<platform>")
     def qpu_topology_visualization_api(platform):
         """API endpoint to generate topology visualization for a specific QPU."""
-        qrc_path = os.environ.get('QIBOLAB_PLATFORMS', 
-                                 os.path.join(config['root'], 'qibolab_platforms_qrc'))
+        config = current_app.config['QDASHBOARD_CONFIG']
+        qrc_path = get_platforms_path(config['root'])
+        
+        if not qrc_path:
+            return jsonify({'error': 'QPU platforms directory not available'}), 404
+            
         qpu_path = os.path.join(qrc_path, platform)
         
         if not os.path.exists(qpu_path):

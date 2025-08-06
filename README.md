@@ -75,6 +75,57 @@ docker build --rm -t qdashboard:latest .
 docker run -p 5005:5005 qdashboard
 ```
 
+## QPU Platforms Management
+
+QDashboard automatically manages the qibolab platforms repository for you:
+
+### Automatic Setup
+When you start QDashboard, it automatically:
+1. Checks if `QIBOLAB_PLATFORMS` environment variable is set
+2. If not set, creates a `qibolab_platforms_qrc` directory in your specified root directory
+3. Automatically clones the [qibolab_platforms_qrc](https://github.com/qiboteam/qibolab_platforms_qrc) repository
+4. Makes all QPU platforms available to the dashboard
+
+### Manual Management
+Use the dedicated platforms CLI tool:
+
+```bash
+# Check current status
+qdashboard-platforms status
+
+# Set up platforms in a specific directory
+qdashboard-platforms --root /path/to/directory setup
+
+# Update platforms repository
+qdashboard-platforms update
+
+# List available branches
+qdashboard-platforms branches
+
+# Switch to a specific branch
+qdashboard-platforms switch branch-name
+
+# Create and switch to a new branch
+qdashboard-platforms switch new-branch --create
+```
+
+### Branch Management
+The qibolab platforms repository contains multiple branches with different platform configurations:
+
+- **main**: Latest stable platform configurations
+- **0.1**, **0.2**: Version-specific platform definitions
+- **Platform-specific branches**: Calibrated configurations for specific QPUs
+- **Feature branches**: Experimental or development configurations
+
+Different branches may contain different sets of platforms or different calibration parameters for the same platforms.
+
+### Environment Variable
+If you prefer to use your own platforms directory:
+```bash
+export QIBOLAB_PLATFORMS=/path/to/your/platforms
+qdashboard
+```
+
 ## Configuration
 
 Environment variables:
