@@ -57,6 +57,7 @@ def ensure_platforms_directory(root_path=None):
         # Check if it's an empty directory or has content
         if any(platforms_dir.iterdir()):
             logger.info(f"Platforms directory already exists with content: {platforms_path}")
+            os.environ['QIBOLAB_PLATFORMS'] = platforms_path
             return str(platforms_path)
         else:
             logger.info(f"Empty platforms directory found: {platforms_path}")
@@ -105,7 +106,7 @@ def clone_platforms_repository(target_path):
         # Verify the clone was successful by checking for key files
         if not os.path.exists(os.path.join(target_path, '.git')):
             raise RuntimeError("Repository was cloned but .git directory not found")
-            
+        os.environ['QIBOLAB_PLATFORMS'] = target_path    
         logger.info("Repository verification successful")
         
     except subprocess.CalledProcessError as e:
@@ -138,6 +139,7 @@ def update_platforms_repository(platforms_path):
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
         logger.info(f"Successfully updated platforms repository")
         logger.debug(f"Git pull output: {result.stdout}")
+
         return True
         
     except subprocess.CalledProcessError as e:

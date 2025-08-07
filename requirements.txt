@@ -3,3 +3,4 @@ humanize>=4.0.0
 pathlib2>=2.3.0
 werkzeug>=3.0.0
 PyYAML>=6.0.0
+qcodes>=0.36.0

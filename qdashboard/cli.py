@@ -145,9 +145,14 @@ def main(argv: Optional[List[str]] = None) -> None:
         # Register routes
         register_routes(app, config)
         
-        # Register file browser
-        app.add_url_rule('/files/', defaults={'p': ''}, view_func=PathView.as_view('path_view', root=config['root']))
-        app.add_url_rule('/files/<path:p>', view_func=PathView.as_view('path_view_with_path', root=config['root']))
+        # Register file browser - create a proper class-based view
+        class ConfiguredPathView(PathView):
+            def __init__(self):
+                super().__init__(root_path=config['root'], key=config['key'])
+        path_view = ConfiguredPathView.as_view('path_view')
+
+        app.add_url_rule('/files/', defaults={'p': ''}, view_func=path_view)
+        app.add_url_rule('/files/<path:p>', view_func=path_view)
         
         # Print startup information
         print('=' * 50)

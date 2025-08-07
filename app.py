@@ -38,8 +38,12 @@ def main():
     # Register main routes
     register_routes(app, config)
     
-    # Register file browser
-    path_view = PathView.as_view('path_view', root_path=config['root'], key=config['key'])
+    # Register file browser - create a proper class-based view
+    class ConfiguredPathView(PathView):
+        def __init__(self):
+            super().__init__(root_path=config['root'], key=config['key'])
+    
+    path_view = ConfiguredPathView.as_view('path_view')
     app.add_url_rule('/files', view_func=path_view)
     app.add_url_rule('/files/<path:p>', view_func=path_view)
     
@@ -100,5 +104,4 @@ def main():
 
 
 if __name__ == '__main__':
-
     main()

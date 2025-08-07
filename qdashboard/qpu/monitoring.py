@@ -128,33 +128,25 @@ def get_qpu_list():
 
 def get_qpu_details():
     """Get detailed information about all available QPUs."""
+    from .platforms import get_current_branch_info
+    
     root = os.path.normpath(os.environ.get('HOME'))
     qrc_path = get_platforms_path(root)
     qpus_list = []
     qpu_names = get_qpu_list()
 
-    # Get git branch information
+    # Get git branch information using platforms module
     git_branch = 'N/A'
     git_commit = 'N/A'
     
     if qrc_path and os.path.exists(qrc_path):
         try:
-            # Check if the directory is a git repository
-            git_dir = os.path.join(qrc_path, '.git')
-            if os.path.exists(git_dir) or os.path.exists(os.path.join(os.path.dirname(qrc_path), '.git')):
-                # Get current branch
-                branch_output = subprocess.check_output(['git', 'branch', '--show-current'], 
-                                                      cwd=qrc_path, stderr=subprocess.DEVNULL).decode().strip()
-                if branch_output:
-                    git_branch = branch_output
-                
-                # Get short commit hash
-                commit_output = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'], 
-                                                      cwd=qrc_path, stderr=subprocess.DEVNULL).decode().strip()
-                if commit_output:
-                    git_commit = commit_output
-        except (subprocess.CalledProcessError, FileNotFoundError, OSError):
-            pass  # Keep defaults if git commands fail
+            branch_info = get_current_branch_info(qrc_path)
+            if branch_info:
+                git_branch = branch_info.get('branch', 'N/A')
+                git_commit = branch_info.get('commit', 'N/A')
+        except Exception:
+            pass  # Keep defaults if git info retrieval fails
     
     try:
         with open(os.path.join(qrc_path, 'queues.json'), 'r') as f:
