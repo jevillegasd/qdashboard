@@ -265,8 +265,3 @@ The package provides two equivalent commands:
 - File server functionality based on [flask-file-server](https://github.com/Wildog/flask-file-server) by [Wildog](https://github.com/Wildog)
 - Dark theme inspired by IBM Quantum Computing platform
 - Built for quantum computing workflows using the qibo ecosystem
-
-## License
-
-This project extends the original flask-file-server codebase with quantum computing specific enhancements.
-
