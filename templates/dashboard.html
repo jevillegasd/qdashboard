@@ -37,12 +37,16 @@ Extended with quantum computing specific features:
             <div class="sidebar-footer-versions">
                 <div class="version-title"><i class="fas fa-code"></i> Package Versions</div>
                 {% for package, version in qibo_versions.items() %}
-                <div class="version-item">
-                    <span class="version-name">{{ package }}</span>
-                    <span class="{% if 'Error' in version or 'error' in version %}version-error{% elif 'Not installed' in version %}version-not-installed{% else %}version-number{% endif %}">
-                        {{ version }}
-                    </span>
-                </div>
+                    <div class="version-item">
+                        <span class="version-name">{{ package.title() }}:</span>
+                        {% if version == "Error" %}
+                            <span class="version-error">Error</span>
+                        {% elif version == "Not installed" %}
+                            <span class="version-not-installed">Not installed</span>
+                        {% else %}
+                            <span class="version-number">{{ version }}</span>
+                        {% endif %}
+                    </div>
                 {% endfor %}
             </div>
         </div>

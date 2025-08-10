@@ -7,7 +7,11 @@ import json
 import yaml
 import base64
 import io
+import signal
 import traceback
+from qdashboard.utils.logger import get_logger
+from qdashboard.qpu.platforms import get_platforms_path
+from qdashboard.qpu.utils import detect_and_save_qibolab_version, is_qibolab_new_api, get_qibolab_version_from_file
 
 try:
     import rustworkx as rx
@@ -27,7 +31,47 @@ except ImportError:
     HAS_MATPLOTLIB = False
     print("Warning: matplotlib not available. Topology visualization will be limited.")
 
+# Optional qibolab imports
+try:
+    from qibolab._core.backends import QibolabBackend
+    from qibolab._core.platform.platform import Platform as QibolabPlatform
+    QIBOLAB_AVAILABLE = True
+except ImportError:
+    QIBOLAB_AVAILABLE = False
 
+logger = get_logger(__name__)
+
+def qpu_connectivity(qpu_name):
+    """
+    Extract connectivity data from QPU.
+    """
+    class SignalDisabler:
+        def __enter__(self):
+            self.old_signal = signal.signal
+            signal.signal = lambda sig, handler: None
+            return self
+        
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            signal.signal = self.old_signal
+
+    # Detect qibolab version for this platform
+    platforms_path = get_platforms_path()
+    qpu_path = os.path.join(platforms_path, qpu_name)
+    qibolab_version = get_qibolab_version_from_file(qpu_path)
+    
+    # Check if version supports new API using PEP 440 compliant comparison
+    is_new_api = is_qibolab_new_api(qibolab_version)
+
+    if QIBOLAB_AVAILABLE and is_new_api:
+        # Use QibolabPlatform to get connectivity data
+        with SignalDisabler():
+            backend:QibolabBackend = QibolabBackend(platform=qpu_name)
+            platform:QibolabPlatform = backend.platform
+            return platform.pairs if platform.pairs else None
+    else:
+        logger.info("Building connectivity from configuration file.")
+        return get_connectivity_data_from_qpu_config(qpu_path)
+        
 def get_connectivity_data_from_qpu_config(qpu_path):
     """
     Extract connectivity data from QPU configuration files.
@@ -44,6 +88,7 @@ def get_connectivity_data_from_qpu_config(qpu_path):
     for config_file in config_files:
         config_path = os.path.join(qpu_path, config_file)
         if os.path.exists(config_path):
+            logger.info(f"Reading connectivity from {config_file} at {qpu_path}")
             try:
                 # Try to read the configuration file (json or yaml)
                 if config_file.endswith('.json'):
@@ -100,7 +145,6 @@ def get_connectivity_data_from_qpu_config(qpu_path):
     
     return None
 
-
 def infer_topology_from_connectivity(connectivity_data):
     """
     Infer topology type from connectivity data using rustworkx graph analysis.
@@ -126,7 +170,7 @@ def infer_topology_from_connectivity(connectivity_data):
                 qubits.add(connection[1])
         
         if len(qubits) == 0:
-            return 'isolated'
+            return 'no qubits'
         
         # Add nodes to graph
         qubit_to_node = {}
@@ -145,8 +189,8 @@ def infer_topology_from_connectivity(connectivity_data):
         num_edges = len(connectivity_data)
         
         # Single qubit case
-        if num_nodes == 1:
-            return 'single'
+        if num_edges == 0:
+            return 'isolated qubits'
         
         # Calculate graph metrics
         degrees = [graph.degree(node) for node in graph.node_indices()]
@@ -215,8 +259,25 @@ def infer_topology_from_connectivity(connectivity_data):
         print(f"Error analyzing topology: {e}")
         return 'unknown'
 
+def get_topology_from_platform(platform: QibolabPlatform) -> str:
+    """
+    Extract topology information from platform configuration.
+    
+    Args:
+        platform: Platform object or path to the platform directory
+        
+    Returns:
+        str: Inferred topology type
+    """
+    if QIBOLAB_AVAILABLE:
+        if type(platform) is QibolabPlatform:
+            return infer_topology_from_connectivity(platform.pairs)
+        else:
+            raise TypeError("Invalid platform type.")
+    else:
+        raise ImportError("Qibolab is not available.")
 
-def get_topology_from_qpu_config(qpu_path):
+def get_topology_from_qpu_config(qpu_path) -> str:
     """
     Extract topology information from QPU configuration files.
     
@@ -227,7 +288,7 @@ def get_topology_from_qpu_config(qpu_path):
         str: Inferred topology type
     """
     # Look for common configuration file names
-    config_files = ['parameters.json', 'topology.json']
+    config_files = ['parameters.json', 'topology.json'] # In qibolab 0.1 and 0.2, parameters.json, but here to support other cases
     
     for config_file in config_files:
         config_path = os.path.join(qpu_path, config_file)
@@ -243,7 +304,7 @@ def get_topology_from_qpu_config(qpu_path):
                 else:
                     continue  # Skip unsupported file types
             except Exception as e:
-                print(f"Error reading config file {config_path}: {e}")
+                logger.error(f"Error reading config file {config_path}: {e}")
                 continue
 
             try:
@@ -290,13 +351,16 @@ def get_topology_from_qpu_config(qpu_path):
                             else:
                                 pairs.append([int(source), int(targets)])
                         return infer_topology_from_connectivity(pairs)
+                else:
+                    logger.warning(f"No connectivity data found in {config_file} at {qpu_path}")
                 
             except (yaml.YAMLError, IOError, ValueError) as e:
-                print(f"Error reading config file {config_path}: {e}")
+                logger.error(f"Error reading config file {config_path}: {e}")
                 continue
-    
-    return 'N/A'
-
+        else:
+            logger.error(f"Configuration file {config_file} not found in {qpu_path}")
+            continue
+    return []
 
 def generate_topology_visualization(connectivity_data, topology_type):
     """

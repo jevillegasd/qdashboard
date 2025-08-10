@@ -105,24 +105,38 @@ class PathView(MethodView):
                 total['size'] += sz
                 contents.append(info)
           
-            qibo_versions = get_qibo_versions()
-            page = render_template('file_browser.html', path=p, contents=contents, total=total, hide_dotfile=hide_dotfile, qibo_versions=qibo_versions)
-            res = make_response(page, 200)
-            res.set_cookie('hide-dotfile', hide_dotfile, max_age=16070400)
+            qibo_versions = get_qibo_versions(request=request)
+            response = make_response(render_template('file_browser.html', 
+                                   path=p, 
+                                   contents=contents, 
+                                   total=total, 
+                                   hide_dotfile=hide_dotfile, 
+                                   qibo_versions=qibo_versions['versions']), 
+                                200)
+
+            response.set_cookie('hide-dotfile', hide_dotfile, max_age=16070400, httponly=True, secure=False)
+            
+            # Set cookie if we have fresh data
+            if not qibo_versions.get('from_cache', False):
+                response.set_cookie('qibo_versions',
+                                    qibo_versions['cookie_data'], 
+                                    max_age=24*60*60,
+                                    httponly=True,
+                                    secure=False)
 
         elif os.path.isfile(path):
             if 'Range' in request.headers:
                 start, end = get_range(request)
-                res = partial_response(path, start, end)
+                response = partial_response(path, start, end)
             else:
                 filename, file_extension = os.path.splitext(path)
                 if file_extension in ['.html', '.yml', '.json']:
-                    res = send_file(path)
+                    response = send_file(path)
                 else:
-                    res = send_file(path, as_attachment=True, download_name=os.path.basename(path))
+                    response = send_file(path, as_attachment=True, download_name=os.path.basename(path))
         else:
-            res = make_response('Not found', 404)
-        return res
+            response = make_response('Not found', 404)
+        return response
     
     def put(self, p=''):
         if request.cookies.get('auth_cookie') == self.key:

@@ -8,7 +8,7 @@ from flask import make_response, render_template, send_file
 from ..qpu.monitoring import get_qibo_versions
  
 
-def report_viewer(report_path, root_path):
+def report_viewer(report_path, root_path, qibo_versions=None):
     """
     Generate report viewer with proper asset handling.
     
@@ -21,6 +21,7 @@ def report_viewer(report_path, root_path):
     Args:
         report_path (str): Path to the report directory
         root_path (str): Root path for asset resolution
+        qibo_versions (dict): Pre-fetched qibo versions (optional)
         
     Returns:
         Flask Response: Rendered report page
@@ -62,7 +63,8 @@ def report_viewer(report_path, root_path):
     report_path_for_link = report_path.replace(root_path, "").lstrip("/")
 
     # Render the template with all variables in a single call
-    qibo_versions = get_qibo_versions()
+    if qibo_versions is None:
+        qibo_versions = get_qibo_versions()
     report_viewer_template = render_template('latest_report.html',
                                              qibo_versions=qibo_versions,
                                              report_head_content=head_content,

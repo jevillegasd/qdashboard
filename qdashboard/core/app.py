@@ -6,6 +6,10 @@ import os
 from flask import Flask
 
 from ..utils.formatters import size_fmt, time_desc, data_fmt, icon_fmt, time_humanize
+from qdashboard.utils.logger import get_logger
+
+
+logger = get_logger(__name__)
 
 
 def create_app():
@@ -27,6 +31,8 @@ def create_app():
     app.template_filter('icon_fmt')(icon_fmt)
     app.template_filter('humanize')(time_humanize)
     
+    logger.debug("App module initialized")
+    
     return app
 
 
@@ -43,5 +49,7 @@ def get_config():
         'home_path': home_path,
         'user': os.environ.get('USER')
     }
+    
+    logger.info("Useful information during execution")
     
     return config

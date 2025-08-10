@@ -1,5 +1,5 @@
 """
-Utilities for managing qibolab platforms directory.
+Utilities for managing qibolab platforms directory using git.
 """
 
 import os
@@ -227,7 +227,246 @@ def list_repository_branches(platforms_path):
         return None
 
 
-def switch_repository_branch(platforms_path, branch_name, create_if_not_exists=False):
+def stash_changes(platforms_path, stash_message="WIP: Temporary stash"):
+    """
+    Stash uncommitted changes in the platforms repository.
+    
+    Args:
+        platforms_path (str): Path to the platforms repository
+        stash_message (str): Message for the stash
+        
+    Returns:
+        dict: Result information
+        {
+            'success': True/False,
+            'error': 'error_message' (if success=False),
+            'stash_name': 'stash@{0}' (if success=True)
+        }
+    """
+    if not os.path.exists(os.path.join(platforms_path, '.git')):
+        logger.warning(f"Not a git repository: {platforms_path}")
+        return {'success': False, 'error': 'Not a git repository'}
+    
+    try:
+        # Check if there are any changes to stash
+        status_cmd = ['git', '-C', platforms_path, 'status', '--porcelain']
+        status_result = subprocess.run(status_cmd, check=True, capture_output=True, text=True)
+        
+        if not status_result.stdout.strip():
+            logger.info("No changes to stash")
+            return {'success': False, 'error': 'No changes to stash'}
+        
+        # Stash changes (including untracked files)
+        stash_cmd = ['git', '-C', platforms_path, 'stash', 'push', '-u', '-m', stash_message]
+        stash_result = subprocess.run(stash_cmd, check=True, capture_output=True, text=True)
+        logger.info(f"Successfully stashed changes with message: {stash_message}")
+        
+        # Get the stash name (should be stash@{0} after creation)
+        stash_list_cmd = ['git', '-C', platforms_path, 'stash', 'list', '--oneline', '-1']
+        stash_list_result = subprocess.run(stash_list_cmd, check=True, capture_output=True, text=True)
+        stash_name = stash_list_result.stdout.split(':')[0].strip() if stash_list_result.stdout else 'stash@{0}'
+        
+        return {
+            'success': True,
+            'stash_name': stash_name
+        }
+        
+    except subprocess.CalledProcessError as e:
+        error_msg = f"Failed to stash changes: {e.stderr if e.stderr else str(e)}"
+        logger.error(error_msg)
+        return {'success': False, 'error': error_msg}
+    except Exception as e:
+        error_msg = f"Unexpected error during stash: {e}"
+        logger.error(error_msg)
+        return {'success': False, 'error': error_msg}
+
+
+def apply_latest_stash(platforms_path, pop=True):
+    """
+    Apply (pop) the latest stash in the platforms repository.
+    
+    Args:
+        platforms_path (str): Path to the platforms repository
+        pop (bool): If True, removes the stash after applying (git stash pop)
+                   If False, keeps the stash (git stash apply)
+        
+    Returns:
+        dict: Result information
+        {
+            'success': True/False,
+            'error': 'error_message' (if success=False),
+            'stash_applied': 'stash@{0}' (if success=True),
+            'conflicts': True/False (if conflicts occurred during apply)
+        }
+    """
+    if not os.path.exists(os.path.join(platforms_path, '.git')):
+        logger.warning(f"Not a git repository: {platforms_path}")
+        return {'success': False, 'error': 'Not a git repository'}
+    
+    try:
+        # Check if there are any stashes
+        stash_list_cmd = ['git', '-C', platforms_path, 'stash', 'list']
+        stash_list_result = subprocess.run(stash_list_cmd, check=True, capture_output=True, text=True)
+        
+        if not stash_list_result.stdout.strip():
+            logger.info("No stashes to apply")
+            return {'success': False, 'error': 'No stashes available'}
+        
+        # Get the latest stash name
+        latest_stash = stash_list_result.stdout.split('\n')[0].split(':')[0]
+        
+        # Apply or pop the stash
+        stash_command = 'pop' if pop else 'apply'
+        apply_cmd = ['git', '-C', platforms_path, 'stash', stash_command]
+        apply_result = subprocess.run(apply_cmd, capture_output=True, text=True)
+        
+        # Check if there were conflicts
+        conflicts = apply_result.returncode != 0
+        
+        if conflicts:
+            # Stash application had conflicts, but this might be acceptable
+            logger.warning(f"Stash application had conflicts: {apply_result.stderr}")
+            return {
+                'success': True,  # We still consider this a success, just with conflicts
+                'stash_applied': latest_stash,
+                'conflicts': True,
+                'error': f"Applied with conflicts: {apply_result.stderr}"
+            }
+        else:
+            logger.info(f"Successfully applied stash: {latest_stash}")
+            return {
+                'success': True,
+                'stash_applied': latest_stash,
+                'conflicts': False
+            }
+        
+    except subprocess.CalledProcessError as e:
+        error_msg = f"Failed to apply stash: {e.stderr if e.stderr else str(e)}"
+        logger.error(error_msg)
+        return {'success': False, 'error': error_msg}
+    except Exception as e:
+        error_msg = f"Unexpected error applying stash: {e}"
+        logger.error(error_msg)
+        return {'success': False, 'error': error_msg}
+
+ 
+def discard_changes(platforms_path):
+    """
+    Discard all uncommitted changes in the platforms repository.
+    This includes both staged and unstaged changes, and removes untracked files.
+    
+    Args:
+        platforms_path (str): Path to the platforms repository
+        pop (bool): Whether to pop the latest stash (default: True)
+        
+    Returns:
+        dict: Result information
+        {
+            'success': True/False,
+            'error': 'error_message' (if success=False),
+            'discarded_files': ['file1.py', 'file2.json'] (if success=True)
+        }
+    """
+    if not os.path.exists(os.path.join(platforms_path, '.git')):
+        logger.warning(f"Not a git repository: {platforms_path}")
+        return {'success': False, 'error': 'Not a git repository'}
+    
+    try:
+        # First, get list of changed files for reporting
+        status_cmd = ['git', '-C', platforms_path, 'status', '--porcelain']
+        status_result = subprocess.run(status_cmd, check=True, capture_output=True, text=True)
+        
+        changed_files = []
+        if status_result.stdout.strip():
+            for line in status_result.stdout.split('\n'):
+                if line.strip():
+                    # Extract filename from git status output (format: "XY filename")
+                    filename = line[3:].strip()
+                    changed_files.append(filename)
+        
+        if not changed_files:
+            logger.info("No changes to discard")
+            return {'success': False, 'error': 'No changes to discard'}
+        
+        # Reset all staged changes
+        reset_cmd = ['git', '-C', platforms_path, 'reset', '--hard', 'HEAD']
+        subprocess.run(reset_cmd, check=True, capture_output=True, text=True)
+        logger.info("Reset staged and unstaged changes")
+        
+        # Clean untracked files and directories
+        clean_cmd = ['git', '-C', platforms_path, 'clean', '-fd']
+        subprocess.run(clean_cmd, check=True, capture_output=True, text=True)
+        logger.info("Cleaned untracked files and directories")
+        
+        logger.info(f"Successfully discarded all changes: {', '.join(changed_files)}")
+        
+        return {
+            'success': True,
+            'discarded_files': changed_files
+        }
+        
+    except subprocess.CalledProcessError as e:
+        error_msg = f"Failed to discard changes: {e.stderr if e.stderr else str(e)}"
+        logger.error(error_msg)
+        return {'success': False, 'error': error_msg}
+    except Exception as e:
+        error_msg = f"Unexpected error during discard: {e}"
+        logger.error(error_msg)
+        return {'success': False, 'error': error_msg}
+    
+
+def list_stashes(platforms_path):
+    """
+    List all stashes in the platforms repository.
+    
+    Args:
+        platforms_path (str): Path to the platforms repository
+        
+    Returns:
+        dict: Result with list of stashes or error
+        {
+            'success': True/False,
+            'error': 'error_message' (if success=False),
+            'stashes': [{'name': 'stash@{0}', 'message': 'WIP: ...', 'date': '...'}]
+        }
+    """
+    if not os.path.exists(os.path.join(platforms_path, '.git')):
+        logger.warning(f"Not a git repository: {platforms_path}")
+        return {'success': False, 'error': 'Not a git repository'}
+    
+    try:
+        # Get stash list with format: stash@{0}: message
+        stash_cmd = ['git', '-C', platforms_path, 'stash', 'list', '--pretty=format:%gd: %gs (%cr)']
+        stash_result = subprocess.run(stash_cmd, check=True, capture_output=True, text=True)
+        
+        stashes = []
+        if stash_result.stdout.strip():
+            for line in stash_result.stdout.split('\n'):
+                if line.strip():
+                    parts = line.split(': ', 2)
+                    if len(parts) >= 2:
+                        stashes.append({
+                            'name': parts[0],
+                            'message': parts[1] if len(parts) == 2 else parts[1],
+                            'date': parts[2] if len(parts) == 3 else ''
+                        })
+        
+        return {
+            'success': True,
+            'stashes': stashes
+        }
+        
+    except subprocess.CalledProcessError as e:
+        error_msg = f"Failed to list stashes: {e.stderr if e.stderr else str(e)}"
+        logger.error(error_msg)
+        return {'success': False, 'error': error_msg}
+    except Exception as e:
+        error_msg = f"Unexpected error listing stashes: {e}"
+        logger.error(error_msg)
+        return {'success': False, 'error': error_msg}
+
+
+def switch_repository_branch(platforms_path, branch_name, create_if_not_exists=False, handle_changes='fail', auto_apply_stash=True):
     """
     Switch to a specific branch in the platforms repository.
     
@@ -235,18 +474,63 @@ def switch_repository_branch(platforms_path, branch_name, create_if_not_exists=F
         platforms_path (str): Path to the platforms repository
         branch_name (str): Name of the branch to switch to
         create_if_not_exists (bool): Create branch if it doesn't exist locally
+        handle_changes (str): How to handle uncommitted changes: 'fail', 'stash', 'commit'
+        auto_apply_stash (bool): Whether to automatically apply the latest stash after switching
         
     Returns:
-        bool: True if switch was successful, False otherwise
+        dict: Result information with success status and details
+        {
+            'success': True/False,
+            'error': 'error_message' (if success=False),
+            'has_changes': True/False,
+            'changes_handled': 'stashed'/'committed'/None,
+            'stash_created': 'stash_name' (if stashed),
+            'stash_applied': 'stash_name' (if stash was applied),
+            'stash_restored': True/False
+        }
     """
     if not os.path.exists(os.path.join(platforms_path, '.git')):
         logger.warning(f"Not a git repository: {platforms_path}")
-        return False
+        return {'success': False, 'error': 'Not a git repository'}
     
     try:
         # First, fetch latest information
         fetch_cmd = ['git', '-C', platforms_path, 'fetch', '--all']
         subprocess.run(fetch_cmd, check=True, capture_output=True, text=True)
+        
+        # Check if local changes need to be handled
+        local_changes_cmd = ['git', '-C', platforms_path, 'status', '--porcelain']
+        local_changes_result = subprocess.run(local_changes_cmd, capture_output=True, text=True)
+        has_local_changes = bool(local_changes_result.stdout.strip())
+        
+        result = {
+            'success': False,
+            'has_changes': has_local_changes,
+            'changes_handled': None,
+            'stash_created': None,
+            'stash_applied': None,
+            'stash_restored': False
+        }
+        
+        if has_local_changes:
+            if handle_changes == 'fail':
+                logger.warning(f"Local changes detected in {platforms_path}. Please commit or stash them before switching branches.")
+                result['error'] = 'Local changes detected. Please choose how to handle them.'
+                return result
+            elif handle_changes == 'stash':
+                # Stash the changes
+                stash_result = stash_changes(platforms_path, f"Auto-stash before switching to {branch_name}")
+                if not stash_result['success']:
+                    result['error'] = f"Failed to stash changes: {stash_result.get('error', 'Unknown error')}"
+                    return result
+                result['changes_handled'] = 'stashed'
+                result['stash_created'] = stash_result.get('stash_name')
+                logger.info(f"Stashed changes before switching to {branch_name}")
+            elif handle_changes == 'commit':
+                # Commit the changes (this would require a commit message)
+                result['error'] = 'Commit option requires explicit commit message handling'
+                return result
+
         
         # Check if branch exists locally
         local_check_cmd = ['git', '-C', platforms_path, 'branch', '--list', branch_name]
@@ -278,7 +562,8 @@ def switch_repository_branch(platforms_path, branch_name, create_if_not_exists=F
             
         else:
             logger.error(f"Branch '{branch_name}' not found locally or remotely")
-            return False
+            result['error'] = f"Branch '{branch_name}' not found locally or remotely"
+            return result
         
         # Pull latest changes if switching to an existing branch
         if branch_exists_locally or branch_exists_remotely:
@@ -290,14 +575,31 @@ def switch_repository_branch(platforms_path, branch_name, create_if_not_exists=F
                 # Pull might fail if there's no upstream, that's okay
                 logger.debug(f"Could not pull for branch {branch_name} (no upstream configured)")
         
-        return True
+        
+        result['success'] = True
+        
+        # Auto-apply latest stash if requested and available
+        if auto_apply_stash:
+            stash_result = apply_latest_stash(platforms_path, pop=True)
+            if stash_result['success']:
+                result['stash_applied'] = stash_result['stash_applied']
+                result['stash_restored'] = True
+                logger.info(f"Automatically restored stash: {stash_result['stash_applied']} after switching to {branch_name}")
+            elif stash_result['had_stashes']:
+                # There were stashes but failed to apply - log warning but don't fail the switch
+                logger.warning(f"Could not apply stash after switching to {branch_name}: {stash_result.get('error', 'Unknown error')}")
+            # If no stashes, that's fine - no action needed
+        
+        return result
         
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to switch branch: {e.stderr if e.stderr else str(e)}")
-        return False
+        result['error'] = f"Failed to switch branch: {e.stderr if e.stderr else str(e)}"
+        return result
     except Exception as e:
         logger.error(f"Unexpected error switching branch: {e}")
-        return False
+        result['error'] = f"Unexpected error switching branch: {e}"
+        return result
 
 
 def get_current_branch_info(platforms_path):
@@ -382,3 +684,129 @@ def get_current_branch_info(platforms_path):
     except Exception as e:
         logger.error(f"Unexpected error getting branch info: {e}")
         return None
+
+
+def commit_changes(platforms_path, commit_message="Update platform configurations"):
+    """
+    Commit all changes in the platforms repository.
+    
+    Args:
+        platforms_path (str): Path to the platforms repository
+        commit_message (str): Commit message to use
+        
+    Returns:
+        dict: Result information with commit hash, or error
+        {
+            'success': True,
+            'commit_hash': 'abc123...',
+            'message': 'Commit message',
+            'branch_info': {...}
+        }
+    """
+    if not os.path.exists(os.path.join(platforms_path, '.git')):
+        logger.warning(f"Not a git repository: {platforms_path}")
+        return {'success': False, 'error': 'Not a git repository'}
+    
+    try:
+        # Check if there are any changes to commit
+        status_cmd = ['git', '-C', platforms_path, 'status', '--porcelain']
+        status_result = subprocess.run(status_cmd, check=True, capture_output=True, text=True)
+        
+        if not status_result.stdout.strip():
+            logger.info("No changes to commit")
+            return {'success': False, 'error': 'No changes to commit'}
+        
+        # Add all changes
+        add_cmd = ['git', '-C', platforms_path, 'add', '.']
+        subprocess.run(add_cmd, check=True, capture_output=True, text=True)
+        logger.info("Staged all changes for commit")
+        
+        # Commit changes
+        commit_cmd = ['git', '-C', platforms_path, 'commit', '-m', commit_message]
+        commit_result = subprocess.run(commit_cmd, check=True, capture_output=True, text=True)
+        logger.info(f"Successfully committed changes: {commit_message}")
+        
+        # Get the new commit hash
+        hash_cmd = ['git', '-C', platforms_path, 'rev-parse', '--short', 'HEAD']
+        hash_result = subprocess.run(hash_cmd, check=True, capture_output=True, text=True)
+        commit_hash = hash_result.stdout.strip()
+        
+        # Get updated branch info
+        branch_info = get_current_branch_info(platforms_path)
+        
+        return {
+            'success': True,
+            'commit_hash': commit_hash,
+            'message': commit_message,
+            'branch_info': branch_info
+        }
+        
+    except subprocess.CalledProcessError as e:
+        error_msg = f"Failed to commit changes: {e.stderr if e.stderr else str(e)}"
+        logger.error(error_msg)
+        return {'success': False, 'error': error_msg}
+    except Exception as e:
+        error_msg = f"Unexpected error during commit: {e}"
+        logger.error(error_msg)
+        return {'success': False, 'error': error_msg}
+
+
+def push_changes(platforms_path):
+    """
+    Push committed changes to the remote repository.
+    
+    Args:
+        platforms_path (str): Path to the platforms repository
+        
+    Returns:
+        dict: Result information, or error
+        {
+            'success': True,
+            'remote': 'origin',
+            'branch': 'main',
+            'branch_info': {...}
+        }
+    """
+    if not os.path.exists(os.path.join(platforms_path, '.git')):
+        logger.warning(f"Not a git repository: {platforms_path}")
+        return {'success': False, 'error': 'Not a git repository'}
+    
+    try:
+        # Get current branch
+        branch_cmd = ['git', '-C', platforms_path, 'branch', '--show-current']
+        branch_result = subprocess.run(branch_cmd, check=True, capture_output=True, text=True)
+        current_branch = branch_result.stdout.strip()
+        
+        # Check if there are any commits to push
+        ahead_cmd = ['git', '-C', platforms_path, 'rev-list', '--count', f'origin/{current_branch}..HEAD']
+        ahead_result = subprocess.run(ahead_cmd, capture_output=True, text=True)
+        
+        if ahead_result.returncode == 0:
+            ahead_count = int(ahead_result.stdout.strip())
+            if ahead_count == 0:
+                logger.info("No commits to push")
+                return {'success': False, 'error': 'No commits to push'}
+        
+        # Push changes to origin
+        push_cmd = ['git', '-C', platforms_path, 'push', 'origin', current_branch]
+        push_result = subprocess.run(push_cmd, check=True, capture_output=True, text=True)
+        logger.info(f"Successfully pushed changes to origin/{current_branch}")
+        
+        # Get updated branch info
+        branch_info = get_current_branch_info(platforms_path)
+        
+        return {
+            'success': True,
+            'remote': 'origin',
+            'branch': current_branch,
+            'branch_info': branch_info
+        }
+        
+    except subprocess.CalledProcessError as e:
+        error_msg = f"Failed to push changes: {e.stderr if e.stderr else str(e)}"
+        logger.error(error_msg)
+        return {'success': False, 'error': error_msg}
+    except Exception as e:
+        error_msg = f"Unexpected error during push: {e}"
+        logger.error(error_msg)
+        return {'success': False, 'error': error_msg}

@@ -56,53 +56,103 @@
                 <!-- Platform Repository Information -->
                 <div class="row mb-4">
                     <div class="col-md-6">
-                        <div class="card">
+                        <div class="card platform-info-card">
                             <div class="card-header d-flex justify-content-between align-items-center">
-                                <span><i class="fas fa-code-branch"></i> Platform Repository Info</span>
-                                <button class="btn btn-sm btn-outline-light" id="refreshBranches" title="Refresh branch list">
-                                    <i class="fas fa-sync-alt"></i>
-                                </button>
+                                <div class="text-nowrap">
+                                    <i class="fas fa-code-branch"></i> 
+                                    <span>Platform Repository Info</span>
+                                    <div id="branchBadge">
+                                        {% if current_branch_info %}
+                                            {% if current_branch_info.behind > 0 %}
+                                                <span class="badge badge-info">{{ current_branch_info.behind }} commits behind</span>
+                                            {% endif %}
+                                            {% if current_branch_info.ahead > 0 %}
+                                                <span class="badge badge-info">{{ current_branch_info.ahead }} commits ahead</span>
+                                            {% endif %}
+                                            {% if not current_branch_info.clean %}
+                                                <span class="badge badge-warning">Unstaged changes</span>
+                                            {% endif %}
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                <div class="btn-group" role="group">
+                                    <button class="btn btn-sm btn-outline-success" id="gitCommit" title="Commit changes">
+                                        <i class="fas fa-check"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-primary" id="gitPush" title="Push to remote">
+                                        <i class="fas fa-upload"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-danger" id="discardChanges" title="Discard all uncommitted changes">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-secondary" id="refreshBranches" title="Refresh branch list">
+                                        <i class="fas fa-sync-alt"></i>
+                                    </button>
+                                </div>
                             </div>
                             <div class="card-body">
-                                <p><strong>Path:</strong> <code>{{ platforms_path }}</code></p>
-                                
+                                <!-- Path information -->
+                                <div class="row">
+                                    <div class="col-4">
+                                        <p><strong>Path:</strong> </p>
+                                    </div>
+                                    <div class="col-8">
+                                        <code>{{ platforms_path }}</code>
+                                    </div>
+                                </div>
+
                                 <!-- Interactive Branch Selector -->
-                                <div class="form-group">
-                                    <label for="branchSelector"><strong>Git Branch:</strong></label>
-                                    <div class="input-group">
-                                        <select class="form-control" id="branchSelector">
-                                            {% if branches_info and branches_info.current %}
-                                                <option value="{{ branches_info.current }}" selected>{{ branches_info.current }} (current)</option>
-                                            {% else %}
-                                                <option value="{{ git_branch }}" selected>{{ git_branch }} (current)</option>
-                                            {% endif %}
-                                        </select>
-                                        <div class="input-group-append">
-                                            <button class="btn btn-primary" type="button" id="switchBranch" disabled>
-                                                <i class="fas fa-exchange-alt"></i> Switch
-                                            </button>
+                                <div class="row">
+                                    <div class="col-4">
+                                        <p class="mb-1"><strong>Current Branch:</strong></p>
+                                        <small class="form-text text-muted" style="line-height: 1.2;">Select a branch to switch platform configurations</small>
+                                    </div>
+                                    <div class="col-8">
+                                        <div class="form-group"> 
+                                            <div class="input-group">
+                                                <select class="form-control form-control-sm" id="branchSelector" style="font-size: 1rem;">
+                                                    {% if branches_info and branches_info.current %}
+                                                        <option value="{{ branches_info.current }}" selected>{{ branches_info.current }} (current)</option>
+                                                    {% else %}
+                                                        <option value="{{ git_branch }}" selected>{{ git_branch }} (current)</option>
+                                                    {% endif %}
+                                                </select>
+                                                <div class="input-group-append">
+                                                    <button class="btn btn-outline-primary btn-sm" type="button" id="switchBranch" disabled style="font-size: 0.875rem;">
+                                                        <i class="fas fa-exchange-alt"></i> Switch
+                                                    </button>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
-                                    <small class="form-text text-muted">Select a branch to switch platform configurations</small>
                                 </div>
                                 
                                 <!-- Branch Status -->
                                 <div id="branchStatus">
-                                    {% if current_branch_info %}
-                                        <p><strong>Commit:</strong> <code>{{ current_branch_info.commit }}</code></p>
-                                        <p><strong>Message:</strong> <span class="text-muted">{{ current_branch_info.commit_message }}</span></p>
-                                        {% if current_branch_info.behind > 0 %}
-                                            <p><span class="badge badge-warning">{{ current_branch_info.behind }} commits behind</span></p>
-                                        {% endif %}
-                                        {% if current_branch_info.ahead > 0 %}
-                                            <p><span class="badge badge-info">{{ current_branch_info.ahead }} commits ahead</span></p>
-                                        {% endif %}
-                                        {% if not current_branch_info.clean %}
-                                            <p><span class="badge badge-warning">Working directory has changes</span></p>
-                                        {% endif %}
-                                    {% else %}
-                                        <p><strong>Commit:</strong> <code>{{ git_commit }}</code></p>
-                                    {% endif %}
+                                    <div class="row">    
+                                        <div class="col-4">
+                                            <p><strong>Commit:</strong></p>
+                                        </div>
+                                        <div class="col-8">
+                                            {% if current_branch_info %}
+                                                <p><code>{{ current_branch_info.commit }}</code></p>
+                                            {% else %}
+                                                <p><code>{{ git_commit }}</code></p>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-4">
+                                            <p><strong>Message:</strong></p>
+                                        </div>
+                                        <div class="col-8">
+                                            {% if current_branch_info %}
+                                                <p><small class="text-muted">{{ current_branch_info.commit_message }}</small></p>
+                                            {% else %}
+                                                <p><code>No branch info available.</code></p>
+                                            {% endif %}
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -135,7 +185,7 @@
                                     {% if qpu.status == 'online' %}
                                         <span class="badge badge-success">{{ qpu.status }}</span>
                                     {% elif qpu.status == 'running' %}
-                                        <span class="badge badge-warning">{{ qpu.status }}</span>
+                                        <span class="badge badge-success">{{ qpu.status }}</span>
                                     {% else %}
                                         <span class="badge badge-danger">{{ qpu.status }}</span>
                                     {% endif %}
@@ -221,66 +271,8 @@
 
     // Topology visualization functionality
     $(document).ready(function() {
-        $('.topology-link').click(function(e) {
-            e.preventDefault();
-            
-            const qpuName = $(this).data('qpu');
-            const topologyType = $(this).data('topology');
-            
-            // Reset modal state
-            $('#topologyLoading').show();
-            $('#topologyContent').hide();
-            $('#topologyError').hide();
-            $('#topologyModalLabel').text(`${qpuName} - Topology Visualization`);
-            
-            // Show modal
-            $('#topologyModal').modal('show');
-            
-            // Fetch topology visualization
-            fetch(`/api/qpu_topology/${qpuName}`)
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    // Hide loading indicator
-                    $('#topologyLoading').hide();
-                    
-                    // Populate topology info
-                    $('#topologyInfo').html(`
-                        <div class="row">
-                            <div class="col-md-4">
-                                <strong>Topology Type:</strong> ${data.topology_type.charAt(0).toUpperCase() + data.topology_type.slice(1)}
-                            </div>
-                            <div class="col-md-4">
-                                <strong>Qubits:</strong> ${data.num_qubits}
-                            </div>
-                            <div class="col-md-4">
-                                <strong>Connections:</strong> ${data.num_connections}
-                            </div>
-                        </div>
-                    `);
-                    
-                    // Set image source
-                    $('#topologyImage').attr('src', `data:image/png;base64,${data.image}`);
-                    $('#topologyImage').attr('alt', `${qpuName} ${data.topology_type} topology`);
-                    
-                    // Show content
-                    $('#topologyContent').show();
-                })
-                .catch(error => {
-                    console.error('Error fetching topology:', error);
-                    
-                    // Hide loading indicator
-                    $('#topologyLoading').hide();
-                    
-                    // Show error message
-                    $('#errorMessage').text(error.message || 'Failed to load topology visualization.');
-                    $('#topologyError').show();
-                });
-        });
+        // Initialize topology click handlers
+        attachTopologyHandlers();
         
         // Reset modal on close
         $('#topologyModal').on('hidden.bs.modal', function () {
@@ -373,49 +365,35 @@
             // Hide previous alerts
             $('#switchAlert').hide();
             
-            // Perform the switch
+            // First try to switch without handling changes (to detect if there are changes)
+            performBranchSwitch(selectedBranch, 'fail', button, originalText);
+        });
+
+        function performBranchSwitch(branchName, handleChanges, button, originalText) {
             fetch('/api/platforms/switch', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    branch: selectedBranch
+                    branch: branchName,
+                    handle_changes: handleChanges
                 })
             })
             .then(response => response.json())
             .then(data => {
                 if (data.error) {
+                    // Check if the error is due to uncommitted changes
+                    if (data.has_changes && handleChanges === 'fail') {
+                        // Show changes modal
+                        showChangesModal(branchName, button, originalText);
+                        return;
+                    }
                     throw new Error(data.error);
                 }
                 
-                // Update current branch
-                currentBranch = selectedBranch;
-                
-                // Show success message
-                $('#switchAlert')
-                    .removeClass('alert-danger')
-                    .addClass('alert-success')
-                    .html(`<i class="fas fa-check-circle"></i> Successfully switched to branch: <strong>${selectedBranch}</strong>`)
-                    .show();
-                
-                // Update branch status information
-                if (data.branch_info) {
-                    updateBranchStatus(data.branch_info);
-                }
-                
-                // Update QPU table if QPUs changed
-                if (data.qpus) {
-                    updateQPUTable(data.qpus);
-                }
-                
-                // Refresh branch selector
-                populateBranchSelector();
-                
-                // Auto-hide success message after 5 seconds
-                setTimeout(() => {
-                    $('#switchAlert').fadeOut();
-                }, 5000);
+                // Success - update UI
+                handleSuccessfulBranchSwitch(data, branchName, button, originalText);
             })
             .catch(error => {
                 console.error('Error switching branch:', error);
@@ -426,34 +404,167 @@
                     .addClass('alert-danger')
                     .html(`<i class="fas fa-exclamation-triangle"></i> Error switching branch: ${error.message}`)
                     .show();
-            })
-            .finally(() => {
+                
                 // Reset button
                 button.prop('disabled', true);
                 button.html('<i class="fas fa-exchange-alt"></i> Switch');
             });
-        });
+        }
 
-        // Update branch status display
+        function showChangesModal(branchName, button, originalText) {
+            // Reset button first
+            button.prop('disabled', true);
+            button.html('<i class="fas fa-exchange-alt"></i> Switch');
+
+            // Create and show modal
+            const modalHtml = `
+                <div class="modal fade" id="changesModal" tabindex="-1" role="dialog" aria-labelledby="changesModalLabel" aria-hidden="true">
+                    <div class="modal-dialog" role="document">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="changesModalLabel">
+                                    <i class="fas fa-exclamation-triangle text-warning"></i> 
+                                    Uncommitted Changes Detected
+                                </h5>
+                                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                                    <span aria-hidden="true">&times;</span>
+                                </button>
+                            </div>
+                            <div class="modal-body">
+                                <p>You have uncommitted changes in your working directory. Before switching to branch <strong>${branchName}</strong>, you need to handle these changes.</p>
+                                <p>What would you like to do?</p>
+                                <div class="alert alert-info">
+                                    <strong>Stash:</strong> Temporarily save your changes so you can restore them later.<br>
+                                    <strong>Cancel:</strong> Keep your changes and stay on the current branch.
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-dismiss="modal">
+                                    <i class="fas fa-times"></i> Cancel
+                                </button>
+                                <button type="button" class="btn btn-outline-warning" id="stashAndSwitch">
+                                    <i class="fas fa-archive"></i> Stash Changes & Switch
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Remove existing modal if any
+            $('#changesModal').remove();
+            
+            // Add modal to body
+            $('body').append(modalHtml);
+            
+            // Show modal
+            $('#changesModal').modal('show');
+            
+            // Handle stash and switch
+            $('#stashAndSwitch').on('click', function() {
+                const stashButton = $(this);
+                const originalStashText = stashButton.html();
+                
+                stashButton.html('<i class="fas fa-spinner fa-spin"></i> Stashing...');
+                stashButton.prop('disabled', true);
+                
+                // Close modal
+                $('#changesModal').modal('hide');
+                
+                // Perform switch with stash
+                button.prop('disabled', true);
+                button.html('<i class="fas fa-spinner fa-spin"></i> Switching...');
+                performBranchSwitch(branchName, 'stash', button, originalText);
+            });
+            
+            // Clean up modal on close
+            $('#changesModal').on('hidden.bs.modal', function () {
+                $(this).remove();
+            });
+        }
+
+        function handleSuccessfulBranchSwitch(data, branchName, button, originalText) {
+            // Update current branch
+            currentBranch = branchName;
+            
+            // Build success message
+            let successMessage = `<i class="fas fa-check-circle"></i> Successfully switched to branch: <strong>${branchName}</strong>`;
+            
+            // Add stash information
+            if (data.changes_handled === 'stashed') {
+                successMessage += `<br><small class="text-muted"><i class="fas fa-archive"></i> Changes were stashed as: ${data.stash_created}</small>`;
+            }
+            
+            if (data.stash_restored) {
+                successMessage += `<br><small class="text-success"><i class="fas fa-undo"></i> Automatically restored previous work from: ${data.stash_applied}</small>`;
+            }
+            
+            $('#switchAlert')
+                .removeClass('alert-danger')
+                .addClass('alert-success')
+                .html(successMessage)
+                .show();
+            
+            // Update branch status information
+            if (data.branch_info) {
+                updateBranchStatus(data.branch_info);
+                updateBranchBadge(data.branch_info);
+            }
+            
+            // Update QPU table if QPUs changed
+            if (data.qpus) {
+                updateQPUTable(data.qpus);
+            }
+            
+            // Refresh branch selector
+            populateBranchSelector();
+            
+            // Auto-hide success message after 8 seconds (longer if stash info)
+            const hideDelay = (data.changes_handled || data.stash_restored) ? 8000 : 5000;
+            setTimeout(() => {
+                $('#switchAlert').fadeOut();
+            }, hideDelay);
+            
+            // Reset button
+            button.prop('disabled', true);
+            button.html('<i class="fas fa-exchange-alt"></i> Switch');
+        }
+
+        // Update branch status display (replace the hashed html block '#branchStatus')
         function updateBranchStatus(branchInfo) {
             let statusHtml = `
-                <p><strong>Commit:</strong> <code>${branchInfo.commit}</code></p>
-                <p><strong>Message:</strong> <small class="text-muted">${branchInfo.commit_message}</small></p>
+                <div class="row">    
+                    <div class="col-4">
+                        <p><strong>Commit:</strong></p>
+                    </div>
+                    <div class="col-8">
+                        <p><code>${branchInfo.commit}</code></p>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-4">
+                        <p><strong>Message:</strong></p>
+                    </div>
+                    <div class="col-8">
+                        <small class="text-muted">${branchInfo.commit_message}</small></p>
+                    </div>
+                </div>
             `;
-            
-            if (branchInfo.behind > 0) {
-                statusHtml += `<p><span class="badge badge-warning">${branchInfo.behind} commits behind</span></p>`;
-            }
-            
-            if (branchInfo.ahead > 0) {
-                statusHtml += `<p><span class="badge badge-info">${branchInfo.ahead} commits ahead</span></p>`;
-            }
-            
-            if (!branchInfo.clean) {
-                statusHtml += `<p><span class="badge badge-warning">Working directory has changes</span></p>`;
-            }
-            
             $('#branchStatus').html(statusHtml);
+        }
+
+        function updateBranchBadge(branchInfo) {
+            let medalHtml = '';
+            if (branchInfo.ahead > 0) {
+                medalHtml += `<span class="badge badge-info">${branchInfo.ahead} commits ahead</span>`;
+            }
+            if (branchInfo.behind > 0) {
+                medalHtml += `<span class="badge badge-info">${branchInfo.behind} commits behind</span>`;
+            }
+            if (!branchInfo.clean) {
+                medalHtml += `<span class="badge badge-warning">Unstaged changes</span>`;
+            }
+            $('#branchBadge').html(medalHtml);
         }
 
         // Update QPU table with new data
@@ -462,25 +573,41 @@
             tbody.empty();
             
             qpus.forEach(qpu => {
+                // Determine status badge class
+                let statusClass = 'badge-danger'; // default for offline
+                if (qpu.status === 'online') {
+                    statusClass = 'badge-success';
+                } else if (qpu.status === 'running') {
+                    statusClass = 'badge-success';
+                }
+                
+                // Format topology column
+                let topologyHtml;
+                if (qpu.topology && qpu.topology !== 'N/A' && qpu.topology !== 'unknown') {
+                    topologyHtml = `<a href="#" class="topology-link" data-qpu="${qpu.name}" data-topology="${qpu.topology}">
+                        <span class="badge badge-info">${qpu.topology}</span>
+                    </a>`;
+                } else {
+                    topologyHtml = `<span class="text-muted">${qpu.topology || 'N/A'}</span>`;
+                }
+                
                 const row = `
                     <tr>
                         <td><strong>${qpu.name}</strong></td>
-                        <td>${qpu.qubits}</td>
+                        <td>${qpu.qubits || 'N/A'}</td>
                         <td>
-                            <span class="badge badge-${qpu.status === 'Online' ? 'success' : 'secondary'}">
-                                ${qpu.status}
-                            </span>
+                            <span class="badge ${statusClass}">${qpu.status}</span>
                         </td>
-                        <td>${qpu.queue}</td>
-                        <td>
-                            <button class="btn btn-info btn-sm" onclick="showTopology('${qpu.name}')">
-                                <i class="fas fa-project-diagram"></i> View
-                            </button>
-                        </td>
+                        <td>${qpu.queue || 'N/A'}</td>
+                        <td>${topologyHtml}</td>
+                        <td>${qpu.calibration_time || 'N/A'}</td>
                     </tr>
                 `;
                 tbody.append(row);
             });
+            
+            // Re-attach topology click handlers for the new elements
+            attachTopologyHandlers();
         }
 
         // Refresh branches button
@@ -501,6 +628,321 @@
 
         // Load branches on page load
         loadBranches();
+
+        // Git Commit functionality
+        $('#gitCommit').on('click', function() {
+            const button = $(this);
+            const originalHtml = button.html();
+            
+            button.html('<i class="fas fa-spinner fa-spin"></i>');
+            button.prop('disabled', true);
+            
+            // Hide previous alerts
+            $('#switchAlert').hide();
+            
+            fetch('/api/platforms/commit', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    message: 'Update platform configurations (qibolab version detection)'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                // Show success message
+                $('#switchAlert')
+                    .removeClass('alert-danger')
+                    .addClass('alert-success')
+                    .html(`<i class="fas fa-check-circle"></i> Successfully committed changes: <strong>${data.commit_hash}</strong>`)
+                    .show();
+                
+                // Update branch status if provided
+                if (data.branch_info) {
+                    updateBranchStatus(data.branch_info);
+                    updateBranchBadge(data.branch_info);
+                }
+                
+                // Auto-hide success message after 5 seconds
+                setTimeout(() => {
+                    $('#switchAlert').fadeOut();
+                }, 5000);
+            })
+            .catch(error => {
+                console.error('Error committing changes:', error);
+                
+                // Show error message
+                $('#switchAlert')
+                    .removeClass('alert-success')
+                    .addClass('alert-danger')
+                    .html(`<i class="fas fa-exclamation-triangle"></i> Error committing changes: ${error.message}`)
+                    .show();
+            })
+            .finally(() => {
+                // Reset button
+                button.html(originalHtml);
+                button.prop('disabled', false);
+            });
+        });
+
+        // Discard Changes functionality
+        $('#discardChanges').on('click', function() {
+            // Show confirmation modal
+            const modalHtml = `
+                <div class="modal fade" id="discardModal" tabindex="-1" role="dialog" aria-labelledby="discardModalLabel" aria-hidden="true">
+                    <div class="modal-dialog" role="document">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="discardModalLabel">
+                                    <i class="fas fa-exclamation-triangle text-danger"></i> 
+                                    Confirm Discard Changes
+                                </h5>
+                                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                                    <span aria-hidden="true">&times;</span>
+                                </button>
+                            </div>
+                            <div class="modal-body">
+                                <p><strong>Warning:</strong> This action will permanently delete all uncommitted changes in your working directory.</p>
+                                <p>This includes:</p>
+                                <ul>
+                                    <li>Modified files that haven't been committed</li>
+                                    <li>Staged changes that haven't been committed</li>
+                                    <li>New files that haven't been added to git</li>
+                                </ul>
+                                <div class="alert alert-danger">
+                                    <strong>This action cannot be undone!</strong> Make sure you don't need any of these changes.
+                                </div>
+                                <p>Are you sure you want to continue?</p>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-dismiss="modal">
+                                    <i class="fas fa-times"></i> Cancel
+                                </button>
+                                <button type="button" class="btn btn-danger" id="confirmDiscard">
+                                    <i class="fas fa-trash"></i> Yes, Discard All Changes
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Remove existing modal if any
+            $('#discardModal').remove();
+            
+            // Add modal to body
+            $('body').append(modalHtml);
+            
+            // Show modal
+            $('#discardModal').modal('show');
+            
+            // Handle confirmation
+            $('#confirmDiscard').on('click', function() {
+                const confirmButton = $(this);
+                const originalText = confirmButton.html();
+                
+                confirmButton.html('<i class="fas fa-spinner fa-spin"></i> Discarding...');
+                confirmButton.prop('disabled', true);
+                
+                // Close modal
+                $('#discardModal').modal('hide');
+                
+                // Perform discard
+                performDiscardChanges();
+            });
+            
+            // Clean up modal on close
+            $('#discardModal').on('hidden.bs.modal', function () {
+                $(this).remove();
+            });
+        });
+
+        function performDiscardChanges() {
+            // Hide previous alerts
+            $('#switchAlert').hide();
+            
+            fetch('/api/platforms/discard', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                // Show success message
+                const fileCount = data.discarded_files ? data.discarded_files.length : 0;
+                const successMessage = `<i class="fas fa-check-circle"></i> Successfully discarded all uncommitted changes<br><small class="text-muted">Removed ${fileCount} modified file${fileCount !== 1 ? 's' : ''}</small>`;
+                
+                $('#switchAlert')
+                    .removeClass('alert-danger')
+                    .addClass('alert-success')
+                    .html(successMessage)
+                    .show();
+                
+                // Refresh current branch info to reflect clean state
+                updateBranchInfoAfterDiscard();
+                
+                // Auto-hide success message after 5 seconds
+                setTimeout(() => {
+                    $('#switchAlert').fadeOut();
+                }, 5000);
+            })
+            .catch(error => {
+                console.error('Error discarding changes:', error);
+                
+                // Show error message
+                $('#switchAlert')
+                    .removeClass('alert-success')
+                    .addClass('alert-danger')
+                    .html(`<i class="fas fa-exclamation-triangle"></i> Error discarding changes: ${error.message}`)
+                    .show();
+            });
+        }
+
+        function updateBranchInfoAfterDiscard() {
+            // Fetch current branch info to update the display
+            fetch('/api/platforms/current')
+                .then(response => response.json())
+                .then(data => {
+                    if (data && !data.error) {
+                        updateBranchStatus(data);
+                        updateBranchBadge(data);
+                    }
+                })
+                .catch(error => {
+                    console.log('Could not refresh branch info:', error);
+                });
+        }
+
+        // Function to attach topology click handlers (used for dynamically added elements)
+        function attachTopologyHandlers() {
+            $('.topology-link').off('click').on('click', function(e) {
+                e.preventDefault();
+                
+                const qpuName = $(this).data('qpu');
+                const topologyType = $(this).data('topology');
+                
+                // Reset modal state
+                $('#topologyLoading').show();
+                $('#topologyContent').hide();
+                $('#topologyError').hide();
+                $('#topologyModalLabel').text(`${qpuName} - Topology Visualization`);
+                
+                // Show modal
+                $('#topologyModal').modal('show');
+                
+                // Fetch topology visualization
+                fetch(`/api/qpu_topology/${qpuName}`)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        // Hide loading indicator
+                        $('#topologyLoading').hide();
+                        
+                        // Populate topology info
+                        $('#topologyInfo').html(`
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <strong>Topology Type:</strong> ${data.topology_type.charAt(0).toUpperCase() + data.topology_type.slice(1)}
+                                </div>
+                                <div class="col-md-4">
+                                    <strong>Qubits:</strong> ${data.num_qubits}
+                                </div>
+                                <div class="col-md-4">
+                                    <strong>Connections:</strong> ${data.num_connections}
+                                </div>
+                            </div>
+                        `);
+                        
+                        // Set image source
+                        $('#topologyImage').attr('src', `data:image/png;base64,${data.image}`);
+                        $('#topologyImage').attr('alt', `${qpuName} ${data.topology_type} topology`);
+                        
+                        // Show content
+                        $('#topologyContent').show();
+                    })
+                    .catch(error => {
+                        console.error('Error fetching topology:', error);
+                        
+                        // Hide loading indicator
+                        $('#topologyLoading').hide();
+                        
+                        // Show error message
+                        $('#errorMessage').text(error.message || 'Failed to load topology visualization.');
+                        $('#topologyError').show();
+                    });
+            });
+        }
+
+        // Git Push functionality
+        $('#gitPush').on('click', function() {
+            const button = $(this);
+            const originalHtml = button.html();
+            
+            button.html('<i class="fas fa-spinner fa-spin"></i>');
+            button.prop('disabled', true);
+            
+            // Hide previous alerts
+            $('#switchAlert').hide();
+            
+            fetch('/api/platforms/push', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                // Show success message
+                $('#switchAlert')
+                    .removeClass('alert-danger')
+                    .addClass('alert-success')
+                    .html(`<i class="fas fa-check-circle"></i> Successfully pushed to remote: <strong>${data.remote}</strong>`)
+                    .show();
+                
+                // Update branch status if provided
+                if (data.branch_info) {
+                    updateBranchStatus(data.branch_info);
+                }
+                
+                // Auto-hide success message after 5 seconds
+                setTimeout(() => {
+                    $('#switchAlert').fadeOut();
+                }, 5000);
+            })
+            .catch(error => {
+                console.error('Error pushing changes:', error);
+                
+                // Show error message
+                $('#switchAlert')
+                    .removeClass('alert-success')
+                    .addClass('alert-danger')
+                    .html(`<i class="fas fa-exclamation-triangle"></i> Error pushing changes: ${error.message}`)
+                    .show();
+            })
+            .finally(() => {
+                // Reset button
+                button.html(originalHtml);
+                button.prop('disabled', false);
+            });
+        });
     });
     </script>
 </body>

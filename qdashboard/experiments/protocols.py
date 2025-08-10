@@ -11,12 +11,16 @@ import sys
 import os
 import json
 import threading
+import traceback
 from functools import lru_cache
+from qdashboard.utils.logger import get_logger
 
 
 # Global cache for protocols to avoid repeated discovery
 _protocol_cache = None
 _cache_lock = threading.Lock()
+
+logger = get_logger(__name__)
 
 
 def get_qibocal_protocols():
@@ -49,14 +53,17 @@ def get_qibocal_protocols():
                 return protocols
             except Exception as e2:
                 # Approach 3: Return fallback protocols
-                print(f"Error discovering qibocal protocols: {e}")
-                print(f"Subprocess approach also failed: {e2}")
+                logger.warning(f"Error discovering qibocal protocols: {e}")
+                logger.debug(f"Primary error traceback:\n{traceback.format_exc()}")
+                logger.warning(f"Subprocess approach also failed: {e2}")
+                logger.debug(f"Subprocess error traceback:\n{traceback.format_exc()}")
                 protocols = _get_fallback_protocols()
                 with _cache_lock:
                     _protocol_cache = protocols
                 return protocols
         else:
-            print(f"Error discovering qibocal protocols: {e}")
+            logger.warning(f"Error discovering qibocal protocols: {e}")
+            logger.debug(f"Full traceback:\n{traceback.format_exc()}")
             protocols = _get_fallback_protocols()
             with _cache_lock:
                 _protocol_cache = protocols
@@ -127,7 +134,7 @@ def _get_protocols_direct():
                                             
                             except Exception as import_error:
                                 # If we can't import the module, skip it but don't fail completely
-                                print(f"Warning: Could not import {module_path}: {import_error}")
+                                logger.warning(f"Could not import {module_path}: {import_error}")
                                 continue
                                     
                     except Exception:
@@ -137,7 +144,8 @@ def _get_protocols_direct():
         return _categorize_protocols(routine_protocols)
         
     except ImportError as e:
-        print(f"Warning: Could not import qibocal.protocols: {e}")
+        logger.warning(f"Could not import qibocal.protocols: {e}")
+        logger.debug(f"Full traceback:\n{traceback.format_exc()}")
         return _get_fallback_protocols()
 
 
@@ -223,7 +231,8 @@ if __name__ == "__main__":
             raise Exception(f"Subprocess failed: {result.stderr}")
             
     except Exception as e:
-        print(f"Subprocess approach failed: {e}")
+        logger.warning(f"Subprocess approach failed: {e}")
+        logger.debug(f"Full traceback:\n{traceback.format_exc()}")
         return _get_fallback_protocols()
 
 
@@ -312,54 +321,6 @@ def _categorize_protocols(routine_protocols):
     # Remove empty categories
     categorized = {k: v for k, v in categorized.items() if v}
     
-    print(f"Discovered {sum(len(v) for v in categorized.values())} qibocal protocols across {len(categorized)} categories")
+    logger.info(f"Discovered {sum(len(v) for v in categorized.values())} qibocal protocols across {len(categorized)} categories")
     
     return categorized
-
-
-def get_qpu_parameters(platform):
-    """Get available parameters for a specific QPU platform."""
-    try:
-        # Import qibolab to get platform information
-        from qibolab import create_platform
-        
-        # Try to create the platform to get its parameters
-        try:
-            qpu = create_platform(platform)
-            
-            # Extract information about the platform
-            parameters = {
-                'name': platform,
-                'nqubits': len(qpu.qubits) if hasattr(qpu, 'qubits') else 'Unknown',
-                'topology': 'Connected' if hasattr(qpu, 'pairs') and qpu.pairs else 'All-to-all',
-                'gates': []
-            }
-            
-            # Try to get available gates/operations
-            if hasattr(qpu, 'natives') and qpu.natives:
-                for gate_name, gate_info in qpu.natives.items():
-                    if hasattr(gate_info, 'name'):
-                        parameters['gates'].append(gate_info.name)
-                    else:
-                        parameters['gates'].append(str(gate_name))
-            
-            return parameters
-            
-        except Exception as platform_error:
-            print(f"Warning: Could not create platform {platform}: {platform_error}")
-            return {
-                'name': platform,
-                'nqubits': 'Unknown',
-                'topology': 'Unknown',
-                'gates': [],
-                'error': str(platform_error)
-            }
-            
-    except ImportError:
-        return {
-            'name': platform,
-            'nqubits': 'Unknown',
-            'topology': 'Unknown', 
-            'gates': [],
-            'error': 'qibolab not available'
-        }

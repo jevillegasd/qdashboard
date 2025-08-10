@@ -624,6 +624,33 @@ to ensure consistency across all pages.
     text-align: center !important;
 }
 
+/* Platform Information Card Specific Styling */
+.platform-info-card .form-control {
+    font-size: 0.875rem !important;
+    font-family: 'IBM Plex Sans', sans-serif !important;
+}
+
+.platform-info-card .btn {
+    font-size: 0.8rem !important;
+    font-family: 'IBM Plex Sans', sans-serif !important;
+}
+
+.platform-info-card select.form-control {
+    font-size: 0.875rem !important;
+    padding: 0.375rem 0.75rem !important;
+}
+
+.platform-info-card .input-group .btn {
+    font-size: 0.8rem !important;
+    padding: 0.375rem 0.75rem !important;
+}
+
+/* Compact row sizes for platform info card elements */
+.platform-info-card .card-body {
+    margin-bottom: 0.0rem !important;
+}
+
+
 /* Collapsible Category Styles */
 .protocol-category {
     margin-bottom: 15px;
