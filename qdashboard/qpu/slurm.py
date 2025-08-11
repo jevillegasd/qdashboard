@@ -13,7 +13,7 @@ def get_slurm_status():
         current_user = os.environ.get('USER', 'unknown')
         
         # Get squeue output with specific format
-        result = subprocess.check_output(['squeue', '--format=%i %.18j %.8u %.8T %.10M %.9l %.6D %R', '--noheader'], 
+        result = subprocess.check_output(['squeue', '--format=%i %.18j %.8u %.8T %.10M %.9l %.6D %P %R', '--noheader'], 
                                        stderr=subprocess.DEVNULL).decode()
         
         jobs = []
@@ -23,7 +23,7 @@ def get_slurm_status():
                 if len(parts) >= 8:
                     # Create a job object with attributes that match the template expectations
                     class Job:
-                        def __init__(self, job_id, name, user, state, time, time_limit, nodes, nodelist, current_user):
+                        def __init__(self, job_id, name, user, state, time, time_limit, nodes, nodelist, current_user, partition):
                             self.job_id = job_id
                             self.name = name
                             self.user = user
@@ -32,10 +32,13 @@ def get_slurm_status():
                             self.time_limit = time_limit
                             self.nodes = nodes
                             self.nodelist = nodelist
+                            self.partition = partition
                             # Handle username truncation in SLURM output
                             # Check if truncated user matches the beginning of current_user
                             self.is_current_user = (user == current_user or current_user.startswith(user))
                     
+                    if parts[7] == 'sim':
+                        continue # skip simualtion jobs
                     job = Job(
                         job_id=parts[0],
                         name=parts[1],
@@ -44,7 +47,8 @@ def get_slurm_status():
                         time=parts[4],
                         time_limit=parts[5],
                         nodes=parts[6],
-                        nodelist=' '.join(parts[7:]),  # Join remaining parts for node list
+                        partition=parts[7],  # Partition is the 8th part
+                        nodelist=' '.join(parts[8:]),  # Join remaining parts for node list
                         current_user=current_user
                     )
                     jobs.append(job)

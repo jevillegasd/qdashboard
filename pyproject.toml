@@ -53,9 +53,10 @@ dependencies = [
 # Quantum computing dependencies (optional but recommended)
 quantum = [
     "qibo>=0.2.0",
-    "qibolab>=0.1.0",
-    "qibocal>=0.0.1"
+    "qibolab>=0.2.8",
+    "qibocal>=0.2.3"
 ]
+
 # Development dependencies
 dev = [
     "pytest>=7.0.0",
