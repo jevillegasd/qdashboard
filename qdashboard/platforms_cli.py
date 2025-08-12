@@ -15,6 +15,8 @@ from qdashboard.qpu.platforms import (
     QIBOLAB_PLATFORMS_REPO
 )
 
+from qdashboard.utils.logger import get_logger
+logger = get_logger(__name__)
 
 def cmd_setup(args):
     """Set up the platforms directory."""
