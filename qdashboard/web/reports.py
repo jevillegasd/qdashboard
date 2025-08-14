@@ -4,11 +4,24 @@ Report viewing and processing utilities.
 
 import os
 import re
+import subprocess
 from flask import make_response, render_template, send_file
 from ..qpu.monitoring import get_qibo_versions
+
+
+def check_qibocal_availability():
+    """Check if qibocal CLI is available."""
+    try:
+        result = subprocess.run(['qq', '--help'], 
+                              capture_output=True, 
+                              text=True, 
+                              timeout=5)
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
+        return False
  
 
-def report_viewer(report_path, root_path, qibo_versions=None):
+def report_viewer(report_path, root_path, qibo_versions=None, access_mode="latest"):
     """
     Generate report viewer with proper asset handling.
     
@@ -22,6 +35,7 @@ def report_viewer(report_path, root_path, qibo_versions=None):
         report_path (str): Path to the report directory
         root_path (str): Root path for asset resolution
         qibo_versions (dict): Pre-fetched qibo versions (optional)
+        access_mode (str): How the report was accessed ("latest" or "file_browser")
         
     Returns:
         Flask Response: Rendered report page
@@ -62,6 +76,9 @@ def report_viewer(report_path, root_path, qibo_versions=None):
     # Prepare the report path for the file browser link (remove root prefix and ensure it starts with /)
     report_path_for_link = report_path.replace(root_path, "").lstrip("/")
 
+    # Check qibocal availability
+    qibocal_available = check_qibocal_availability()
+
     # Render the template with all variables in a single call
     if qibo_versions is None:
         qibo_versions = get_qibo_versions()
@@ -69,7 +86,9 @@ def report_viewer(report_path, root_path, qibo_versions=None):
                                              qibo_versions=qibo_versions,
                                              report_head_content=head_content,
                                              report_body_content=report_viewer_body,
-                                             report_path_for_link=report_path_for_link)
+                                             report_path_for_link=report_path_for_link,
+                                             access_mode=access_mode,
+                                             qibocal_available=qibocal_available)
 
     res = make_response(report_viewer_template, 200)
     return res

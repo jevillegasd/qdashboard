@@ -15,6 +15,7 @@ from ..experiments.protocols import get_qibocal_protocols
 from ..web.reports import report_viewer, get_latest_report_path
 from ..utils.formatters import yaml_response, json_response
 from qdashboard.utils.logger import get_logger
+from packaging.version import parse as parse_version
 
 logger = get_logger(__name__)
 
@@ -84,7 +85,7 @@ def register_routes(app, config):
             # Set last_path for file browser link
             last_path = config.get('home_path', '/home')
             
-            logger.warning(f"Latest report not found, using default path: {last_path}")
+            logger.warning(f"Last report not found, using default path: {last_path}")
             response = make_response(render_template('latest_not_found.html',
                                    has_error=has_error,
                                    error_message=error_message,
@@ -104,7 +105,7 @@ def register_routes(app, config):
             return response
         
         try:
-            res = report_viewer(last_path, config['root'], version_data['versions'])
+            res = report_viewer(last_path, config['root'], version_data['versions'], access_mode="latest")
             logger.info(f"Latest report viewed: {last_path}")
         except FileNotFoundError:
             # Get SLURM information for the not found page
@@ -443,12 +444,16 @@ def register_routes(app, config):
         qpus = get_qpu_list()
         version_data = get_qibo_versions(request=request)
         
+        qibolab_version = version_data['versions'].get('qibolab', '0.0.0')
+        is_new_qibolab = parse_version(qibolab_version) > parse_version('0.2.0')
+
         logger.info("Experiment builder page loaded")
         
         response = make_response(render_template('experiments.html', 
                                protocols=protocols, 
                                qpus=qpus, 
-                               qibo_versions=version_data['versions']))
+                               qibo_versions=version_data['versions'],
+                               is_new_qibolab=is_new_qibolab))
         
         # Set cookie if we have fresh data
         if not version_data.get('from_cache', False):
@@ -509,6 +514,104 @@ def register_routes(app, config):
             'num_connections': len(connectivity_data),
             'image': img_base64
         })
+
+    @app.route("/api/qpu_calibration/<platform>")
+    def qpu_calibration_api(platform):
+        """API endpoint to get calibration data for a specific QPU."""
+        # For now, we'll just read a dummy file.
+        # In the future, this should read the calibration.json from the platform directory.
+        config = current_app.config['QDASHBOARD_CONFIG']
+        platforms_path = get_platforms_path(config['root'])
+        calibration_path = os.path.join(platforms_path, platform, 'calibration.json')
+
+        if os.path.exists(calibration_path):
+            with open(calibration_path, 'r') as f:
+                calibration_data = json.load(f)
+            logger.info(f"QPU calibration data retrieved for platform: {platform}")
+            return jsonify(calibration_data)
+        else:
+            logger.warning(f"Calibration data not found for platform: {platform}")
+            return jsonify({'error': 'Calibration data not found'}), 404
+
+    # Qibocal CLI routes
+    @app.route("/qibocal/<action>", methods=['POST'])
+    def qibocal_cli_action(action):
+        """Execute qibocal CLI commands."""
+        config = current_app.config['QDASHBOARD_CONFIG']
+        
+        # Get the report path from form data
+        report_path = request.form.get('report_path')
+        if not report_path:
+            return jsonify({'success': False, 'message': 'No report path provided'}), 400
+        
+        # Convert relative path to absolute path
+        full_report_path = os.path.join(config['root'], report_path)
+        
+        # Validate that the path exists and is a qibocal report
+        if not os.path.exists(full_report_path):
+            return jsonify({'success': False, 'message': f'Report path does not exist: {report_path}'}), 404
+        
+        # Check if this is actually a qibocal report (has meta.json and runcard.yml)
+        if not (os.path.exists(os.path.join(full_report_path, 'meta.json')) and 
+                os.path.exists(os.path.join(full_report_path, 'runcard.yml'))):
+            return jsonify({'success': False, 'message': f'Path is not a valid qibocal report (missing meta.json or runcard.yml): {report_path}'}), 400
+        
+        # Validate action
+        valid_actions = ['fit', 'report', 'update']
+        if action not in valid_actions:
+            return jsonify({'success': False, 'message': f'Invalid action: {action}'}), 400
+        
+        try:
+            # Check if qibocal is available
+            from ..web.reports import check_qibocal_availability
+            if not check_qibocal_availability():
+                return jsonify({'success': False, 'message': 'Qibocal CLI (qq) is not available. Please install qibocal.'}), 503
+            
+            # Construct the command
+            cmd = ['qq', action, full_report_path]
+            if action == 'fit':
+                cmd.append('-f')
+            logger.info(f"Executing qibocal command: {' '.join(cmd)}")
+            
+            # Execute the command
+            result = subprocess.run(cmd, 
+                                  capture_output=True, 
+                                  text=True, 
+                                  timeout=300,  # 5 minute timeout
+                                  cwd=full_report_path)
+            
+            if result.returncode == 0:
+                success_messages = {
+                    'fit': 'Fit operation completed successfully.',
+                    'report': 'Report regeneration completed successfully.',
+                    'update': 'Platform update completed successfully.'
+                }
+                logger.info(f"Qibocal {action} completed successfully for {report_path}")
+                return jsonify({
+                    'success': True, 
+                    'message': success_messages[action],
+                    'stdout': result.stdout,
+                    'stderr': result.stderr
+                })
+            else:
+                error_msg = f"Qibocal {action} failed with exit code {result.returncode}"
+                if result.stderr:
+                    error_msg += f": {result.stderr}"
+                logger.error(f"Qibocal {action} failed for {report_path}: {error_msg}")
+                return jsonify({
+                    'success': False, 
+                    'message': error_msg,
+                    'stdout': result.stdout,
+                    'stderr': result.stderr
+                }), 500
+                
+        except subprocess.TimeoutExpired:
+            logger.error(f"Qibocal {action} timed out for {report_path}")
+            return jsonify({'success': False, 'message': f'Qibocal {action} operation timed out (5 minutes)'}), 408
+            
+        except Exception as e:
+            logger.error(f"Error executing qibocal {action} for {report_path}: {str(e)}")
+            return jsonify({'success': False, 'message': f'Error executing qibocal {action}: {str(e)}'}), 500
 
     logger.debug("Routes module initialized")
     return app

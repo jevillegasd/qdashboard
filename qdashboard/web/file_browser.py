@@ -5,7 +5,7 @@ File browser and web interface utilities.
 import os
 import re
 import mimetypes
-from flask import Response, request, make_response
+from flask import Response, request, make_response, redirect, url_for
 from flask.views import MethodView
 from werkzeug.utils import secure_filename
 from pathlib2 import Path
@@ -13,6 +13,34 @@ import json
 
 from ..utils.formatters import get_type
 from ..qpu.monitoring import get_qibo_versions
+from ..web.reports import report_viewer
+
+
+def is_qibocal_report(directory_path):
+    """
+    Check if a directory is a qibocal report by looking for required files.
+    
+    A qibocal report directory must contain both:
+    - meta.json
+    - runcard.yml
+    
+    Args:
+        directory_path (str): Path to the directory to check
+        
+    Returns:
+        bool: True if directory contains qibocal report files, False otherwise
+    """
+    if not os.path.isdir(directory_path):
+        return False
+    
+    try:
+        meta_json_path = os.path.join(directory_path, "meta.json")
+        runcard_yml_path = os.path.join(directory_path, "runcard.yml")
+        
+        return os.path.isfile(meta_json_path) and os.path.isfile(runcard_yml_path)
+    except (PermissionError, OSError):
+        # If we can't access the directory, assume it's not a qibocal report
+        return False
 
 
 def partial_response(path, start, end=None):
@@ -84,6 +112,28 @@ class PathView(MethodView):
         path = os.path.join(self.root, p)
 
         if os.path.isdir(path):
+            # Check if this directory is a qibocal report
+            if is_qibocal_report(path):
+                # Use report viewer instead of directory listing
+                try:
+                    version_data = get_qibo_versions(request=request)
+                    response = report_viewer(path, self.root, version_data['versions'], access_mode="file_browser")
+                    
+                    # Set cookie if we have fresh data
+                    if not version_data.get('from_cache', False):
+                        response.set_cookie('qibo_versions', 
+                                          version_data['cookie_data'],
+                                          max_age=24*60*60,  # 24 hours
+                                          httponly=True,
+                                          secure=False)
+                    
+                    return response
+                except Exception as e:
+                    # If report viewer fails, fall back to regular directory listing
+                    # but add a warning message
+                    pass
+            
+            # Regular directory listing
             contents = []
             total = {'size': 0, 'dir': 0, 'file': 0}
 
@@ -93,12 +143,25 @@ class PathView(MethodView):
                 if hide_dotfile == 'yes' and filename[0] == '.':
                     continue
                 filepath = os.path.join(path, filename)
-                stat_res = os.stat(filepath)
+                
+                try:
+                    stat_res = os.stat(filepath)
+                except (PermissionError, OSError):
+                    # Skip files/directories we can't access
+                    continue
+                    
                 info = {}
                 info['name'] = filename
                 info['mtime'] = stat_res.st_mtime
                 ft = get_type(stat_res.st_mode)
                 info['type'] = ft
+                
+                # Check if this directory is a qibocal report
+                if ft == 'dir' and is_qibocal_report(filepath):
+                    info['is_qibocal_report'] = True
+                else:
+                    info['is_qibocal_report'] = False
+                
                 total[ft] += 1
                 sz = stat_res.st_size
                 info['size'] = sz
@@ -125,6 +188,29 @@ class PathView(MethodView):
                                     secure=False)
 
         elif os.path.isfile(path):
+            # Check if this is an index.html file in a qibocal report directory
+            if os.path.basename(path).lower() == 'index.html':
+                parent_dir = os.path.dirname(path)
+                if is_qibocal_report(parent_dir):
+                    # Redirect to the report viewer for the parent directory
+                    try:
+                        version_data = get_qibo_versions(request=request)
+                        response = report_viewer(parent_dir, self.root, version_data['versions'], access_mode="file_browser")
+                        
+                        # Set cookie if we have fresh data
+                        if not version_data.get('from_cache', False):
+                            response.set_cookie('qibo_versions', 
+                                              version_data['cookie_data'],
+                                              max_age=24*60*60,  # 24 hours
+                                              httponly=True,
+                                              secure=False)
+                        
+                        return response
+                    except Exception as e:
+                        # If report viewer fails, fall back to regular file serving
+                        pass
+            
+            # Regular file serving
             if 'Range' in request.headers:
                 start, end = get_range(request)
                 response = partial_response(path, start, end)

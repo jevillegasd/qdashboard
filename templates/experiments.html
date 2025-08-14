@@ -17,54 +17,62 @@ Extended with quantum computing specific features:
     <link rel="stylesheet" href="{{url_for('static', filename='css/menu.css')}}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+    
     <style>
-        .experiment-card {
-            cursor: grab;
+        /* Enhanced popover styling */
+        .popover-cell {
             transition: background-color 0.2s ease;
-            border: 1px solid #444;
-            background-color: #2c2c2c;
         }
-        .experiment-card:hover {
-            background-color: #3a3a3a;
+        
+        .popover-cell:hover {
+            background-color: rgba(0, 123, 255, 0.1) !important;
         }
-        .action-item {
-            border: 1px solid #444;
-            background-color: #2c2c2c;
-            padding: 1rem;
-            margin-bottom: 1rem;
-            border-radius: 0.25rem;
+        
+        .calibration-popover {
+            min-width: 200px;
+            max-width: 350px;
         }
-        .action-item-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            cursor: pointer;
+        
+        .calibration-popover .list-unstyled li {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 4px 0;
         }
-        .config-panel .form-group {
-            margin-bottom: 1.5rem;
+        
+        .calibration-popover .list-unstyled li:last-child {
+            border-bottom: none;
         }
-        .config-panel label {
-            font-weight: bold;
-            color: #ccc;
+        
+        .calibration-popover .text-primary {
+            color: #007bff !important;
         }
-        .experiment-library {
-            max-height: 800px;
-            overflow-y: auto;
+        
+        .calibration-popover .text-muted {
+            color: #6c757d !important;
         }
-        .action-card-builder {
-            min-height: 400px;
-            border: 2px dashed #444;
-            background-color: #1a1a1a;
-            padding: 1rem;
-            border-radius: 0.25rem;
+        
+        .calibration-popover code {
+            background-color: rgba(0, 0, 0, 0.3);
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-size: 0.9em;
         }
-        .drop-zone-empty {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 200px;
-            color: #666;
-            text-align: center;
+        
+        /* Make popovers more stable */
+        .popover {
+            z-index: 1060 !important;
+            max-width: 350px !important;
+        }
+        
+        .popover-header {
+            background-color: #007bff !important;
+            color: white !important;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2) !important;
+        }
+        
+        .popover-body {
+            padding: 0.75rem !important;
+            background-color: #343a40 !important;
+            color: #fff !important;
         }
     </style>
 </head>
@@ -77,7 +85,7 @@ Extended with quantum computing specific features:
                 <div class="list-group list-group-flush">
                     <a href="/" class="list-group-item list-group-item-action" id="nav-dashboard"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
                     <a href="/files" class="list-group-item list-group-item-action" id="nav-files"><i class="fas fa-folder"></i> File Browser</a>
-                    <a href="/latest" class="list-group-item list-group-item-action" id="nav-latest"><i class="fas fa-file-alt"></i> Latest Report</a>
+                    <a href="/latest" class="list-group-item list-group-item-action" id="nav-latest"><i class="fas fa-file-alt"></i> Report Viewer</a>
                     <a href="/qpus" class="list-group-item list-group-item-action" id="nav-qpus"><i class="fas fa-microchip"></i> QPU Status</a>
                     <a href="/experiments" class="list-group-item list-group-item-action active" id="nav-experiments"><i class="fas fa-flask"></i> Experiments</a>
                 </div>
@@ -155,57 +163,113 @@ Extended with quantum computing specific features:
             </div>
         </div>
 
-        <!-- Center Panel: Action Card Builder -->
-        <div class="col-md-6">
+        <!-- Center Panel: Main Content with Tabs -->
+        <div class="col-md-9">
             <div class="card">
                 <div class="card-header">
-                    <i class="fas fa-tasks"></i> Action Card Builder
-                </div>
-                <div class="card-body">
-                    <div id="action-card-builder" class="action-card-builder">
-                        <div class="drop-zone-empty" id="empty-state">
-                            <div>
-                                <i class="fas fa-plus-circle fa-3x mb-3"></i>
-                                <p>Drag experiments here to build your action card</p>
-                            </div>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-sliders-h mr-2"></i>
+                            <h5 class="mb-0">Configuration</h5>
+                        </div>
+                        <div class="form-group mb-0" style="min-width: 250px;">
+                            <label for="qpu-select" class="sr-only">QPU Platform</label>
+                            <select class="form-control" id="qpu-select" onchange="loadQpuData()">
+                                {% for qpu in qpus %}
+                                <option value="{{ qpu }}" {% if loop.first %}selected{% endif %}>{{ qpu }}</option>
+                                {% endfor %}
+                            </select>
                         </div>
                     </div>
-                    <div class="mt-4">
-                        <button class="btn btn-primary" id="generate-yaml-btn" disabled>
-                            <i class="fas fa-cogs"></i> Generate YAML
-                        </button>
-                        <button class="btn btn-success" id="run-experiment-btn" disabled>
-                            <i class="fas fa-play"></i> Run Experiment
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Right Panel: QPU & Qubit Configuration -->
-        <div class="col-md-3">
-            <div class="card config-panel">
-                <div class="card-header">
-                    <i class="fas fa-sliders-h"></i> Configuration
                 </div>
                 <div class="card-body">
-                    <div class="form-group">
-                        <label for="qpu-select">QPU Platform</label>
-                        <select class="form-control" id="qpu-select" onchange="loadQpuParameters()">
-                            {% for qpu in qpus %}
-                            <option value="{{ qpu }}" {% if loop.first %}selected{% endif %}>{{ qpu }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="qubit-select">Target Qubits</label>
-                        <select multiple class="form-control" id="qubit-select" onchange="updateQubitParameters()">
-                            <!-- Options will be populated dynamically -->
-                        </select>
-                    </div>
-                    <hr>
-                    <div id="qubit-parameters">
-                        <p class="text-muted">Select qubits to configure parameters</p>
+                    <ul class="nav nav-tabs" id="experiment-tabs" role="tablist">
+                        <li class="nav-item">
+                            <a class="nav-link active" id="action-builder-tab" data-toggle="tab" href="#action-builder" role="tab" aria-controls="action-builder" aria-selected="true">
+                                <i class="fas fa-tasks"></i> Action Card Builder
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" id="qpu-config-tab" data-toggle="tab" href="#qpu-config" role="tab" aria-controls="qpu-config" aria-selected="false">
+                                <i class="fas fa-cogs"></i> QPU Configuration
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" id="qpu-calibration-tab" data-toggle="tab" href="#qpu-calibration" role="tab" aria-controls="qpu-calibration" aria-selected="false">
+                                <i class="fas fa-drafting-compass"></i> QPU Calibration
+                            </a>
+                        </li>
+                    </ul>
+                    <div class="tab-content" id="experiment-tabs-content">
+                        <!-- Action Card Builder Tab -->
+                        <div class="tab-pane fade show active" id="action-builder" role="tabpanel" aria-labelledby="action-builder-tab">
+                            {% if is_new_qibolab %}
+                            <div class="row mt-3">
+                                <div class="col-md-8">
+                                    <div id="action-card-builder" class="action-card-builder">
+                                        <div class="drop-zone-empty" id="empty-state">
+                                            <div>
+                                                <i class="fas fa-plus-circle fa-3x mb-3"></i>
+                                                <p>Drag experiments here to build your action card</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="mt-4">
+                                        <button class="btn btn-primary" id="generate-yaml-btn" disabled>
+                                            <i class="fas fa-cogs"></i> Generate YAML
+                                        </button>
+                                        <button class="btn btn-success" id="run-experiment-btn" disabled>
+                                            <i class="fas fa-play"></i> Run Experiment
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="config-panel">
+                                        <div class="form-group">
+                                            <label for="qubit-select">Target Qubits</label>
+                                            <select multiple class="form-control" id="qubit-select" onchange="updateQubitParameters()">
+                                                <!-- Options will be populated dynamically -->
+                                            </select>
+                                        </div>
+                                        <hr>
+                                        <div id="qubit-parameters">
+                                            <p class="text-muted">Select qubits to configure parameters</p>
+                                        </div>
+                                        <hr>
+                                        <div>
+                                            <h5><i class="fas fa-project-diagram mr-2"></i>Action Nodes</h5>
+                                            <div id="action-nodes-list" class="mt-3">
+                                                <!-- Action nodes will be populated here -->
+                                                <p class="text-muted" id="no-action-nodes-msg">No action nodes saved for this QPU.</p>
+                                            </div>
+                                            <button class="btn btn-info btn-block mt-3" id="save-action-node-btn" disabled>
+                                                <i class="fas fa-save"></i> Save as Action Node
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% else %}
+                            <div class="alert alert-warning mt-3" role="alert">
+                                <h4 class="alert-heading">Feature Not Available</h4>
+                                <p>The experiment builder requires <strong>qibolab version > 0.2.0</strong>. Your current version is {{ qibo_versions.qibolab }}.</p>
+                                <hr>
+                                <p class="mb-0">Please upgrade qibolab to use this feature.</p>
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <!-- QPU Configuration Tab -->
+                        <div class="tab-pane fade" id="qpu-config" role="tabpanel" aria-labelledby="qpu-config-tab">
+                            <pre id="qpu-config-data" class="mt-3" style="max-height: 600px; overflow-y: auto; background-color: #1a1a1a; padding: 1rem; border-radius: 0.25rem;"></pre>
+                        </div>
+
+                        <!-- QPU Calibration Tab -->
+                        <div class="tab-pane fade" id="qpu-calibration" role="tabpanel" aria-labelledby="qpu-calibration-tab">
+                            <div id="qpu-calibration-tables" class="mt-3">
+                                <!-- Calibration tables will be rendered here by JavaScript -->
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -218,12 +282,12 @@ Extended with quantum computing specific features:
     <!-- Footer -->
     <footer class="text-center text-muted py-3" style="font-size: 0.8rem; background-color: #1a1a1a;">
             <div class="container">
-                TII QDashboard - Quantum Computing Dashboard built for the [qibo](https://github.com/qiboteam/qibo) framework.
+                TII QDashboard - Quantum Computing Dashboard built for the <a href="https://github.com/qiboteam/qibo">qibo</a> framework.
             </div>
     </footer>
 
-    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
 
     <!-- Menu Toggle Script -->
@@ -233,8 +297,21 @@ Extended with quantum computing specific features:
         $("#wrapper").toggleClass("toggled");
     });
 
-    let currentQpuParams = {};
-    let actionItems = [];
+    // Global state management for experiment builder
+    const ExperimentBuilder = {
+        // QPU-related data
+        qpu: {
+            parameters: {},      // Currently loaded QPU parameters from API
+            calibration: {},     // Currently loaded QPU calibration data from API
+            selectedName: ''     // Currently selected QPU name
+        },
+        
+        // Action card builder state
+        actionCard: {
+            items: [],          // Array of experiments added to current action card
+            savedNodes: {}      // Dictionary of saved action nodes for current QPU
+        }
+    };
 
     // Category collapse handling
     $(document).ready(function() {
@@ -251,22 +328,60 @@ Extended with quantum computing specific features:
             const categoryId = $(this).attr('id');
             $(`[data-target="#${categoryId}"] .category-icon i`).removeClass('fa-chevron-up').addClass('fa-chevron-down');
         });
+
+        // Load initial data
+        loadQpuData();
+
+        // Save action node button handler
+        $('#save-action-node-btn').on('click', function() {
+            const nodeName = prompt("Enter a name for this action node:");
+            if (nodeName) {
+                saveActionNode(nodeName);
+            }
+        });
     });
 
-    // Load QPU parameters when page loads or QPU changes
-    function loadQpuParameters() {
+    // Load all data for the selected QPU
+    function loadQpuData() {
         const qpuSelect = document.getElementById('qpu-select');
         const selectedQpu = qpuSelect.value;
+        ExperimentBuilder.qpu.selectedName = selectedQpu;
         
+        // Fetch parameters
         fetch(`/api/qpu_parameters/${selectedQpu}`)
             .then(response => response.json())
             .then(data => {
-                currentQpuParams = data;
+                ExperimentBuilder.qpu.parameters = data;
+                document.getElementById('qpu-config-data').textContent = JSON.stringify(data, null, 2);
                 updateQubitDropdown();
                 updateQubitParameters();
             })
             .catch(error => {
                 console.error('Error loading QPU parameters:', error);
+                document.getElementById('qpu-config-data').textContent = 'Error loading QPU parameters.';
+            });
+
+        // Fetch calibration data
+        fetch(`/api/qpu_calibration/${selectedQpu}`)
+            .then(response => response.json())
+            .then(data => {
+                ExperimentBuilder.qpu.calibration = data;
+                renderCalibrationTables(data);
+            })
+            .catch(error => {
+                console.error('Error loading QPU calibration:', error);
+                document.getElementById('qpu-calibration-tables').innerHTML = `<p class="text-danger">Error loading QPU calibration data: ${error.message}.</p>`;
+            });
+        
+        // Fetch action nodes
+        fetch(`/api/action_nodes/${selectedQpu}`)
+            .then(response => response.json())
+            .then(data => {
+                ExperimentBuilder.actionCard.savedNodes = data.nodes || {};
+                updateActionNodesList();
+            })
+            .catch(error => {
+                console.error('Error loading action nodes:', error);
             });
     }
 
@@ -274,9 +389,9 @@ Extended with quantum computing specific features:
     function updateQubitDropdown() {
         const qubitSelect = document.getElementById('qubit-select');
         qubitSelect.innerHTML = '';
-        
-        if (currentQpuParams.qubits) {
-            Object.keys(currentQpuParams.qubits).forEach(qubit => {
+
+        if (ExperimentBuilder.qpu.parameters.qubits) {
+            Object.keys(ExperimentBuilder.qpu.parameters.qubits).forEach(qubit => {
                 const option = document.createElement('option');
                 option.value = qubit;
                 option.textContent = `Qubit ${qubit}`;
@@ -299,7 +414,7 @@ Extended with quantum computing specific features:
 
         let html = '';
         selectedQubits.forEach(qubit => {
-            const params = currentQpuParams.qubits[qubit] || {};
+            const params = ExperimentBuilder.qpu.parameters.qubits[qubit] || {};
             html += `
                 <h6>Qubit ${qubit} Parameters</h6>
                 <div class="form-group">
@@ -322,8 +437,8 @@ Extended with quantum computing specific features:
 
     // Basic drag and drop functionality
     document.addEventListener('DOMContentLoaded', function() {
-        // Load initial QPU parameters
-        loadQpuParameters();
+        // Load initial QPU data
+        loadQpuData();
 
         // Set up drag and drop
         const experimentCards = document.querySelectorAll('.experiment-card');
@@ -385,16 +500,21 @@ Extended with quantum computing specific features:
         `;
 
         actionBuilder.appendChild(actionItem);
-        actionItems.push(experiment);
+        ExperimentBuilder.actionCard.items.push(experiment);
         
-        // Enable buttons
+        // Enable buttons and save node button
         document.getElementById('generate-yaml-btn').disabled = false;
         document.getElementById('run-experiment-btn').disabled = false;
+        document.getElementById('save-action-node-btn').disabled = false;
     }
 
     function removeActionItem(button) {
         const actionItem = button.closest('.action-item');
+        const experimentId = actionItem.dataset.experimentId;
         actionItem.remove();
+
+        // Remove from action card items array
+        ExperimentBuilder.actionCard.items = ExperimentBuilder.actionCard.items.filter(item => item.id !== experimentId);
         
         // If no more action items, show empty state and disable buttons
         const remaining = document.querySelectorAll('.action-item');
@@ -410,8 +530,329 @@ Extended with quantum computing specific features:
             `;
             document.getElementById('generate-yaml-btn').disabled = true;
             document.getElementById('run-experiment-btn').disabled = true;
+            document.getElementById('save-action-node-btn').disabled = true;
         }
     }
-    </script>
+
+    function saveActionNode(nodeName) {
+        const selectedQpu = ExperimentBuilder.qpu.selectedName;
+        const actionCard = ExperimentBuilder.actionCard.items.map(item => ({
+            id: item.id,
+            name: item.name,
+            // In a real implementation, you would collect parameters here
+        }));
+
+        fetch(`/api/action_nodes/${selectedQpu}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                node_name: nodeName,
+                action_card: actionCard,
+            }),
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                ExperimentBuilder.actionCard.savedNodes = data.nodes;
+                updateActionNodesList();
+                alert(`Action node "${nodeName}" saved successfully.`);
+            } else {
+                alert(`Error saving action node: ${data.error}`);
+            }
+        })
+        .catch(error => {
+            console.error('Error saving action node:', error);
+            alert('An error occurred while saving the action node.');
+        });
+    }
+
+    function updateActionNodesList() {
+        const listDiv = document.getElementById('action-nodes-list');
+        const noNodesMsg = document.getElementById('no-action-nodes-msg');
+        listDiv.innerHTML = '';
+
+        if (Object.keys(ExperimentBuilder.actionCard.savedNodes).length === 0) {
+            listDiv.appendChild(noNodesMsg);
+            noNodesMsg.style.display = 'block';
+        } else {
+            noNodesMsg.style.display = 'none';
+            for (const [nodeName, nodeData] of Object.entries(ExperimentBuilder.actionCard.savedNodes)) {
+                const nodeItem = document.createElement('div');
+                nodeItem.className = 'action-node-item';
+                nodeItem.innerHTML = `
+                    <span>${nodeName}</span>
+                    <div>
+                        <button class="btn btn-sm btn-outline-primary" onclick="loadActionNode('${nodeName}')">
+                            <i class="fas fa-upload"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteActionNode('${nodeName}')">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                `;
+                listDiv.appendChild(nodeItem);
+            }
+        }
+    }
+
+    function loadActionNode(nodeName) {
+        const nodeData = ExperimentBuilder.actionCard.savedNodes[nodeName];
+        if (nodeData) {
+            // Clear current action card
+            const actionBuilder = document.getElementById('action-card-builder');
+            actionBuilder.innerHTML = '';
+            ExperimentBuilder.actionCard.items = [];
+
+            // Load experiments from the node
+            nodeData.action_card.forEach(experiment => {
+                addExperimentToActionCard(experiment);
+            });
+            alert(`Action node "${nodeName}" loaded.`);
+        }
+    }
+
+    function deleteActionNode(nodeName) {
+        if (confirm(`Are you sure you want to delete the action node "${nodeName}"?`)) {
+            const selectedQpu = ExperimentBuilder.qpu.selectedName;
+            fetch(`/api/action_nodes/${selectedQpu}/${nodeName}`, {
+                method: 'DELETE',
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    ExperimentBuilder.actionCard.savedNodes = data.nodes;
+                    updateActionNodesList();
+                    alert(`Action node "${nodeName}" deleted.`);
+                } else {
+                    alert(`Error deleting action node: ${data.error}`);
+                }
+            })
+            .catch(error => {
+                console.error('Error deleting action node:', error);
+                alert('An error occurred while deleting the action node.');
+            });
+        }
+    }
+
+function renderCalibrationTables(data) {
+    const container = document.getElementById('qpu-calibration-tables');
+    container.innerHTML = ''; // Clear previous content
+    
+    // Dispose of existing popovers before clearing content
+    $('[data-toggle="popover"]').popover('dispose');
+    
+    if (data.single_qubits) {
+        const singleQubitTable = createCalibrationTable('Single Qubit Parameters', data.single_qubits, 'qubit');
+        container.appendChild(singleQubitTable);
+    }
+
+    if (data.two_qubits) {
+        const twoQubitTable = createCalibrationTable('Two Qubit Parameters', data.two_qubit, 'qubit_pair');
+        container.appendChild(twoQubitTable);
+    }
+
+    if (!data.single_qubits && !data.two_qubits) {
+        container.innerHTML = '<p class="text-muted">No calibration data available to display.</p>';
+    }
+
+    // Initialize popovers after content is added with improved behavior
+    setTimeout(() => {
+        // Clean up any existing popovers
+        $('[data-toggle="popover"]').popover('dispose');
+        
+        // Wait a bit more for DOM to settle
+        setTimeout(() => {
+            const popoverElements = $('[data-toggle="popover"]');
+            console.log('Found popover elements:', popoverElements.length);
+            
+            if (popoverElements.length > 0) {
+                popoverElements.popover({
+                    html: true,
+                    sanitize: false,
+                    trigger: 'manual',  // Use manual trigger for better control
+                    placement: function(context, source) {
+                        // Dynamic placement based on cell position
+                        const rect = source.getBoundingClientRect();
+                        const windowWidth = window.innerWidth;
+                        const windowHeight = window.innerHeight;
+                        
+                        // Prefer right placement if there's space, otherwise left
+                        if (rect.right + 300 < windowWidth) {
+                            return 'right';
+                        } else if (rect.left - 300 > 0) {
+                            return 'left';
+                        } else if (rect.bottom + 200 < windowHeight) {
+                            return 'bottom';
+                        } else {
+                            return 'top';
+                        }
+                    },
+                    container: 'body',
+                    delay: { "show": 100, "hide": 300 },  // Longer hide delay
+                    animation: true
+                });
+                
+                // Custom hover behavior with sticky popover
+                popoverElements.each(function() {
+                    const $element = $(this);
+                    let hideTimeout;
+                    
+                    // Show popover on mouseenter
+                    $element.on('mouseenter', function() {
+                        clearTimeout(hideTimeout);
+                        $element.popover('show');
+                        
+                        // Add hover behavior to the popover itself
+                        setTimeout(() => {
+                            const popoverEl = $(`#${$element.attr('aria-describedby')}`);
+                            if (popoverEl.length) {
+                                popoverEl.on('mouseenter', function() {
+                                    clearTimeout(hideTimeout);
+                                });
+                                
+                                popoverEl.on('mouseleave', function() {
+                                    hideTimeout = setTimeout(() => {
+                                        $element.popover('hide');
+                                    }, 300);
+                                });
+                            }
+                        }, 150);
+                    });
+                    
+                    // Hide popover on mouseleave (with delay)
+                    $element.on('mouseleave', function() {
+                        hideTimeout = setTimeout(() => {
+                            $element.popover('hide');
+                        }, 300);
+                    });
+                });
+                
+                console.log('Popovers initialized with sticky behavior');
+            }
+        }, 50);
+    }, 150);
+}
+
+function createCalibrationTable(title, data, qubitKeyName) {
+    const tableWrapper = document.createElement('div');
+    tableWrapper.className = 'table-responsive mt-4';
+    
+    let tableHtml = `<h5>${title}</h5>`;
+    // Check if data is an object and has keys
+    if (typeof data !== 'object' || data === null || Object.keys(data).length === 0) {
+        tableHtml += '<p class="text-muted">Not available.</p>';
+        tableWrapper.innerHTML = tableHtml;
+        return tableWrapper;
+    }
+
+    // Convert the object of objects into an array of objects
+    const dataArray = Object.entries(data).map(([key, value]) => {
+        return { [qubitKeyName]: key, ...value };
+    });
+
+    const headers = Object.keys(dataArray[0]);
+    
+    tableHtml += '<table class="table table-sm table-bordered table-dark"><thead><tr>';
+    headers.forEach(header => {
+        tableHtml += `<th>${header.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</th>`;
+    });
+    tableHtml += '</tr></thead><tbody>';
+
+    dataArray.forEach(row => {
+        tableHtml += '<tr>';
+        headers.forEach(header => {
+            let value = row[header];
+            const timeHeaders = ['t1', 't2', 't2_spin_echo'];
+            const fidelityHeader = 'rb_fidelity';
+            const popoverHeaders = ['resonator', 'qubit', 'readout'];
+
+            if (popoverHeaders.includes(header.toLowerCase()) && typeof value === 'object' && value !== null) {
+                let displayValue = 'N/A';
+                let popoverContent = '<div class="calibration-popover"><ul class="list-unstyled mb-0">';
+                let mainKey = '';
+
+                if (header.toLowerCase() === 'resonator') {
+                    mainKey = 'dressed_frequency';
+                    const mainFreq = value[mainKey];
+                    displayValue = typeof mainFreq === 'number' ? `${(mainFreq / 1e9).toFixed(4)} GHz` : 'N/A';
+                } else if (header.toLowerCase() === 'qubit') {
+                    mainKey = 'frequency_01';
+                    const mainFreq = value[mainKey];
+                    displayValue = typeof mainFreq === 'number' ? `${(mainFreq / 1e9).toFixed(4)} GHz` : 'N/A';
+                } else if (header.toLowerCase() === 'readout') {
+                    mainKey = 'fidelity';
+                    const fidelity = value[mainKey];
+                    displayValue = typeof fidelity === 'number' ? fidelity.toFixed(4) : 'N/A';
+                }
+
+                for (const [key, val] of Object.entries(value)) {
+                    if (key !== mainKey) {
+                        let formattedVal;
+                        if (val === null || val === undefined) {
+                            formattedVal = '<span class="text-muted">null</span>';
+                        } else if (typeof val === 'object') {
+                            if (Array.isArray(val)) {
+                                formattedVal = val.join(', ');
+                            } else {
+                                formattedVal = JSON.stringify(val);
+                            }
+                        } else if (typeof val === 'number' && !Number.isInteger(val)) {
+                            formattedVal = `<code>${val.toExponential(3)}</code>`;
+                        } else {
+                            formattedVal = val.toString();
+                        }
+                        popoverContent += `<li class="py-1"><strong class="text-primary">${key.replace(/_/g, ' ')}:</strong> ${formattedVal}</li>`;
+                    }
+                }
+                popoverContent += '</ul></div>';
+                tableHtml += `<td data-toggle="popover" 
+                                 data-trigger="hover" 
+                                 data-placement="auto" 
+                                 title="<strong>${header.toUpperCase()} Details</strong>" 
+                                 data-content="${popoverContent.replace(/"/g, '&quot;').replace(/'/g, '&apos;')}" 
+                                 style="cursor: pointer; position: relative;"
+                                 class="popover-cell">
+                                 ${displayValue}
+                             </td>`;
+            } else if ((timeHeaders.includes(header.toLowerCase()) || header.toLowerCase() === fidelityHeader)) {
+                if (Array.isArray(value) && value.length === 2) {
+                    let val = value[0];
+                    let std = value[1];
+
+                    if (typeof val === 'number' && typeof std === 'number') {
+                        if (timeHeaders.includes(header.toLowerCase())) {
+                            val /= 1e3; // convert ns to us
+                            std /= 1e3; // convert ns to us
+                            value = `${val.toFixed(3)} ± ${std.toFixed(3)} µs`;
+                        } else { // rb_fidelity
+                            value = `${val.toFixed(4)} ± ${std.toFixed(4)}`;
+                        }
+                    } else {
+                        value = 'N/A'; // Handle nulls inside the array
+                    }
+                } else {
+                    value = 'N/A'; // Handle cases where the value is not a 2-element array (e.g., fit error object)
+                }
+                tableHtml += `<td>${value}</td>`;
+            } else if (typeof value === 'number') {
+                value = value.toFixed(3);
+                tableHtml += `<td>${value}</td>`;
+            } else if (typeof value === 'object' && value !== null) {
+                value = JSON.stringify(value); // Convert any other object to a JSON string
+                tableHtml += `<td>${value}</td>`;
+            } else {
+                tableHtml += `<td>${value === null ? 'N/A' : value}</td>`;
+            }
+        });
+        tableHtml += '</tr>';
+    });
+
+    tableHtml += '</tbody></table>';
+    tableWrapper.innerHTML = tableHtml;
+    return tableWrapper;
+}
+</script>
 </body>
 </html>

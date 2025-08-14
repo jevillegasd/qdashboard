@@ -1,13 +1,13 @@
 <!DOCTYPE html>
 <!--
-QDashboard - Latest Report Template
+QDashboard - Report Viewer Template
 Enhanced with quantum computing dashboard integration, dark theme, and consistent formatting
 -->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QDashboard - Latest Report</title>
+    <title>QDashboard - Report Viewer</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <link rel="stylesheet" href="{{url_for('static', filename='css/dashboard.css')}}">
     <link rel="stylesheet" href="{{url_for('static', filename='css/menu.css')}}">
@@ -27,7 +27,7 @@ Enhanced with quantum computing dashboard integration, dark theme, and consisten
                 <div class="list-group list-group-flush">
                     <a href="/" class="list-group-item list-group-item-action" id="nav-dashboard"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
                     <a href="/files" class="list-group-item list-group-item-action" id="nav-files"><i class="fas fa-folder"></i> File Browser</a>
-                    <a href="/latest" class="list-group-item list-group-item-action active" id="nav-latest"><i class="fas fa-file-alt"></i> Latest Report</a>
+                    <a href="/latest" class="list-group-item list-group-item-action active" id="nav-latest"><i class="fas fa-file-alt"></i> Report Viewer</a>
                     <a href="/qpus" class="list-group-item list-group-item-action" id="nav-qpus"><i class="fas fa-microchip"></i> QPU Status</a>
                     <a href="/experiments" class="list-group-item list-group-item-action" id="nav-experiments"><i class="fas fa-flask"></i> Experiments</a>
                 </div>
@@ -59,7 +59,14 @@ Enhanced with quantum computing dashboard integration, dark theme, and consisten
             </nav>
 
             <div class="container-fluid">
-                <h1 class="page-title">Qibocal Report</h1>
+                {% if access_mode == "latest" %}
+                    <h1 class="page-title">Calibration Report</h1>
+                    <div>
+                        <small class="text-muted">Last experiment report.</small>
+                    </div>
+                {% else %}
+                    <h1 class="page-title">Calibration Report</h1>
+                {% endif %}
                 {% if report_path_for_link %}
                     <p class="text-muted">Report path: <a href="/files/{{ report_path_for_link }}" target="_blank" class="text-info"><code>{{ report_path_for_link }}</code></a></p>
                 {% endif %}
@@ -67,10 +74,54 @@ Enhanced with quantum computing dashboard integration, dark theme, and consisten
                 <div class="row mt-4">
                     <div class="col-md-12">
                         <div class="card">
-                            <div class="card-header">
-                                <i class="fas fa-file-alt"></i> Report Content
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <div>
+                                    {% if access_mode == "latest" %}
+                                        <i class="fas fa-clock"></i> Last Experiment Report
+                                    {% else %}
+                                        <i class="fas fa-file-alt"></i> Experiment Report
+                                    {% endif %}
+                                </div>
+                                
+                                <!-- Qibocal CLI Actions in Header -->
+                                {% if report_path_for_link %}
+                                <div class="btn-group" role="group">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary qibocal-btn" 
+                                            disabled 
+                                            title="Repeat Experiment (Coming Soon)">
+                                        <i class="fas fa-play"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-primary qibocal-action qibocal-btn" 
+                                            data-action="fit" data-path="{{ report_path_for_link }}"
+                                            {% if not qibocal_available %}disabled{% endif %}
+                                            title="{% if qibocal_available %}Re-run Fit (qq fit {{ report_path_for_link }}){% else %}Qibocal not installed{% endif %}">
+                                        <i class="fas fa-chart-line"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-success qibocal-action qibocal-btn" 
+                                            data-action="report" data-path="{{ report_path_for_link }}"
+                                            {% if not qibocal_available %}disabled{% endif %}
+                                            title="{% if qibocal_available %}Re-generate Report (qq report {{ report_path_for_link }}){% else %}Qibocal not installed{% endif %}">
+                                        <i class="fas fa-file-alt"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-warning qibocal-action qibocal-btn" 
+                                            data-action="update" data-path="{{ report_path_for_link }}"
+                                            {% if not qibocal_available %}disabled{% endif %}
+                                            title="{% if qibocal_available %}Update Platform (qq update {{ report_path_for_link }}){% else %}Qibocal not installed{% endif %}">
+                                        <i class="fas fa-microchip"></i>
+                                    </button>
+                                </div>
+                                {% endif %}
                             </div>
                             <div class="card-body report-content">
+                                <!-- Status messages for qibocal actions -->
+                                {% if report_path_for_link %}
+                                <div id="qibocal-status" class="mb-3" style="display: none;">
+                                    <div class="alert" id="qibocal-alert">
+                                        <div id="qibocal-message"></div>
+                                    </div>
+                                </div>
+                                {% endif %}
+                                
                                 {% if report_body_content %}
                                     {{ report_body_content | safe }}
                                 {% else %}
@@ -104,6 +155,72 @@ Enhanced with quantum computing dashboard integration, dark theme, and consisten
         e.preventDefault();
         $("#wrapper").toggleClass("toggled");
     });
+
+    // Initialize tooltips for qibocal buttons
+    $(document).ready(function() {
+        $('[title]').tooltip({
+            placement: 'bottom',
+            trigger: 'hover focus'
+        });
+    });
+
+    // Qibocal CLI Actions
+    $('.qibocal-action').click(function() {
+        var action = $(this).data('action');
+        var path = $(this).data('path');
+        var button = $(this);
+        
+        // Hide tooltip when clicked
+        button.tooltip('hide');
+        
+        // Show loading state
+        button.prop('disabled', true);
+        button.find('i').removeClass().addClass('fas fa-spinner fa-spin');
+        
+        $('#qibocal-status').hide();
+        
+        // Make AJAX request
+        $.ajax({
+            url: '/qibocal/' + action,
+            method: 'POST',
+            data: {
+                'report_path': path
+            },
+            success: function(response) {
+                showQibocalStatus(response.message, response.success ? 'success' : 'danger');
+                if (response.success && (action === 'report' || action === 'fit')) {
+                    // Reload the page after a short delay for report regeneration
+                    setTimeout(function() {
+                        location.reload();
+                    }, 2000);
+                }
+            },
+            error: function(xhr) {
+                var message = 'Error executing qibocal command';
+                if (xhr.responseJSON && xhr.responseJSON.message) {
+                    message = xhr.responseJSON.message;
+                }
+                showQibocalStatus(message, 'danger');
+            },
+            complete: function() {
+                // Restore button state
+                button.prop('disabled', false);
+                var iconClass = 'fas ';
+                switch(action) {
+                    case 'fit': iconClass += 'fa-chart-line'; break;
+                    case 'report': iconClass += 'fa-file-alt'; break;
+                    case 'update': iconClass += 'fa-sync-alt'; break;
+                }
+                button.find('i').removeClass().addClass(iconClass);
+            }
+        });
+    });
+    
+    function showQibocalStatus(message, type) {
+        $('#qibocal-message').html(message);
+        $('#qibocal-alert').removeClass('alert-success alert-danger alert-warning').addClass('alert-' + type);
+        $('#qibocal-status').show();
+    }
 
     // Plotly support - ensure plots are properly rendered and responsive
     $(document).ready(function() {

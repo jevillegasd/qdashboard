@@ -39,6 +39,12 @@ fi
 #     pip3 install flask humanize pathlib2 werkzeug PyYAML
 # }
 
+#if no environment is activated, activate the virtual environment
+if [ -z "$VIRTUAL_ENV" ]; then
+    echo "Activating virtual environment..."
+    source "$QD_FILE_PATH/venv/bin/activate"
+fi
+
 # Set default environment variables if not set
 export QD_BIND=${QD_BIND:-"127.0.0.1"}
 export QD_PORT=${QD_PORT:-"5005"}
