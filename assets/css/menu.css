@@ -16,19 +16,25 @@
 /* 1. Sidebar Wrapper */
 #sidebar-wrapper {
     height: 100vh;
-    width: 15rem;
+    width: 4rem; /* Collapsed width to show only icons */
     position: fixed;
     top: 0;
-    left: -15rem;
+    left: 0; /* Always visible */
     z-index: 1000;
-    -webkit-transition: left .25s ease-out;
-    -moz-transition: left .25s ease-out;
-    -o-transition: left .25s ease-out;
-    transition: left .25s ease-out;
+    -webkit-transition: width .3s ease-out;
+    -moz-transition: width .3s ease-out;
+    -o-transition: width .3s ease-out;
+    transition: width .3s ease-out;
     background-color: #2c2c2c;
     border-right: 1px solid #444;
     display: flex;
     flex-direction: column;
+    overflow: hidden; /* Hide overflowing content when collapsed */
+}
+
+/* Expanded state on hover */
+#sidebar-wrapper:hover {
+    width: 15rem;
 }
 
 /* 1.1. Navigation Container */
@@ -45,6 +51,18 @@
     font-weight: 500; /* Added for emphasis */
     color: #fff;
     border-bottom: 1px solid #444; /* Added for separation */
+    white-space: nowrap; /* Prevent text wrapping */
+    overflow: hidden; /* Hide text when collapsed */
+    transition: opacity 0.3s ease;
+}
+
+/* Show heading text only on hover */
+#sidebar-wrapper .sidebar-heading {
+    opacity: 0; /* Hidden by default */
+}
+
+#sidebar-wrapper:hover .sidebar-heading {
+    opacity: 1; /* Visible on hover */
 }
 
 /* 3. List Group Items */
@@ -54,6 +72,11 @@
     border: none;
     padding: 1rem 1.25rem; /* Standardized padding */
     font-weight: 500;
+    white-space: nowrap; /* Prevent text wrapping */
+    overflow: hidden; /* Hide overflowing text */
+    display: flex;
+    align-items: center;
+    transition: all 0.3s ease;
 }
 
 #sidebar-wrapper .list-group-item:hover,
@@ -67,6 +90,23 @@
     margin-right: 0.75rem; /* Space between icon and text */
     width: 20px; /* Align icons */
     text-align: center;
+    flex-shrink: 0; /* Prevent icon from shrinking */
+}
+
+/* Hide text by default, show icons only */
+#sidebar-wrapper .list-group-item {
+    justify-content: flex-start;
+}
+
+/* Text part of menu items */
+#sidebar-wrapper .list-group-item .menu-text {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+/* Show text on hover */
+#sidebar-wrapper:hover .list-group-item .menu-text {
+    opacity: 1;
 }
 
 /* 3.1. Sidebar Footer for Package Versions */
@@ -80,6 +120,14 @@
     padding: 0.75rem 1.25rem;
     font-size: 0.75rem;
     color: #999;
+    opacity: 0; /* Hidden by default */
+    transition: opacity 0.3s ease;
+    overflow: hidden;
+}
+
+/* Show package versions on hover */
+#sidebar-wrapper:hover .sidebar-footer-versions {
+    opacity: 1;
 }
 
 #sidebar-wrapper .sidebar-footer-versions .version-title {
@@ -139,32 +187,14 @@
     font-style: italic;
 }
 
-/* 4. Menu Toggle Button */
-#menu-toggle {
-    background-color: #2c2c2c !important;
-    border-color: #2c2c2c !important;
-    color: #fff !important;
-    transition: all 0.3s ease;
-}
-
-#menu-toggle:hover {
-    background-color: #383838 !important;
-    border-color: #383838 !important;
-    color: #fff !important;
-}
-
-#menu-toggle:focus,
-#menu-toggle:active {
-    background-color: #2c2c2c !important;
-    border-color: #2c2c2c !important;
-    color: #fff !important;
-    box-shadow: 0 0 0 0.2rem rgba(44, 44, 44, 0.5) !important;
-}
+/* 4. Menu Toggle Button - REMOVED (no longer needed for hover menu) */
 
 /* 5. Page Content Layout */
 #page-content-wrapper {
     width: 100%;
     min-height: 100vh;
+    margin-left: 4rem; /* Account for collapsed sidebar */
+    transition: margin-left 0.3s ease;
 }
 
 #page-content-wrapper .navbar {
@@ -192,30 +222,32 @@
 }
 
 /* 6. Responsive Behavior */
-#wrapper.toggled #sidebar-wrapper {
-    left: 0;
-}
+/* Remove old toggle functionality - menu is always visible now */
 
 /* 7. Page Content Positioning */
-#page-content-wrapper {
-    margin-left: 0;
-    transition: margin-left .25s ease-out;
-}
+/* Updated to work with always-visible sidebar */
 
 @media (min-width: 768px) {
     #sidebar-wrapper {
-        left: 0;
+        width: 4rem; /* Collapsed width on desktop */
+    }
+
+    #sidebar-wrapper:hover {
+        width: 15rem; /* Expanded width on hover */
     }
 
     #page-content-wrapper {
-        margin-left: 15rem;
+        margin-left: 4rem; /* Account for collapsed sidebar */
     }
+}
 
-    #wrapper.toggled #sidebar-wrapper {
-        left: -15rem;
+@media (max-width: 767px) {
+    #sidebar-wrapper {
+        width: 4rem; /* Keep collapsed on mobile */
+        height: 100vh;
     }
-
-    #wrapper.toggled #page-content-wrapper {
-        margin-left: 0;
+    
+    #page-content-wrapper {
+        margin-left: 4rem; /* Consistent margin on mobile */
     }
 }

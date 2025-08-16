@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <!--
 QDashboard - Quantum Computing Dashboard
-Built on flask-file-server foundation by Wildog: https://github.com/Wildog/flask-file-server
 Extended with quantum computing specific features:
 - Real-time QPU monitoring and package version tracking
 - SLURM integration and job queue management
@@ -74,20 +73,61 @@ Extended with quantum computing specific features:
             background-color: #343a40 !important;
             color: #fff !important;
         }
+        
+        /* Calibration table equal column distribution */
+        .calibration-table {
+            table-layout: fixed !important;
+            width: 100% !important;
+        }
+        
+        .calibration-table th,
+        .calibration-table td {
+            text-align: center !important;
+            vertical-align: middle !important;
+            word-wrap: break-word !important;
+            overflow-wrap: break-word !important;
+        }
+        
+        /* First column (Qubit identifier) should be narrow */
+        .calibration-table th:first-child,
+        .calibration-table td:first-child {
+            width: 8% !important;
+            min-width: 50px !important;
+            text-align: center !important;
+            font-weight: bold !important;
+        }
+        
+        /* Ensure other columns distribute the remaining space equally */
+        .calibration-table th:nth-child(n+2),
+        .calibration-table td:nth-child(n+2) {
+            width: auto !important;
+        }
+        
+        /* Responsive column sizing */
+        @media (max-width: 768px) {
+            .calibration-table {
+                font-size: 0.75rem !important;
+            }
+            
+            .calibration-table th,
+            .calibration-table td {
+                padding: 0.25rem !important;
+            }
+        }
     </style>
 </head>
-<body class="dashboard-page">
+<body>
     <div class="d-flex" id="wrapper">
         <!-- Sidebar -->
         <div id="sidebar-wrapper">
             <div class="sidebar-heading">QDashboard</div>
             <div class="sidebar-nav">
                 <div class="list-group list-group-flush">
-                    <a href="/" class="list-group-item list-group-item-action" id="nav-dashboard"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
-                    <a href="/files" class="list-group-item list-group-item-action" id="nav-files"><i class="fas fa-folder"></i> File Browser</a>
-                    <a href="/latest" class="list-group-item list-group-item-action" id="nav-latest"><i class="fas fa-file-alt"></i> Report Viewer</a>
-                    <a href="/qpus" class="list-group-item list-group-item-action" id="nav-qpus"><i class="fas fa-microchip"></i> QPU Status</a>
-                    <a href="/experiments" class="list-group-item list-group-item-action active" id="nav-experiments"><i class="fas fa-flask"></i> Experiments</a>
+                    <a href="/" class="list-group-item list-group-item-action active" id="nav-dashboard"><i class="fas fa-tachometer-alt"></i><span class="menu-text"> Dashboard</span></a>
+                    <a href="/files" class="list-group-item list-group-item-action" id="nav-files"><i class="fas fa-folder"></i><span class="menu-text"> File Browser</span></a>
+                    <a href="/latest" class="list-group-item list-group-item-action" id="nav-latest"><i class="fas fa-file-alt"></i><span class="menu-text"> Report Viewer</span></a>
+                    <a href="/qpus" class="list-group-item list-group-item-action" id="nav-qpus"><i class="fas fa-microchip"></i><span class="menu-text"> QPU Status</span></a>
+                    <a href="/experiments" class="list-group-item list-group-item-action" id="nav-experiments"><i class="fas fa-flask"></i><span class="menu-text"> Experiments</span></a>
                 </div>
             </div>
             
@@ -111,9 +151,9 @@ Extended with quantum computing specific features:
 
         <!-- Page Content -->
         <div id="page-content-wrapper">
-            <nav class="navbar navbar-expand-lg navbar-dark">
-                <button class="btn" id="menu-toggle"><i class="fas fa-bars"></i></button>
-            </nav>
+            <!-- <nav class="navbar navbar-expand-lg navbar-dark">
+            PLACEHOLDER FOR A NAVIGATION BAR ONE DAY
+            </nav> -->
 
             <div class="container-fluid">
                 <h1 class="page-title">Experiment Builder</h1>
@@ -290,8 +330,9 @@ Extended with quantum computing specific features:
     <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
 
-    <!-- Menu Toggle Script -->
+    <!-- Menu Toggle Script - REMOVED (using hover menu now) -->
     <script>
+    // Menu toggle functionality removed - using hover menu
     $("#menu-toggle").click(function(e) {
         e.preventDefault();
         $("#wrapper").toggleClass("toggled");
@@ -754,14 +795,17 @@ function createCalibrationTable(title, data, qubitKeyName) {
 
     const headers = Object.keys(dataArray[0]);
     
-    tableHtml += '<table class="table table-sm table-bordered table-dark"><thead><tr>';
+    tableHtml += '<table class="table table-sm table-dark calibration-table"><thead><tr>';
+    tableHtml += '<th> </th>'; // Qubit identifier header (nada)
     headers.forEach(header => {
         tableHtml += `<th>${header.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</th>`;
     });
     tableHtml += '</tr></thead><tbody>';
-
+    i = 0
     dataArray.forEach(row => {
         tableHtml += '<tr>';
+
+        tableHtml += `<td>q${i++}</td>`;
         headers.forEach(header => {
             let value = row[header];
             const timeHeaders = ['t1', 't2', 't2_spin_echo'];
