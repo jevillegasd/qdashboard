@@ -44,6 +44,11 @@ def register_routes(app, config):
                                slurm_queue_status=slurm_queue_status,
                                last_slurm_log=last_slurm_log))
         
+        # Prevent caching of SLURM data
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        
         # Set cookie if we have fresh data
         if not version_data.get('from_cache', False):
             response.set_cookie('qibo_versions', 
@@ -179,6 +184,44 @@ def register_routes(app, config):
         except Exception as e:
             logger.error(f"Error cancelling job: {str(e)}")
             return jsonify({'status': 'error', 'message': str(e)})
+
+    @app.route("/api/slurm_status", methods=['GET'])
+    def api_slurm_status():
+        """API endpoint to get fresh SLURM status data."""
+        try:
+            slurm_queue_status = get_slurm_status()
+            last_slurm_log = get_slurm_output()
+            
+            logger.info("Fresh SLURM status data retrieved via API")
+            
+            response = jsonify({
+                'status': 'success',
+                'queue_status': [
+                    {
+                        'job_id': job.job_id,
+                        'name': job.name,
+                        'user': job.user,
+                        'state': job.state,
+                        'time': job.time,
+                        'time_limit': job.time_limit,
+                        'nodes': job.nodes,
+                        'nodelist': job.nodelist,
+                        'is_current_user': job.is_current_user
+                    } for job in slurm_queue_status
+                ],
+                'last_log': last_slurm_log
+            })
+            
+            # Prevent caching
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error fetching SLURM status: {str(e)}")
+            return jsonify({'status': 'error', 'message': str(e)}), 500
 
     @app.route("/qpus")
     def qpus():
