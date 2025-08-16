@@ -65,10 +65,13 @@
                 <div class="row mt-4">
                     <div class="col-md-6">
                         <div class="card">
-                            <div class="card-header">
-                                <i class="fas fa-tasks"></i> SLURM Queue
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <div>
+                                    <i class="fas fa-tasks"></i> SLURM Queue
+                                    <small class="text-muted ml-2" id="slurm-last-update"></small>
+                                </div>
                             </div>
-                            <div class="card-body">
+                            <div class="card-body" id="slurm-content">
                                 {% if slurm_queue_status %}
                                 <div class="table-responsive">
                                     <table class="table table-dark table-striped table-hover">
@@ -135,11 +138,14 @@
                     </div>
                     <div class="col-md-6">
                         <div class="card">
-                            <div class="card-header">
-                                <i class="fas fa-file-code"></i> Last SLURM Log
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <div>
+                                    <i class="fas fa-file-code"></i> Last SLURM Log
+                                    <small class="text-muted ml-2" id="slurm-log-last-update"></small>
+                                </div>
                             </div>
                             <div class="card-body">
-                                <pre class="log-box"><code>{{ last_slurm_log | safe }}</code></pre>
+                                <pre class="log-box" id="slurm-log-content"><code>{{ last_slurm_log | safe }}</code></pre>
                             </div>
                         </div>
                     </div>
@@ -160,39 +166,6 @@
     <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
-
-    <script>
-
-    // Job cancellation function
-    function cancelJob(jobId) {
-        if (!confirm(`Are you sure you want to cancel job ${jobId}?`)) {
-            return;
-        }
-
-        fetch('/cancel_job', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                job_id: jobId
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'success') {
-                alert(data.message);
-                // Refresh the page to update the job list
-                location.reload();
-            } else {
-                alert(`Error: ${data.message}`);
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('An error occurred while cancelling the job.');
-        });
-    }
-    </script>
+    <script src="{{url_for('static', filename='js/dashboard-common.js')}}"></script>
 </body>
 </html>
