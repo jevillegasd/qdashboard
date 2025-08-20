@@ -72,12 +72,13 @@ function cancelJob(jobId) {
  * Fetches updated SLURM queue status and updates the display
  */
 function refreshSlurmData() {
-    const refreshBtn = document.getElementById('refresh-slurm-btn');
-    const slurmContent = document.getElementById('slurm-content');
-    const isAutoMode = refreshBtn && refreshBtn.innerHTML.includes('Auto');
-    
-    // Only show loading state in manual mode
-    if (!isAutoMode && refreshBtn) {
+    const refreshBtn = document.getElementById('refresh-slurm-btn'); // Refresh button (optional in the html)
+    const slurmContent = document.getElementById('slurm-content'); 
+
+    if (!slurmContent) return; // If element doesn't exist, skip update
+
+    // Only show loading state in manual mode (when buttons exist and auto-refresh is not active)
+    if (!isAutoRefreshActive && refreshBtn) {
         refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
         refreshBtn.disabled = true;
     }
@@ -98,21 +99,27 @@ function refreshSlurmData() {
                 timestamp.textContent = `Last updated: ${now.toLocaleTimeString()}`;
             }
         } else {
-            console.error('Error refreshing SLURM data:', data.message);
-            if (!isAutoMode) {
-                alert('Failed to refresh SLURM data: ' + data.message);
+            if (!isAutoRefreshActive) {
+                console.war('Failed to refresh SLURM data: ' + data.message);
+            } else {
+                // If in auto mode and API returns error, stop auto-refresh
+                console.warn('Auto-refresh stopped due to SLURM  API error:', data.message);
+                stopAutoRefresh();
             }
         }
-    })
+    }) // Errors not managed in the API (or the SLURM API not working)
     .catch(error => {
-        console.error('Error:', error);
-        if (!isAutoMode) {
-            alert('An error occurred while refreshing SLURM data.');
+        if (!isAutoRefreshActive) {
+            console.error('An error occurred while refreshing SLURM data.');
+        } else {
+            // If in auto mode and error occurs, stop auto-refresh
+            console.warn('Auto-refresh stopped due to SLURM data error:', error);
+            stopAutoRefresh();
         }
     })
     .finally(() => {
-        // Reset button state only in manual mode
-        if (!isAutoMode && refreshBtn) {
+        // Reset button state only in manual mode (when buttons exist and auto-refresh is not active)
+        if (!isAutoRefreshActive && refreshBtn) {
             refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i>';
             refreshBtn.disabled = false;
         }
@@ -223,10 +230,9 @@ function updateSlurmLog(logContent) {
  */
 function refreshSlurmLog() {
     const refreshLogBtn = document.getElementById('refresh-log-btn');
-    const isAutoMode = refreshLogBtn && refreshLogBtn.innerHTML.includes('Auto');
     
-    // Only show loading state in manual mode
-    if (!isAutoMode && refreshLogBtn) {
+    // Only show loading state in manual mode (when buttons exist and auto-refresh is not active)
+    if (!isAutoRefreshActive && refreshLogBtn) {
         refreshLogBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
         refreshLogBtn.disabled = true;
     }
@@ -245,20 +251,28 @@ function refreshSlurmLog() {
             }
         } else {
             console.error('Error refreshing SLURM log:', data.message);
-            if (!isAutoMode) {
+            if (!isAutoRefreshActive) {
                 alert('Failed to refresh SLURM log: ' + data.message);
+            } else {
+                // If in auto mode and API returns error, stop auto-refresh
+                console.warn('Auto-refresh stopped due to SLURM log API error:', data.message);
+                stopAutoRefresh();
             }
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        if (!isAutoMode) {
+        if (!isAutoRefreshActive) {
             alert('An error occurred while refreshing SLURM log.');
+        } else {
+            // If in auto mode and error occurs, stop auto-refresh
+            console.warn('Auto-refresh stopped due to SLURM log error:', error);
+            stopAutoRefresh();
         }
     })
     .finally(() => {
-        // Reset button state only in manual mode
-        if (!isAutoMode && refreshLogBtn) {
+        // Reset button state only in manual mode (when buttons exist and auto-refresh is not active)
+        if (!isAutoRefreshActive && refreshLogBtn) {
             refreshLogBtn.innerHTML = '<i class="fas fa-sync-alt"></i>';
             refreshLogBtn.disabled = false;
         }

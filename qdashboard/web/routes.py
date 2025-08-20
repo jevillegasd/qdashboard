@@ -5,11 +5,14 @@ Main application routes and endpoints.
 import os
 import subprocess
 import json
+import time
+import shutil
+import yaml
 from flask import render_template, request, jsonify, send_file, make_response, current_app
 
 from ..qpu.monitoring import get_qpu_health, get_available_qpus, get_qibo_versions, get_qpu_details, get_qpu_list, qpu_parameters
-from ..qpu.platforms import get_platforms_path, list_repository_branches, switch_repository_branch, get_current_branch_info, commit_changes, push_changes, stash_changes, list_stashes, apply_latest_stash, discard_changes
-from ..qpu.slurm import get_slurm_status, get_slurm_output, parse_slurm_log_for_errors
+from ..qpu.platforms import get_platforms_path, list_repository_branches, switch_repository_branch, get_current_branch_info, commit_changes, push_changes, stash_changes, list_stashes, apply_latest_stash, discard_changes, get_partition
+from ..qpu.slurm import get_slurm_status, get_slurm_output, parse_slurm_log_for_errors, slurm_log_path
 from ..qpu.topology import qpu_connectivity, infer_topology_from_connectivity, generate_topology_visualization
 from ..experiments.protocols import get_qibocal_protocols
 from ..web.reports import report_viewer, get_latest_report_path
@@ -655,6 +658,181 @@ def register_routes(app, config):
         except Exception as e:
             logger.error(f"Error executing qibocal {action} for {report_path}: {str(e)}")
             return jsonify({'success': False, 'message': f'Error executing qibocal {action}: {str(e)}'}), 500
+
+    @app.route("/repeat_experiment", methods=['POST'])
+    def repeat_experiment():
+        """Repeat an experiment by submitting it to SLURM."""
+        try:
+            config = current_app.config['QDASHBOARD_CONFIG']
+            report_path = request.form.get('report_path')
+            
+            if not report_path:
+                return jsonify({'success': False, 'message': 'Report path is required'}), 400
+            
+            # Construct full path
+            full_report_path = os.path.join(config['root'], report_path.lstrip('/'))
+            
+            if not os.path.exists(full_report_path):
+                return jsonify({'success': False, 'message': f'Report path does not exist: {report_path}'}), 404
+            
+            # Check for required files
+            runcard_path = None
+            parameters_json_path = None
+            
+            # Look for runcard.yml in the report directory
+            for filename in os.listdir(full_report_path):
+                if filename.startswith('runcard') and filename.endswith('.yml'):
+                    runcard_path = os.path.join(full_report_path, filename)
+                    break
+            
+            if not runcard_path:
+                return jsonify({'success': False, 'message': 'No runcard.yml file found in report directory'}), 400
+            
+            # Generate a unique temporary directory name with 8-digit hex timestamp
+            import time
+            timestamp_hex = format(int(time.time()), '08x')
+            temp_dir_name = f"qq_{timestamp_hex}"
+            
+            # Create temporary directory in user's home directory instead of /tmp
+            user_home = os.path.expanduser("~")
+            temp_base = os.path.join(user_home, '.qdashboard', 'temp')
+            os.makedirs(temp_base, exist_ok=True)
+            temp_dir = os.path.join(temp_base, temp_dir_name)
+            
+            # Create temporary directory
+            os.makedirs(temp_dir, exist_ok=True)
+            
+            # Copy runcard.yml to temporary directory
+            import shutil
+            temp_runcard_path = os.path.join(temp_dir, 'runcard.yml')
+            shutil.copy2(runcard_path, temp_runcard_path)
+            
+            # Read the runcard to extract platform information
+            import yaml
+            try:
+                with open(temp_runcard_path, 'r') as f:
+                    runcard_data = yaml.safe_load(f)
+                platform = runcard_data.get('platform')
+                partition = runcard_data.get('partition')
+                environment = runcard_data.get('environment')
+                if not platform:
+                    return jsonify({'success': False, 'message': 'No platform specified in runcard'}), 400
+                if not environment:
+                    # Use the app running environment 
+                    environment = config['environment']
+                    if not environment:
+                        return jsonify({'success': False, 'message': f'No environment specified in runcard or {environment}'}), 400
+                
+                # If no partition specified, try to infer it from the platform
+                if not partition:
+                    platforms_base = get_platforms_path(config['root'])
+                    partition = get_partition(platform)
+                    logger.warning(f"{platforms_base}:{partition}")
+                    if not partition:
+                        return jsonify({'success': False, 'message': f'No partition specified in runcard and could not infer partition for platform {platform}'}), 400
+            except Exception as e:
+                return jsonify({'success': False, 'message': f'Error reading runcard: {e}{str(e.__traceback__)}'}), 400
+            
+            # Check if parameters.json exists in the report and copy it as backup
+            report_parameters_path = os.path.join(full_report_path, 'parameters.json')
+            
+            # Determine platform path and parameters.json location
+            platforms_base = get_platforms_path(config['root'])
+            platform_dir = os.path.join(platforms_base, platform)
+            platform_parameters_path = os.path.join(platform_dir, 'parameters.json')
+            
+            if os.path.exists(report_parameters_path) and os.path.exists(platform_parameters_path):
+                # Backup current platform parameters.json
+                backup_parameters_path = os.path.join(temp_dir, 'parameters_backup.json')
+                shutil.copy2(platform_parameters_path, backup_parameters_path)
+                
+                # # Replace platform parameters.json with report's version
+                # # We could to this in the future to ensure the experiment is the
+                # # exact same as the open report.
+                # shutil.copy2(report_parameters_path, platform_parameters_path)
+                # logger.info(f"Backed up platform parameters and replaced with report parameters for {platform}")
+            
+            # Generate output directory name (parent directory + timestamp)
+            parent_dir = os.path.dirname(full_report_path)
+            report_dir_name = f"qq_{timestamp_hex}"
+            new_report_path = os.path.join(parent_dir, report_dir_name)
+            os.makedirs(new_report_path, exist_ok=True)
+            # Prepare SLURM job submission script based on run.sh
+            job_script = f"""#!/bin/bash
+#SBATCH --job-name=qq_{platform}
+#SBATCH --partition={partition}
+#SBATCH --output=logs/slurm_output.log
+#SBATCH --time=01:00:00
+
+# Set environment variables
+export QIBOLAB_PLATFORMS={platforms_base}
+export QIBO_PLATFORM={platform}
+
+# Activate environment (using {environment} environment)
+# source ~/.env/{environment}/bin/activate
+
+# Run the experiment
+qq run {temp_runcard_path} -o {new_report_path} -f --no-update
+
+exit 0
+"""
+            
+            # Write job script to temporary file
+            job_script_path = os.path.join(temp_dir, 'job_script.sh')
+            with open(job_script_path, 'w') as f:
+                f.write(job_script)
+            
+            # Make script executable
+            os.chmod(job_script_path, 0o755)
+            
+            # Submit job to SLURM
+            result = subprocess.run(['sbatch', job_script_path], 
+                                  capture_output=True, text=True, timeout=30)
+            
+            if result.returncode == 0:
+                # Extract job ID from sbatch output
+                job_id = None
+                for line in result.stdout.split('\n'):
+                    if 'Submitted batch job' in line:
+                        job_id = line.split()[-1]
+                        break
+                
+                # Save job information to temporary directory
+                job_info = {
+                    'job_id': job_id,
+                    'output_dir': new_report_path,
+                    'temp_dir': temp_dir,
+                    'platform': platform,
+                    'submitted_at': time.time(),
+                    'original_report': full_report_path
+                }
+                
+                job_info_path = os.path.join(temp_dir, 'job_info.json')
+                with open(job_info_path, 'w') as f:
+                    json.dump(job_info, f, indent=2)
+                    
+                logger.info(f"Experiment repeat job submitted: {job_id}, output: {new_report_path}")
+                # Save to file logs/last_report_path
+                slurm_log = slurm_log_path()
+                config = current_app.config['QDASHBOARD_CONFIG']
+                last_report_path = config.get('last_report_path', '.qdashboard/logs/last_report_path')
+                with open(os.path.join(config['root'], last_report_path), 'w') as f:
+                    f.write(new_report_path)
+                return jsonify({
+                    'success': True,
+                    'message': 'Experiment submitted successfully',
+                    'job_id': job_id,
+                    'output_dir': new_report_path,
+                    'temp_dir': temp_dir,
+                    'job_info': job_info
+                })
+            else:
+                logger.error(f"Failed to submit SLURM job: {result.stderr}")
+                return jsonify({'success': False, 'message': f'Failed to submit job: {result.stderr}'}), 500
+                
+        except Exception as e:
+            logger.error(f"Error repeating experiment: {str(e)}")
+            return jsonify({'success': False, 'message': f'Error repeating experiment: {str(e)}'}), 500
 
     logger.debug("Routes module initialized")
     return app

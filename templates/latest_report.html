@@ -86,9 +86,9 @@ Enhanced with quantum computing dashboard integration, dark theme, and consisten
                                 <!-- Qibocal CLI Actions in Header -->
                                 {% if report_path_for_link %}
                                 <div class="btn-group" role="group">
-                                    <button type="button" class="btn btn-sm btn-outline-secondary qibocal-btn" 
-                                            disabled 
-                                            title="Repeat Experiment (Coming Soon)">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary qibocal-btn play-experiment-btn" 
+                                            data-path="{{ report_path_for_link }}"
+                                            title="Repeat Experiment">
                                         <i class="fas fa-play"></i>
                                     </button>
                                     <button type="button" class="btn btn-sm btn-outline-primary qibocal-action qibocal-btn" 
@@ -207,6 +207,54 @@ Enhanced with quantum computing dashboard integration, dark theme, and consisten
                     case 'update': iconClass += 'fa-sync-alt'; break;
                 }
                 button.find('i').removeClass().addClass(iconClass);
+            }
+        });
+    });
+
+    // Play/Repeat Experiment functionality
+    $('.play-experiment-btn').click(function() {
+        var path = $(this).data('path');
+        var button = $(this);
+        
+        // Hide tooltip when clicked
+        button.tooltip('hide');
+        
+        // Show loading state
+        button.prop('disabled', true);
+        button.find('i').removeClass().addClass('fas fa-spinner fa-spin');
+        
+        $('#qibocal-status').hide();
+        
+        // Make AJAX request to repeat the experiment
+        $.ajax({
+            url: '/repeat_experiment',
+            method: 'POST',
+            data: {
+                'report_path': path
+            },
+            success: function(response) {
+                if (response.success) {
+                    showQibocalStatus(
+                        'Experiment submitted successfully! Job ID: ' + response.job_id + 
+                        '<br>Output directory: <code>' + response.output_dir + '</code>' +
+                        '<br>Temporary directory: <code>' + response.temp_dir + '</code>',
+                        'success'
+                    );
+                } else {
+                    showQibocalStatus(response.message, 'danger');
+                }
+            },
+            error: function(xhr) {
+                var message = 'Error submitting experiment';
+                if (xhr.responseJSON && xhr.responseJSON.message) {
+                    message = xhr.responseJSON.message;
+                }
+                showQibocalStatus(message, 'danger');
+            },
+            complete: function() {
+                // Restore button state
+                button.prop('disabled', false);
+                button.find('i').removeClass().addClass('fas fa-play');
             }
         });
     });

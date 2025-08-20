@@ -5,7 +5,7 @@ Report viewing and processing utilities.
 import os
 import re
 import subprocess
-from flask import make_response, render_template, send_file
+from flask import make_response, render_template, send_file, current_app
 from ..qpu.monitoring import get_qibo_versions
 
 
@@ -95,9 +95,12 @@ def report_viewer(report_path, root_path, qibo_versions=None, access_mode="lates
 
 
 def get_latest_report_path(home_path):
-    """Get the path to the latest report from .latest file."""
+    """Get the path to the latest report from .last_report_path file."""
+    config = current_app.config['QDASHBOARD_CONFIG']
+    last_report_path = config.get('last_report_path', '.qdashboard/logs/last_report_path')
+    
     try:
-        with open(os.path.join(home_path, ".latest"), 'r') as file:
+        with open(last_report_path, 'r') as file:
             latest_path = file.read().strip()
         return latest_path
     except FileNotFoundError:

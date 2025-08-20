@@ -47,7 +47,9 @@ def get_config():
         'root': os.path.normpath(os.getenv('QD_PATH', home_path)),
         'key': os.getenv('QD_KEY', ""),
         'home_path': home_path,
-        'user': os.environ.get('USER')
+        'user': os.environ.get('USER'),
+        'environment': os.environ.get('VIRTUAL_ENV', None),
+        'log_path': os.path.join(home_path, ".qdashboard/logs/slurm_output.txt")
     }
     
     logger.info("Useful information during execution")

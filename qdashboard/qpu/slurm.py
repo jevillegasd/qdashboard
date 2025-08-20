@@ -72,11 +72,14 @@ def check_queue_running_jobs(queue_name):
         return False  # If command fails, assume no running jobs
 
 
+def slurm_log_path():
+    home_path = os.environ.get('HOME')
+    return os.path.join(home_path, ".qdashboard/logs/slurm_output.log")
+
 def get_slurm_output(slurm_output_path=None):
     """Get SLURM output log content."""
     if slurm_output_path is None:
-        home_path = os.environ.get('HOME')
-        slurm_output_path = os.path.join(home_path, "work/logs/slurm_output.txt")
+        slurm_output_path = slurm_log_path()
     
     try:
         with open(slurm_output_path, 'r') as file:
@@ -92,8 +95,7 @@ def parse_slurm_log_for_errors(slurm_output_path=None):
     Returns a tuple (has_error, error_message)
     """
     if slurm_output_path is None:
-        home_path = os.environ.get('HOME')
-        slurm_output_path = os.path.join(home_path, "work/logs/slurm_output.txt")
+        slurm_output_path = slurm_log_path()
     
     try:
         with open(slurm_output_path, 'r') as file:

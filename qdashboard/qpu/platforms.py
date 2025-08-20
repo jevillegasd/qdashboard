@@ -5,6 +5,7 @@ Utilities for managing qibolab platforms directory using git.
 import os
 import subprocess
 import logging
+import glob
 from pathlib import Path
 
 # Set up logging
@@ -810,3 +811,47 @@ def push_changes(platforms_path):
         error_msg = f"Unexpected error during push: {e}"
         logger.error(error_msg)
         return {'success': False, 'error': error_msg}
+
+def get_partition(platform):
+    """
+    Get the partition name from a platform name by reading the queues.json file.
+
+    Args:
+        platform (str): The name of the platform.
+
+    Returns:
+        str: The partition name for the platform, or default if not found.
+    """
+    if not isinstance(platform, str):
+        return None
+
+    # Get the platforms path
+    platforms_path = get_platforms_path()
+    if not platforms_path:
+        logger.warning(f"Could not get platforms path to read the partition (queue) for {platform}")
+        return None  # Default fallback
+    
+    # Try to read partition from queues.json
+    queues_file = os.path.join(platforms_path, 'queues.json')
+    
+    if os.path.exists(queues_file):
+        try:
+            import json
+            with open(queues_file, 'r') as f:
+                queues_data = json.load(f)
+            
+            # Look up the platform in the queues mapping
+            if platform in queues_data:
+                partition = queues_data[platform]
+                logger.info(f"Found partition '{partition}' for platform '{platform}' in queues.json")
+                return partition
+            else:
+                logger.warning(f"Platform '{platform}' not found in queues.json")
+                
+        except (json.JSONDecodeError, IOError) as e:
+            logger.error(f"Could not read queues.json: {e}")
+    else:
+        logger.warning(f"queues.json not found at {queues_file}")
+    
+    # Fallback to no partition defined
+    return None

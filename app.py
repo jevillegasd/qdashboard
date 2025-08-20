@@ -88,6 +88,7 @@ def main():
     print('Quantum Dashboard Server running on http://{}:{}'.format(config['host'], config['port']))
     print('Serving path: {}'.format(config['root']))
     print('Authentication key: {}'.format(config['key']))
+    print('Using environment: {}'.format(config['environment']))
     print('Press Ctrl+C to stop')
     
     # Start the Flask application

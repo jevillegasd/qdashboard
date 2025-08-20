@@ -10,13 +10,17 @@ import os
 import argparse
 from typing import Optional, List
 
+from qdashboard.core.app import create_app, get_config
+from qdashboard.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 def create_parser() -> argparse.ArgumentParser:
     """Create the command line argument parser."""
     parser = argparse.ArgumentParser(
         prog='qdashboard',
         description='QDashboard - Quantum Computing Dashboard',
-        epilog='For more information, visit: https://github.com/jevillegasdatTII/qdashboard'
+        epilog='For more information, visit: https://github.com/jevillegasd/qdashboard'
     )
     
     parser.add_argument(
@@ -53,13 +57,28 @@ def create_parser() -> argparse.ArgumentParser:
         action='store_true',
         help='Enable debug mode'
     )
-    
+
     parser.add_argument(
-        '--version',
-        action='version',
-        version=f'%(prog)s {__import__("qdashboard").__version__}'
+        '--environment',
+        type=str,
+        default=None,
+        help='Environment to run the dashboard in (default: None)'
     )
-    
+
+    parser.add_argument(
+        '--home-path',
+        type=str,
+        default=None,
+        help='Home directory path for the user (default: user home directory)'
+    )
+
+    parser.add_argument(
+        '--log-path',
+        type=str,
+        default='~/.qdashboard/logs/slurm_output.txt',
+        help='Path to the log directory (default: ~/.qdashboard/logs/slurm_output.txt)'
+    )
+
     return parser
 
 
@@ -68,16 +87,22 @@ def get_default_config(args: argparse.Namespace) -> dict:
     # Set default root path to user's home directory if not specified
     root_path = args.root or os.path.expanduser('~')
     root_path = os.path.abspath(root_path)
-    
-    config = {
-        'host': args.host,
-        'port': args.port,
-        'root': root_path,
-        'key': args.auth_key,
-        'debug': args.debug,
-        'home_path': root_path
-    }
-    
+    config = get_config()
+    if args.root:
+        config['root'] = root_path
+    if args.auth_key:
+        config['key'] = args.auth_key
+    if args.debug:
+        config['debug'] = args.debug
+    if args.environment:
+        config['environment'] = args.environment
+    if args.home_path:
+        config['home_path'] = args.home_path
+    if args.host:
+        config['host'] = args.host
+    if args.log_path:
+        config['log_path'] = args.log_path
+    config['version'] = __import__("qdashboard").__version__
     return config
 
 
@@ -85,16 +110,16 @@ def validate_config(config: dict) -> None:
     """Validate the configuration parameters."""
     # Validate port range
     if not (1 <= config['port'] <= 65535):
-        print(f"Error: Port number must be between 1 and 65535, got {config['port']}")
+        logger.warning(f"Error: Port number must be between 1 and 65535, got {config['port']}")
         sys.exit(1)
     
     # Validate root directory
     if not os.path.exists(config['root']):
-        print(f"Error: Root directory does not exist: {config['root']}")
+        logger.warning(f"Error: Root directory does not exist: {config['root']}")
         sys.exit(1)
     
     if not os.path.isdir(config['root']):
-        print(f"Error: Root path is not a directory: {config['root']}")
+        logger.warning(f"Error: Root path is not a directory: {config['root']}")
         sys.exit(1)
 
 
@@ -123,19 +148,16 @@ def main(argv: Optional[List[str]] = None) -> None:
         from .qpu.platforms import get_platforms_path
         
         # Ensure qibolab platforms directory is available
-        print('QDashboard - Quantum Computing Dashboard')
-        print('=' * 50)
-        print('Initializing QPU platforms...')
+        logger.info('QDashboard - Quantum Computing Dashboard')
+        logger.info('Initializing QPU platforms...')
         
         try:
             platforms_path = get_platforms_path(config['root'])
-            if platforms_path:
-                print(f'QPU platforms directory: {platforms_path}')
-            else:
-                print('Warning: Could not initialize QPU platforms directory')
+            if not platforms_path:
+                logger.warning('Could not initialize QPU platforms directory')
         except Exception as e:
-            print(f'Warning: Error setting up QPU platforms: {e}')
-        
+            logger.warning(f'Error setting up QPU platforms: {e}')
+
         # Create Flask application
         app = create_app()
         
@@ -155,14 +177,14 @@ def main(argv: Optional[List[str]] = None) -> None:
         app.add_url_rule('/files/<path:p>', view_func=path_view)
         
         # Print startup information
-        print('=' * 50)
-        print(f'Server running on: http://{config["host"]}:{config["port"]}')
-        print(f'Serving directory: {config["root"]}')
+        logger.info(f'Server running on: http://{config["host"]}:{config["port"]}')
+        logger.info(f'Serving directory: {config["root"]}')
+        logger.info(f'Slurm Log: {config["log_path"]}')
         if config['key']:
-            print(f'Authentication key: {config["key"]}')
-        print('Press Ctrl+C to stop the server')
-        print('=' * 50)
-        
+            logger.info(f'Authentication key: {config["key"]}')
+        logger.info(f'Environment: {config["environment"]}')
+        logger.info('Press Ctrl+C to stop the server')
+
         # Start the Flask application
         app.run(
             host=config['host'],
@@ -172,14 +194,14 @@ def main(argv: Optional[List[str]] = None) -> None:
         )
         
     except KeyboardInterrupt:
-        print('\nQDashboard server stopped by user')
+        logger.error('\nQDashboard server stopped by user')
         sys.exit(0)
     except ImportError as e:
-        print(f'Error: Required dependencies not found: {e}')
-        print('Please install qdashboard with: pip install qdashboard')
+        logger.error(f'Error: Required dependencies not found: {e}')
+        logger.error('Please install qdashboard with: pip install qdashboard')
         sys.exit(1)
     except Exception as e:
-        print(f'Error starting QDashboard server: {e}')
+        logger.error(f'Error starting QDashboard server: {e}')
         sys.exit(1)
 
 
