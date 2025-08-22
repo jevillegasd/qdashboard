@@ -24,11 +24,11 @@ def create_parser() -> argparse.ArgumentParser:
     )
     
     parser.add_argument(
-        'port',
+        '--port',
         nargs='?',
         type=int,
-        default=5005,
-        help='Port number to run the server on (default: 5005)'
+        default=8080,
+        help='Port number to run the server on (default: 8080)'
     )
     
     parser.add_argument(
@@ -102,6 +102,8 @@ def get_default_config(args: argparse.Namespace) -> dict:
         config['host'] = args.host
     if args.log_path:
         config['log_path'] = args.log_path
+    if args.port:
+        config['port'] = args.port
     config['version'] = __import__("qdashboard").__version__
     return config
 
@@ -136,7 +138,8 @@ def main(argv: Optional[List[str]] = None) -> None:
     
     # Get configuration
     config = get_default_config(args)
-    
+    print(config)
+
     # Validate configuration
     validate_config(config)
     
@@ -148,7 +151,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         from .qpu.platforms import get_platforms_path
         
         # Ensure qibolab platforms directory is available
-        logger.info('QDashboard - Quantum Computing Dashboard')
+        logger.info('QDashboard - CLI - Quantum Computing Dashboard')
         logger.info('Initializing QPU platforms...')
         
         try:
@@ -177,6 +180,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         app.add_url_rule('/files/<path:p>', view_func=path_view)
         
         # Print startup information
+        logger.info('QDashboard server starting...')
         logger.info(f'Server running on: http://{config["host"]}:{config["port"]}')
         logger.info(f'Serving directory: {config["root"]}')
         logger.info(f'Slurm Log: {config["log_path"]}')
@@ -185,6 +189,8 @@ def main(argv: Optional[List[str]] = None) -> None:
         logger.info(f'Environment: {config["environment"]}')
         logger.info('Press Ctrl+C to stop the server')
 
+        if 'debug' not in config:
+            config['debug'] = False
         # Start the Flask application
         app.run(
             host=config['host'],

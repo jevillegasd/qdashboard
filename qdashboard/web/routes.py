@@ -14,7 +14,7 @@ from ..qpu.monitoring import get_qpu_health, get_available_qpus, get_qibo_versio
 from ..qpu.platforms import get_platforms_path, list_repository_branches, switch_repository_branch, get_current_branch_info, commit_changes, push_changes, stash_changes, list_stashes, apply_latest_stash, discard_changes, get_partition
 from ..qpu.slurm import get_slurm_status, get_slurm_output, parse_slurm_log_for_errors, slurm_log_path
 from ..qpu.topology import qpu_connectivity, infer_topology_from_connectivity, generate_topology_visualization
-from ..experiments.protocols import get_qibocal_protocols
+from ..experiments.protocols import get_qibocal_protocols, get_protocol_attributes
 from ..web.reports import report_viewer, get_latest_report_path
 from ..utils.formatters import yaml_response, json_response
 from qdashboard.utils.logger import get_logger
@@ -482,6 +482,33 @@ def register_routes(app, config):
         except Exception as e:
             logger.error(f"Error pushing changes: {str(e)}")
             return jsonify({'error': str(e)}), 500
+
+    @app.route("/api/protocols")
+    def api_protocols():
+        """API endpoint to get all available protocols."""
+        protocols = get_qibocal_protocols()
+
+        jsonifiable_protocols = {}
+        for category in protocols:
+            jsonifiable_protocols[category] = {item['name']: {'id': item['id'],
+                                    'class_name': item['class_name'],
+                                    'module_name': item['module_name'],
+                                    'module_path': item['module_path']}
+                      for item in protocols[category]}
+        
+        logger.info(f"Protocols retrieved successfully: {jsonifiable_protocols}")
+        return jsonify(jsonifiable_protocols), 200
+
+    @app.route("/api/protocols/<protocol_id>")
+    def api_protocol_details(protocol_id):
+        """API endpoint to get details of a specific protocol."""
+        try:
+            attributes = get_protocol_attributes(protocol_id)
+            return jsonify(attributes), 200
+        except Exception as e:
+            logger.warning(f"Protocol not found: {protocol_id}")
+            logger.debug(f"Error details: {e}:{e.__context__}")
+            return jsonify({'error': 'Protocol not found'}), 404
 
     @app.route("/experiments")
     def experiments():

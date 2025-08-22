@@ -13,6 +13,9 @@ import json
 import threading
 import traceback
 from functools import lru_cache
+
+from qibocal.auto.operation import Parameters, Results, Data, Routine
+
 from qdashboard.utils.logger import get_logger
 
 
@@ -38,7 +41,6 @@ def get_qibocal_protocols():
     
     # Try multiple approaches to get protocols
     try:
-        # Approach 1: Try direct import with signal handling
         protocols = _get_protocols_direct()
         with _cache_lock:
             _protocol_cache = protocols
@@ -46,7 +48,6 @@ def get_qibocal_protocols():
     except Exception as e:
         if "signal only works in main thread" in str(e):
             try:
-                # Approach 2: Try subprocess method
                 protocols = _get_protocols_subprocess()
                 with _cache_lock:
                     _protocol_cache = protocols
@@ -149,7 +150,7 @@ def _get_protocols_direct():
         return _get_fallback_protocols()
 
 
-def _get_protocols_subprocess():
+def _get_protocols_subprocess() -> dict:
     """
     Subprocess approach to get protocols - run protocol discovery in a separate process.
     """
@@ -236,7 +237,7 @@ if __name__ == "__main__":
         return _get_fallback_protocols()
 
 
-def _get_fallback_protocols():
+def _get_fallback_protocols() -> dict:
     """
     Return a hardcoded list of known qibocal protocols as fallback.
     """
@@ -259,7 +260,7 @@ def _get_fallback_protocols():
     return _categorize_protocols(fallback_protocols)
 
 
-def _categorize_protocols(routine_protocols):
+def _categorize_protocols(routine_protocols) -> dict:
     """
     Categorize protocols based on their name patterns.
     """
@@ -324,3 +325,105 @@ def _categorize_protocols(routine_protocols):
     logger.info(f"Discovered {sum(len(v) for v in categorized.values())} qibocal protocols across {len(categorized)} categories")
     
     return categorized
+
+def get_protocol_attributes(protocol: dict) -> dict:
+    """
+    Get attributes of a specific protocol. These are classified as:
+        inputs (subclass of type qibocal.auto.operationParameters)
+        results (subclass of type qibocal.auto.Results)
+        data (subclass of type qibocal.auto.Data)
+    """
+    try:
+        if isinstance(protocol, dict):
+            routine_obj = protocol.get('routine_obj')
+        elif isinstance(protocol, str):
+            qq_protocols = importlib.import_module('qibocal.protocols')
+            for module_name, module in inspect.getmembers(qq_protocols):
+                if module_name == protocol:
+                    routine_obj:Routine = module
+                    if routine_obj is None:
+                        logger.error(f"Protocol {protocol} not found in qibocal.protocols")
+                        raise ValueError(f"Protocol {protocol} not found in qibocal.protocols")  
+                    else:
+                        protocol = {
+                            "name": protocol,
+                            "module_name": module_name,
+                            "module_path": routine_obj.acquisition.__module__,
+                            "class_name": protocol
+                        }
+        if routine_obj:
+            protocol_class = importlib.import_module(routine_obj.acquisition.__module__)
+        else:
+            # If not available, dynamically import the protocol class
+            module_path = protocol['module_path']
+            class_name = protocol['class_name']
+            try:
+                # The module path might point to the class itself or the containing module
+                module = importlib.import_module(module_path)
+                protocol_class = getattr(module, class_name)
+            except (ModuleNotFoundError, AttributeError):
+                # Fallback for cases where module_path is 'qibocal.protocols.ClassName'
+                # We need to import 'qibocal.protocols' and get the class from there.
+                parts = module_path.rsplit('.', 1)
+                if len(parts) == 2:
+                    base_module_path, _ = parts
+                    module = importlib.import_module(base_module_path)
+                    protocol_class = getattr(module, class_name)
+                else:
+                    raise
+
+        # Get the inner classes for Parameters, Results, and Data
+        parameters_class = None
+        results_class = None
+        data_class = None
+        logger.debug(f"Inspecting protocol: {protocol_class.__name__}")
+        try:
+
+            # Inspect inner classes of the protocol to find the ones that inherit
+            # from Parameters, Results, and Data.
+            for _, inner_class in inspect.getmembers(protocol_class, inspect.isclass):
+                    logger.debug(f"Found inner class: {inner_class.__name__}")
+                #if inner_class.__module__ == protocol_class.__module__: # Ensure it's an inner class
+                    if issubclass(inner_class, Parameters) and inner_class is not Parameters:
+                        parameters_class = inner_class
+                    elif issubclass(inner_class, Results) and inner_class is not Results:
+                        results_class = inner_class
+                    elif issubclass(inner_class, Data) and inner_class is not Data:
+                        data_class = inner_class
+        except (ImportError, TypeError):
+            # Fallback to getattr for older qibocal versions or different structures
+            parameters_class = getattr(protocol_class, 'Parameters', None)
+            results_class = getattr(protocol_class, 'Results', None)
+            data_class = getattr(protocol_class, 'Data', None)
+
+        attributes = {
+            "inputs": {},
+            "results": {},
+            "data": {}
+        }
+
+        # Extract fields from the Parameters class
+        if parameters_class and hasattr(parameters_class, '__annotations__'):
+            for name, field_type in parameters_class.__annotations__.items():
+                attributes["inputs"][name] = str(field_type)
+
+        # Extract fields from the Results class
+        if results_class and hasattr(results_class, '__annotations__'):
+            for name, field_type in results_class.__annotations__.items():
+                attributes["results"][name] = str(field_type)
+
+        # Extract fields from the Data class
+        if data_class and hasattr(data_class, '__annotations__'):
+            for name, field_type in data_class.__annotations__.items():
+                attributes["data"][name] = str(field_type)
+
+        return attributes
+
+    except (ImportError, AttributeError, KeyError) as e:
+        logger.error(f"Could not get attributes for protocol {protocol.get('name', 'N/A')}: {e}")
+        logger.debug(f"Full traceback:\n{traceback.format_exc()}")
+        return {
+            "inputs": {"error": "Could not retrieve attributes."},
+            "results": {"error": "Could not retrieve attributes."},
+            "data": {"error": "Could not retrieve attributes."}
+        }
