@@ -14,106 +14,12 @@ Extended with quantum computing specific features:
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <link rel="stylesheet" href="{{url_for('static', filename='css/dashboard.css')}}">
     <link rel="stylesheet" href="{{url_for('static', filename='css/menu.css')}}">
+    <link rel="stylesheet" href="{{url_for('static', filename='css/experiments.css')}}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;700&display=swap" rel="stylesheet">
     
     <style>
-        /* Enhanced popover styling */
-        .popover-cell {
-            transition: background-color 0.2s ease;
-        }
-        
-        .popover-cell:hover {
-            background-color: rgba(0, 123, 255, 0.1) !important;
-        }
-        
-        .calibration-popover {
-            min-width: 200px;
-            max-width: 350px;
-        }
-        
-        .calibration-popover .list-unstyled li {
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 4px 0;
-        }
-        
-        .calibration-popover .list-unstyled li:last-child {
-            border-bottom: none;
-        }
-        
-        .calibration-popover .text-primary {
-            color: #007bff !important;
-        }
-        
-        .calibration-popover .text-muted {
-            color: #6c757d !important;
-        }
-        
-        .calibration-popover code {
-            background-color: rgba(0, 0, 0, 0.3);
-            padding: 2px 4px;
-            border-radius: 3px;
-            font-size: 0.9em;
-        }
-        
-        /* Make popovers more stable */
-        .popover {
-            z-index: 1060 !important;
-            max-width: 350px !important;
-        }
-        
-        .popover-header {
-            background-color: #007bff !important;
-            color: white !important;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.2) !important;
-        }
-        
-        .popover-body {
-            padding: 0.75rem !important;
-            background-color: #343a40 !important;
-            color: #fff !important;
-        }
-        
-        /* Calibration table equal column distribution */
-        .calibration-table {
-            table-layout: fixed !important;
-            width: 100% !important;
-        }
-        
-        .calibration-table th,
-        .calibration-table td {
-            text-align: center !important;
-            vertical-align: middle !important;
-            word-wrap: break-word !important;
-            overflow-wrap: break-word !important;
-        }
-        
-        /* First column (Qubit identifier) should be narrow */
-        .calibration-table th:first-child,
-        .calibration-table td:first-child {
-            width: 8% !important;
-            min-width: 50px !important;
-            text-align: center !important;
-            font-weight: bold !important;
-        }
-        
-        /* Ensure other columns distribute the remaining space equally */
-        .calibration-table th:nth-child(n+2),
-        .calibration-table td:nth-child(n+2) {
-            width: auto !important;
-        }
-        
-        /* Responsive column sizing */
-        @media (max-width: 768px) {
-            .calibration-table {
-                font-size: 0.75rem !important;
-            }
-            
-            .calibration-table th,
-            .calibration-table td {
-                padding: 0.25rem !important;
-            }
-        }
+        /* Better to put everything in assets/css */
     </style>
 </head>
 <body>
@@ -186,12 +92,127 @@ Extended with quantum computing specific features:
                             <div class="collapse category-content" id="collapse-{{ category|replace(' ', '-')|lower }}">
                                 <div class="card-body p-2">
                                     {% for experiment in experiments %}
-                                    <div class="experiment-card p-2 mb-2" 
-                                         draggable="true" 
-                                         data-experiment-id="{{ experiment.id }}"
-                                         data-experiment-name="{{ experiment.name }}"
-                                         data-category="{{ category }}">
-                                        <i class="fas fa-flask mr-2"></i>{{ experiment.name }}
+                                    <div class="experiment-wrapper mb-2">
+                                        <div class="experiment-card p-2" 
+                                             draggable="true" 
+                                             data-experiment-id="{{ experiment.id }}"
+                                             data-experiment-name="{{ experiment.name }}"
+                                             data-category="{{ category }}"
+                                             data-target="#attrs-{{ experiment.id }}"
+                                             aria-expanded="false"
+                                             style="cursor: pointer;">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <div>
+                                                    <i class="fas fa-flask mr-2"></i>{{ experiment.name }}
+                                                </div>
+                                                <i class="fas fa-chevron-down"></i>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Protocol Attributes Section -->
+                                        <div class="collapse" id="attrs-{{ experiment.id }}">
+                                            <div class="card card-body mt-1 bg-light">
+                                                <!-- Tabs Navigation -->
+                                                <ul class="nav nav-tabs nav-tabs-sm" id="tabs-{{ experiment.id }}" role="tablist">
+                                                    <li class="nav-item">
+                                                        <a class="nav-link active" id="inputs-tab-{{ experiment.id }}" data-toggle="tab" 
+                                                           href="#inputs-{{ experiment.id }}" role="tab" aria-controls="inputs-{{ experiment.id }}" 
+                                                           aria-selected="true">
+                                                            <i class="fas fa-sign-in-alt mr-1"></i> Inputs
+                                                            {% if experiment.attributes.inputs %}
+                                                                <span class="badge badge-primary ml-1">{{ experiment.attributes.inputs|length }}</span>
+                                                            {% endif %}
+                                                        </a>
+                                                    </li>
+                                                    <li class="nav-item">
+                                                        <a class="nav-link" id="results-tab-{{ experiment.id }}" data-toggle="tab" 
+                                                           href="#results-{{ experiment.id }}" role="tab" aria-controls="results-{{ experiment.id }}" 
+                                                           aria-selected="false">
+                                                            <i class="fas fa-chart-line mr-1"></i> Results
+                                                            {% if experiment.attributes.results %}
+                                                                <span class="badge badge-success ml-1">{{ experiment.attributes.results|length }}</span>
+                                                            {% endif %}
+                                                        </a>
+                                                    </li>
+                                                    <li class="nav-item">
+                                                        <a class="nav-link" id="data-tab-{{ experiment.id }}" data-toggle="tab" 
+                                                           href="#data-{{ experiment.id }}" role="tab" aria-controls="data-{{ experiment.id }}" 
+                                                           aria-selected="false">
+                                                            <i class="fas fa-database mr-1"></i> Data
+                                                            {% if experiment.attributes.data %}
+                                                                <span class="badge badge-info ml-1">{{ experiment.attributes.data|length }}</span>
+                                                            {% endif %}
+                                                        </a>
+                                                    </li>
+                                                </ul>
+                                                
+                                                <!-- Tabs Content -->
+                                                <div class="tab-content mt-3" id="tabContent-{{ experiment.id }}">
+                                                    <!-- Inputs Tab -->
+                                                    <div class="tab-pane fade show active" id="inputs-{{ experiment.id }}" 
+                                                         role="tabpanel" aria-labelledby="inputs-tab-{{ experiment.id }}">
+                                                        {% if experiment.attributes.inputs %}
+                                                            <div class="row">
+                                                                {% for key, value in experiment.attributes.inputs.items() %}
+                                                                <div class="col-md-6 mb-2">
+                                                                    <div class="attribute-item">
+                                                                        <code class="attribute-name">{{ key }}</code>
+                                                                        <div class="attribute-type text-muted">{{ value }}</div>
+                                                                    </div>
+                                                                </div>
+                                                                {% endfor %}
+                                                            </div>
+                                                        {% else %}
+                                                            <div class="text-muted text-center py-3">
+                                                                <i class="fas fa-info-circle"></i> No input parameters defined for this protocol
+                                                            </div>
+                                                        {% endif %}
+                                                    </div>
+                                                    
+                                                    <!-- Results Tab -->
+                                                    <div class="tab-pane fade" id="results-{{ experiment.id }}" 
+                                                         role="tabpanel" aria-labelledby="results-tab-{{ experiment.id }}">
+                                                        {% if experiment.attributes.results %}
+                                                            <div class="row">
+                                                                {% for key, value in experiment.attributes.results.items() %}
+                                                                <div class="col-md-6 mb-2">
+                                                                    <div class="attribute-item">
+                                                                        <code class="attribute-name">{{ key }}</code>
+                                                                        <div class="attribute-type text-muted">{{ value }}</div>
+                                                                    </div>
+                                                                </div>
+                                                                {% endfor %}
+                                                            </div>
+                                                        {% else %}
+                                                            <div class="text-muted text-center py-3">
+                                                                <i class="fas fa-info-circle"></i> No result fields defined for this protocol
+                                                            </div>
+                                                        {% endif %}
+                                                    </div>
+                                                    
+                                                    <!-- Data Tab -->
+                                                    <div class="tab-pane fade" id="data-{{ experiment.id }}" 
+                                                         role="tabpanel" aria-labelledby="data-tab-{{ experiment.id }}">
+                                                        {% if experiment.attributes.data %}
+                                                            <div class="row">
+                                                                {% for key, value in experiment.attributes.data.items() %}
+                                                                <div class="col-md-6 mb-2">
+                                                                    <div class="attribute-item">
+                                                                        <code class="attribute-name">{{ key }}</code>
+                                                                        <div class="attribute-type text-muted">{{ value }}</div>
+                                                                    </div>
+                                                                </div>
+                                                                {% endfor %}
+                                                            </div>
+                                                        {% else %}
+                                                            <div class="text-muted text-center py-3">
+                                                                <i class="fas fa-info-circle"></i> No data fields defined for this protocol
+                                                            </div>
+                                                        {% endif %}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                     {% endfor %}
                                 </div>
@@ -380,7 +401,250 @@ Extended with quantum computing specific features:
                 saveActionNode(nodeName);
             }
         });
+
+        // Generate YAML button handler
+        $('#generate-yaml-btn').on('click', function() {
+            saveAllProtocolDefaults();
+            generateYAML();
+        });
+
+        // Run experiment button handler
+        $('#run-experiment-btn').on('click', function() {
+            saveAllProtocolDefaults();
+            runExperiment();
+        });
+
+        // Event delegation for dynamically created collapsible sections
+        $(document).on('click', '.protocol-section-header', function() {
+            const target = $(this).data('target');
+            const chevron = $(this).find('.fa-chevron-down');
+            
+            $(target).collapse('toggle');
+            
+            // Update aria-expanded attribute
+            const isExpanded = $(this).attr('aria-expanded') === 'true';
+            $(this).attr('aria-expanded', !isExpanded);
+        });
+
+        // Handle collapse events to update chevron rotation
+        $(document).on('shown.bs.collapse', '.protocol-section .collapse', function() {
+            const header = $(this).siblings('.protocol-section-header');
+            header.attr('aria-expanded', 'true');
+        });
+
+        $(document).on('hidden.bs.collapse', '.protocol-section .collapse', function() {
+            const header = $(this).siblings('.protocol-section-header');
+            header.attr('aria-expanded', 'false');
+        });
     });
+
+    // Protocol defaults cookie management
+    function getProtocolDefaults(protocolId) {
+        const cookieName = `protocol_defaults_${protocolId}`;
+        const cookieValue = getCookie(cookieName);
+        return cookieValue ? JSON.parse(cookieValue) : {};
+    }
+
+    function saveProtocolDefaults(protocolId, defaults) {
+        // Filter out optional parameters with "[Optional]" values before saving
+        const filteredDefaults = {};
+        for (const [key, value] of Object.entries(defaults)) {
+            if (value !== '[Optional]') {
+                filteredDefaults[key] = value;
+            }
+        }
+        
+        const cookieName = `protocol_defaults_${protocolId}`;
+        setCookie(cookieName, JSON.stringify(filteredDefaults), 30); // Save for 30 days
+    }
+
+    function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return null;
+    }
+
+    function setCookie(name, value, days) {
+        const expires = new Date(Date.now() + days * 864e5).toUTCString();
+        document.cookie = `${name}=${value}; expires=${expires}; path=/`;
+    }
+
+    // Generate dynamic input fields based on protocol attributes
+    function generateInputFields(experiment, savedDefaults) {
+        let html = '';
+        
+        // Generate collapsible section for common parameters
+        const commonId = `common-${Date.now()}`;
+        html += `
+            <div class="protocol-section">
+                <div class="protocol-section-header" data-toggle="collapse" data-target="#${commonId}" 
+                     aria-expanded="false" aria-controls="${commonId}">
+                    <i class="fas fa-cog mr-2"></i>
+                    <span>Common Parameters</span>
+                    <span class="badge badge-secondary ml-2">2</span>
+                    <i class="fas fa-chevron-down ml-auto"></i>
+                </div>
+                <div class="collapse" id="${commonId}">
+                    <div class="protocol-section-body">
+                        <div class="form-group-compact">
+                            <div class="input-row">
+                                <label class="input-label">Shots:</label>
+                                <input type="number" class="form-control protocol-input compact-input" 
+                                       data-field="shots" value="${savedDefaults.shots || '1024'}" min="1"
+                                       title="Number of measurement repetitions">
+                            </div>
+                        </div>
+                        <div class="form-group-compact">
+                            <div class="input-row">
+                                <label class="input-label">Relaxation Time (μs):</label>
+                                <input type="number" class="form-control protocol-input compact-input" 
+                                       data-field="relaxation_time" value="${savedDefaults.relaxation_time || '[Optional]'}" step="0.001"
+                                       title="Relaxation time in microseconds (optional)"
+                                       placeholder="Optional parameter">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Generate collapsible section for protocol inputs (parameters)
+        if (experiment.attributes && experiment.attributes.inputs) {
+            const inputs = experiment.attributes.inputs;
+            if (Object.keys(inputs).length > 0) {
+                const parametersId = `parameters-${Date.now()}`;
+                html += `
+                    <div class="protocol-section mt-3">
+                        <div class="protocol-section-header" data-toggle="collapse" data-target="#${parametersId}" 
+                             aria-expanded="false" aria-controls="${parametersId}">
+                            <i class="fas fa-sign-in-alt mr-2"></i>
+                            <span>Protocol Parameters</span>
+                            <span class="badge badge-secondary ml-2">${Object.keys(inputs).length}</span>
+                            <i class="fas fa-chevron-down ml-auto"></i>
+                        </div>
+                        <div class="collapse" id="${parametersId}">
+                            <div class="protocol-section-body">
+                `;
+                
+                for (const [fieldName, fieldType] of Object.entries(inputs)) {
+                    if (fieldName === 'error') continue; // Skip error fields
+                    
+                    // Set default for optional parameters
+                    let savedValue = savedDefaults[fieldName] || '';
+                    if (!savedValue && fieldType.includes('Optional')) {
+                        savedValue = '[Optional]';
+                    }
+                    
+                    const inputHtml = generateInputField(fieldName, fieldType, savedValue);
+                    html += inputHtml;
+                }
+                
+                html += `
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        return html;
+    }
+
+    // Generate individual input field based on type
+    function generateInputField(fieldName, fieldType, savedValue) {
+        const fieldId = `field_${fieldName}`;
+        const cleanFieldName = fieldName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        
+        // Determine input type based on field type
+        let inputElement = '';
+        let helpText = '';
+        
+        if (fieldType.includes('int') || fieldType.includes('Integer')) {
+            inputElement = `<input type="number" class="form-control protocol-input compact-input" 
+                           id="${fieldId}" data-field="${fieldName}" value="${savedValue}" step="1"
+                           title="Integer value">`;
+        } else if (fieldType.includes('float') || fieldType.includes('Float')) {
+            inputElement = `<input type="number" class="form-control protocol-input compact-input" 
+                           id="${fieldId}" data-field="${fieldName}" value="${savedValue}" step="0.001"
+                           title="Floating point value">`;
+        } else if (fieldType.includes('bool') || fieldType.includes('Boolean')) {
+            const isChecked = savedValue === 'true' || savedValue === true ? 'checked' : '';
+            inputElement = `<input type="checkbox" class="form-check-input protocol-input" 
+                                   id="${fieldId}" data-field="${fieldName}" ${isChecked}
+                                   title="Boolean value (true/false)">`;
+        } else if (fieldType.includes('str') || fieldType.includes('String')) {
+            inputElement = `<input type="text" class="form-control protocol-input compact-input" 
+                           id="${fieldId}" data-field="${fieldName}" value="${savedValue}"
+                           title="Text value">`;
+        } else if (fieldType.includes('list') || fieldType.includes('List')) {
+            inputElement = `<input type="text" class="form-control protocol-input compact-input" 
+                           id="${fieldId}" data-field="${fieldName}" value="${savedValue}" 
+                           placeholder="comma-separated values"
+                           title="List of values (comma-separated)">`;
+        } else if (fieldType.includes('dict') || fieldType.includes('Dict')) {
+            inputElement = `<textarea class="form-control protocol-input compact-input" 
+                           id="${fieldId}" data-field="${fieldName}" rows="2" 
+                           placeholder='{"key": "value"}"
+                           title="JSON object format">${savedValue}</textarea>`;
+        } else {
+            // Default to text input for unknown types
+            inputElement = `<input type="text" class="form-control protocol-input compact-input" 
+                           id="${fieldId}" data-field="${fieldName}" value="${savedValue}"
+                           title="Type: ${fieldType}">`;
+        }
+        
+        // Special handling for checkbox - different layout
+        if (fieldType.includes('bool') || fieldType.includes('Boolean')) {
+            return `
+                <div class="form-group-compact">
+                    <div class="input-row checkbox-row">
+                        <div class="form-check">
+                            ${inputElement}
+                            <label class="form-check-label" for="${fieldId}">${cleanFieldName}</label>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        return `
+            <div class="form-group-compact">
+                <div class="input-row">
+                    <label class="input-label" for="${fieldId}">${cleanFieldName}:</label>
+                    ${inputElement}
+                </div>
+            </div>
+        `;
+    }
+
+    // Collect current protocol values from form
+    function collectProtocolValues(actionItem) {
+        const values = {};
+        const inputs = actionItem.querySelectorAll('.protocol-input');
+        
+        inputs.forEach(input => {
+            const fieldName = input.dataset.field;
+            let value;
+            
+            if (input.type === 'checkbox') {
+                value = input.checked;
+            } else if (input.type === 'number') {
+                value = input.value ? parseFloat(input.value) : null;
+            } else {
+                value = input.value;
+            }
+            // Skip empty values and optional parameters with "[Optional]" placeholder
+            if (value !== null && value !== '' && value !== '[Optional]') {
+                values[fieldName] = value;
+            }
+        });
+        
+        // Add platform from the QPU selector
+        values.platform = ExperimentBuilder.qpu.selectedName;
+        
+        return values;
+    }
 
     // Load all data for the selected QPU
     function loadQpuData() {
@@ -476,21 +740,113 @@ Extended with quantum computing specific features:
         parametersDiv.innerHTML = html;
     }
 
+    // Extract experiment attributes from DOM for drag and drop
+    function extractExperimentAttributes(experimentId) {
+        const attributes = { inputs: {}, results: {}, data: {} };
+        
+        // Extract inputs from the inputs tab
+        const inputsTab = document.querySelector(`#inputs-${experimentId}`);
+        if (inputsTab) {
+            const attributeItems = inputsTab.querySelectorAll('.attribute-item');
+            attributeItems.forEach(item => {
+                const name = item.querySelector('.attribute-name')?.textContent.trim();
+                const type = item.querySelector('.attribute-type')?.textContent.trim();
+                if (name && type) {
+                    attributes.inputs[name] = type;
+                }
+            });
+        }
+        
+        // Extract results from the results tab
+        const resultsTab = document.querySelector(`#results-${experimentId}`);
+        if (resultsTab) {
+            const attributeItems = resultsTab.querySelectorAll('.attribute-item');
+            attributeItems.forEach(item => {
+                const name = item.querySelector('.attribute-name')?.textContent.trim();
+                const type = item.querySelector('.attribute-type')?.textContent.trim();
+                if (name && type) {
+                    attributes.results[name] = type;
+                }
+            });
+        }
+        
+        // Extract data from the data tab
+        const dataTab = document.querySelector(`#data-${experimentId}`);
+        if (dataTab) {
+            const attributeItems = dataTab.querySelectorAll('.attribute-item');
+            attributeItems.forEach(item => {
+                const name = item.querySelector('.attribute-name')?.textContent.trim();
+                const type = item.querySelector('.attribute-type')?.textContent.trim();
+                if (name && type) {
+                    attributes.data[name] = type;
+                }
+            });
+        }
+        
+        return attributes;
+    }
+
     // Basic drag and drop functionality
     document.addEventListener('DOMContentLoaded', function() {
         // Load initial QPU data
         loadQpuData();
 
-        // Set up drag and drop
+        // Set up drag and drop with improved event handling
         const experimentCards = document.querySelectorAll('.experiment-card');
         const dropZone = document.getElementById('action-card-builder');
+        
+        let isDragging = false;
+        let dragStartTime = 0;
 
         experimentCards.forEach(card => {
+            // Handle drag start
             card.addEventListener('dragstart', function(e) {
+                isDragging = true;
+                dragStartTime = Date.now();
+                
+                // Find the experiment data from the template
+                const experimentId = this.dataset.experimentId;
+                const experimentName = this.dataset.experimentName;
+                const category = this.dataset.category;
+                
+                // Extract attributes from the DOM (tabs content)
+                const attributes = extractExperimentAttributes(experimentId);
+                
                 e.dataTransfer.setData('text/plain', JSON.stringify({
-                    id: this.dataset.experimentId,
-                    name: this.dataset.experimentName
+                    id: experimentId,
+                    name: experimentName,
+                    category: category,
+                    attributes: attributes
                 }));
+                
+                // Prevent collapse during drag
+                e.stopPropagation();
+            });
+            
+            // Handle drag end
+            card.addEventListener('dragend', function(e) {
+                isDragging = false;
+            });
+            
+            // Handle click for collapse - only if not dragging
+            card.addEventListener('click', function(e) {
+                // Small delay to distinguish between click and drag
+                setTimeout(() => {
+                    if (!isDragging && (Date.now() - dragStartTime) > 100) {
+                        // Allow normal collapse behavior
+                        const target = this.getAttribute('data-target');
+                        if (target) {
+                            $(target).collapse('toggle');
+                            
+                            // Update chevron icon
+                            const chevron = this.querySelector('.fa-chevron-down');
+                            if (chevron) {
+                                const isExpanded = this.getAttribute('aria-expanded') === 'true';
+                                this.setAttribute('aria-expanded', !isExpanded);
+                            }
+                        }
+                    }
+                }, 50);
             });
         });
 
@@ -521,9 +877,18 @@ Extended with quantum computing specific features:
             emptyState.remove();
         }
 
+        // Load saved defaults from cookies
+        const savedDefaults = getProtocolDefaults(experiment.id);
+
         // Create action item
         const actionItem = document.createElement('div');
         actionItem.className = 'action-item';
+        actionItem.dataset.experimentId = experiment.id;
+        actionItem.dataset.experimentName = experiment.name;
+        
+        // Generate dynamic input fields based on protocol attributes
+        const inputFieldsHtml = generateInputFields(experiment, savedDefaults);
+        
         actionItem.innerHTML = `
             <div class="action-item-header">
                 <h5>${experiment.name}</h5>
@@ -532,11 +897,7 @@ Extended with quantum computing specific features:
                 </button>
             </div>
             <div class="action-item-body mt-3">
-                <div class="form-group">
-                    <label>Number of Shots</label>
-                    <input type="number" class="form-control" value="2000">
-                </div>
-                <!-- Additional parameters will be added dynamically based on experiment type -->
+                ${inputFieldsHtml}
             </div>
         `;
 
@@ -572,6 +933,104 @@ Extended with quantum computing specific features:
             document.getElementById('generate-yaml-btn').disabled = true;
             document.getElementById('run-experiment-btn').disabled = true;
             document.getElementById('save-action-node-btn').disabled = true;
+        }
+    }
+
+    // Save protocol defaults for all action items
+    function saveAllProtocolDefaults() {
+        const actionItems = document.querySelectorAll('.action-item');
+        actionItems.forEach(actionItem => {
+            const experimentId = actionItem.dataset.experimentId;
+            const values = collectProtocolValues(actionItem);
+            if (Object.keys(values).length > 0) {
+                saveProtocolDefaults(experimentId, values);
+            }
+        });
+    }
+
+    // Placeholder for YAML generation
+    function generateYAML() {
+        const actionItems = document.querySelectorAll('.action-item');
+        if (actionItems.length === 0) {
+            alert('No experiments added to action card.');
+            return;
+        }
+
+        const config = {
+            backend: 'qibolab',
+            platform: ExperimentBuilder.qpu.selectedName,
+            targets: Array.from(document.getElementById('qubit-select').selectedOptions).map(opt => parseInt(opt.value)),
+            actions: []
+        };
+
+        console.log('Generating YAML for', actionItems.length, 'action items');
+
+        actionItems.forEach((actionItem, index) => {
+            const experimentOperation = actionItem.dataset.experimentId;
+            let experimentName = actionItem.dataset.experimentName;
+            const values = collectProtocolValues(actionItem);
+            
+            console.log(`Action ${index + 1}:`, {
+                operation: experimentOperation,
+                name: experimentName,
+                values: values
+            });
+            
+            // Check if there is already an action with the experimentName
+            const existingAction = config.actions.find(action => action.id === experimentName);
+            if (existingAction) {
+                // If so, append a number to the name
+                experimentName = experimentName + '_' + Math.floor(Math.random() * 1000);
+                console.log(`Duplicate name found, renamed to: ${experimentName}`);
+            } 
+
+            config.actions.push({
+                id: experimentName,
+                operation: experimentOperation,
+                parameters: values
+            });
+        });
+
+        console.log('Final config:', config);
+
+        // Display YAML in a modal or new window
+        const yamlContent = JSON.stringify(config, null, 2);
+        const newWindow = window.open('', '_blank');
+        if (newWindow) {
+            newWindow.document.write(`
+                <html>
+                    <head><title>Generated Experiment Configuration</title></head>
+                    <body style="font-family: monospace; padding: 20px; background: #f8f9fa;">
+                        <h3>Experiment Configuration (JSON)</h3>
+                        <div style="margin: 20px 0;">
+                            <button onclick="navigator.clipboard.writeText(document.getElementById('config-content').textContent)" 
+                                    style="padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                Copy to Clipboard
+                            </button>
+                        </div>
+                        <pre id="config-content" style="background: #ffffff; padding: 15px; border-radius: 5px; border: 1px solid #dee2e6; overflow: auto;">${yamlContent}</pre>
+                        <p style="color: #6c757d; margin-top: 20px;"><em>Note: This JSON configuration can be converted to YAML format for qibocal.</em></p>
+                    </body>
+                </html>
+            `);
+        } else {
+            // Fallback if popup is blocked
+            console.log('Generated YAML:', yamlContent);
+            alert('Popup blocked. Check console for generated configuration.');
+        }
+    }
+
+    // Placeholder for experiment execution
+    function runExperiment() {
+        const actionItems = document.querySelectorAll('.action-item');
+        if (actionItems.length === 0) {
+            alert('No experiments added to action card.');
+            return;
+        }
+
+        if (confirm('Are you sure you want to run this experiment configuration?')) {
+            // In a real implementation, this would submit the experiment to the execution system
+            alert('Experiment submitted! (This is a placeholder - in reality this would submit to SLURM/qibocal)');
         }
     }
 

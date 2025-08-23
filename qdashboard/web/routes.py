@@ -520,10 +520,20 @@ def register_routes(app, config):
         qibolab_version = version_data['versions'].get('qibolab', '0.0.0')
         is_new_qibolab = parse_version(qibolab_version) > parse_version('0.2.0')
 
+        # Get protocol attributes for each protocol
+        protocols_with_attributes = {}
+        for category, protocol_list in protocols.items():
+            protocols_with_attributes[category] = []
+            for protocol in protocol_list:
+                protocol_attrs = get_protocol_attributes(protocol)
+                protocol_with_attrs = protocol.copy()
+                protocol_with_attrs['attributes'] = protocol_attrs
+                protocols_with_attributes[category].append(protocol_with_attrs)
+
         logger.info("Experiment builder page loaded")
         
         response = make_response(render_template('experiments.html', 
-                               protocols=protocols, 
+                               protocols=protocols_with_attributes, 
                                qpus=qpus, 
                                qibo_versions=version_data['versions'],
                                is_new_qibolab=is_new_qibolab))
