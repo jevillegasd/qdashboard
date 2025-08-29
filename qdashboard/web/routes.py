@@ -81,7 +81,7 @@ def register_routes(app, config):
     def latest():
         """View the latest report."""
         config = current_app.config['QDASHBOARD_CONFIG']
-        last_path = get_latest_report_path(config['home_path'])
+        last_path = get_latest_report_path()
         version_data = get_qibo_versions(request=request)
         
         if not last_path:

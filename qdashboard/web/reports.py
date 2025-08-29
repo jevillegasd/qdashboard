@@ -94,11 +94,11 @@ def report_viewer(report_path, root_path, qibo_versions=None, access_mode="lates
     return res
 
 
-def get_latest_report_path(home_path):
+def get_latest_report_path():
     """Get the path to the latest report from .last_report_path file."""
     config = current_app.config['QDASHBOARD_CONFIG']
-    last_report_path = config.get('last_report_path', '.qdashboard/logs/last_report_path')
-    
+    last_report_path = config.get('last_report_path', os.path.join(config['root'], '.qdashboard/logs/last_report_path'))
+
     try:
         with open(last_report_path, 'r') as file:
             latest_path = file.read().strip()
