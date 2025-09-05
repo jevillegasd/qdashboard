@@ -156,7 +156,7 @@ def get_platforms_path(root_path=None):
     Get the path to the qibolab platforms directory.
     
     This is a convenience function that calls ensure_platforms_directory()
-    and handles any errors gracefully.
+    and handles some errors.
     
     Args:
         root_path (str, optional): Root directory where to create platforms dir.

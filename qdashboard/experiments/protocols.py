@@ -326,6 +326,7 @@ def _categorize_protocols(routine_protocols) -> dict:
     
     return categorized
 
+
 def get_protocol_attributes(protocol: dict) -> dict:
     """
     Get attributes of a specific protocol. These are classified as:

@@ -64,10 +64,14 @@ def qpu_connectivity(qpu_name):
 
     if QIBOLAB_AVAILABLE and is_new_api:
         # Use QibolabPlatform to get connectivity data
-        with SignalDisabler():
-            backend:QibolabBackend = QibolabBackend(platform=qpu_name)
-            platform:QibolabPlatform = backend.platform
-            return platform.pairs if platform.pairs else None
+        try:
+            with SignalDisabler():
+                backend:QibolabBackend = QibolabBackend(platform=qpu_name)
+                platform:QibolabPlatform = backend.platform
+                return platform.pairs if platform.pairs else None
+        except Exception as e:
+            logger.warning(f"Failed to load QPU {qpu_name} with new API, falling back to config files: {e}")
+            return get_connectivity_data_from_qpu_config(qpu_path)
     else:
         logger.info("Building connectivity from configuration file.")
         return get_connectivity_data_from_qpu_config(qpu_path)

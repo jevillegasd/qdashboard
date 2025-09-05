@@ -11,6 +11,7 @@ import argparse
 from typing import Optional, List
 
 from qdashboard.core.app import create_app, get_config
+from qdashboard.core.config import DEFAULT_PORT, DEFAULT_HOST, validate_config
 from qdashboard.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -27,15 +28,15 @@ def create_parser() -> argparse.ArgumentParser:
         '--port',
         nargs='?',
         type=int,
-        default=8080,
-        help='Port number to run the server on (default: 8080)'
+        default=DEFAULT_PORT,
+        help=f'Port number to run the server on (default: {DEFAULT_PORT})'
     )
     
     parser.add_argument(
         '--host',
         type=str,
-        default='127.0.0.1',
-        help='Host address to bind the server to (default: 127.0.0.1)'
+        default=DEFAULT_HOST,
+        help=f'Host address to bind the server to (default: {DEFAULT_HOST})'
     )
     
     parser.add_argument(
@@ -76,7 +77,7 @@ def create_parser() -> argparse.ArgumentParser:
         '--log-path',
         type=str,
         default='~/.qdashboard/logs/slurm_output.txt',
-        help='Path to the log directory (default: ~/.qdashboard/logs/slurm_output.txt)'
+        help='Path to the SLURM log file (default: ~/.qdashboard/logs/slurm_output.txt)'
     )
 
     return parser
@@ -104,25 +105,30 @@ def get_default_config(args: argparse.Namespace) -> dict:
         config['log_path'] = args.log_path
     if args.port:
         config['port'] = args.port
+    
     config['version'] = __import__("qdashboard").__version__
     return config
 
 
-def validate_config(config: dict) -> None:
-    """Validate the configuration parameters."""
-    # Validate port range
-    if not (1 <= config['port'] <= 65535):
-        logger.warning(f"Error: Port number must be between 1 and 65535, got {config['port']}")
-        sys.exit(1)
-    
-    # Validate root directory
-    if not os.path.exists(config['root']):
-        logger.warning(f"Error: Root directory does not exist: {config['root']}")
-        sys.exit(1)
-    
-    if not os.path.isdir(config['root']):
-        logger.warning(f"Error: Root path is not a directory: {config['root']}")
-        sys.exit(1)
+def validate_config_legacy(config: dict) -> None:
+    """Legacy validation function - moved to core.config module."""
+    logger.warning("Using legacy validation function. Consider migrating to core.config.validate_config()")
+    try:
+        from qdashboard.core.config import validate_config
+        validate_config(config)
+    except Exception as e:
+        # Fallback to legacy validation
+        if not (1 <= config['port'] <= 65535):
+            logger.warning(f"Error: Port number must be between 1 and 65535, got {config['port']}")
+            sys.exit(1)
+        
+        if not os.path.exists(config['root']):
+            logger.warning(f"Error: Root directory does not exist: {config['root']}")
+            sys.exit(1)
+        
+        if not os.path.isdir(config['root']):
+            logger.warning(f"Error: Root path is not a directory: {config['root']}")
+            sys.exit(1)
 
 
 def main(argv: Optional[List[str]] = None) -> None:
@@ -141,7 +147,11 @@ def main(argv: Optional[List[str]] = None) -> None:
     print(config)
 
     # Validate configuration
-    validate_config(config)
+    try:
+        validate_config(config)
+    except Exception as e:
+        logger.error(f"Configuration validation failed: {e}")
+        sys.exit(1)
     
     try:
         # Import here to avoid import errors if package is not fully installed
@@ -183,7 +193,8 @@ def main(argv: Optional[List[str]] = None) -> None:
         logger.info('QDashboard server starting...')
         logger.info(f'Server running on: http://{config["host"]}:{config["port"]}')
         logger.info(f'Serving directory: {config["root"]}')
-        logger.info(f'Slurm Log: {config["log_path"]}')
+        logger.info(f'QDashboard root: {config["root"]}')
+        logger.info(f'Logs directory: {config["logs_dir"]}')
         if config['key']:
             logger.info(f'Authentication key: {config["key"]}')
         logger.info(f'Environment: {config["environment"]}')

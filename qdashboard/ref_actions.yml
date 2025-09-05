@@ -1,0 +1,17 @@
+backend: qibolab
+platform:  qpu118 
+targets: [0,1]
+
+actions:
+
+  - id: qubit flux dependence
+    operation: qubit_flux
+    parameters:
+      drive_duration: 4000
+      freq_width: 40_000_000
+      freq_step: 100_000
+      bias_width: 0.04 #0.1
+      bias_step:  0.004 # 0.001
+      drive_amplitude: 0.002
+      nshots: 5000
+      relaxation_time: 2000

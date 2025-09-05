@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "qdashboard"
 dynamic = ["version"]
-description = "A professional quantum computing dashboard with file browsing, experiment monitoring, QPU status tracking, and report visualization capabilities"
+description = "A quantum computing dashboard with file browsing, experiment monitoring, QPU status tracking, and report visualization capabilities"
 readme = "README.md"
 requires-python = ">=3.8"
 license = "MIT"
@@ -24,7 +24,10 @@ keywords = [
     "qibocal", 
     "monitoring", 
     "slurm", 
-    "flask"
+    "flask",
+    "qpu",
+    "experiment-management",
+    "visualization"
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -38,15 +41,18 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Physics",
     "Topic :: System :: Monitoring",
-    "Framework :: Flask"
+    "Framework :: Flask",
+    "License :: OSI Approved :: MIT License",
+    "Environment :: Web Environment"
 ]
 
 dependencies = [
     "flask>=3.0.0",
-    "humanize>=4.0.0",
+    "humanize>=4.0.0", 
     "pathlib2>=2.3.0",
     "werkzeug>=3.0.0",
     "PyYAML>=6.0.0",
+    "packaging>=23.0"
 ]
 
 [project.optional-dependencies]
@@ -63,11 +69,28 @@ dev = [
     "pytest-cov>=4.0.0",
     "black>=23.0.0",
     "flake8>=6.0.0",
-    "mypy>=1.0.0"
+    "mypy>=1.0.0",
+    "pre-commit>=3.0.0"
 ]
+
+# Testing dependencies
+test = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.0.0",
+    "coverage>=7.0.0"
+]
+
+# Documentation dependencies  
+docs = [
+    "sphinx>=6.0.0",
+    "sphinx-rtd-theme>=1.0.0",
+    "myst-parser>=2.0.0"
+]
+
 # All optional dependencies
 all = [
-    "qdashboard[quantum,dev]"
+    "qdashboard[quantum,dev,test,docs]"
 ]
 
 [project.urls]

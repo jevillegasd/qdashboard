@@ -7,6 +7,7 @@ from flask import Flask
 
 from ..utils.formatters import size_fmt, time_desc, data_fmt, icon_fmt, time_humanize
 from qdashboard.utils.logger import get_logger
+from .config import DEFAULT_PORT, DEFAULT_HOST, DEFAULT_QD_ROOT
 
 
 logger = get_logger(__name__)
@@ -38,20 +39,27 @@ def create_app():
 
 def get_config():
     """Get application configuration from environment variables."""
-    PORT_NUMBER = 5005
     home_path = os.environ.get('HOME')
     
+    # QDashboard root directory - can be overridden with QD_PATH
+    qd_root = os.path.normpath(os.getenv('QD_PATH', DEFAULT_QD_ROOT))
+    files_root = os.getenv('QD_PATH', home_path) # We serve files from home by default otherwise is the same as the QD root
+
+    # Standard QDashboard directories
     config = {
-        'host': os.getenv('QD_BIND', "127.0.0.1"),
-        'port': os.getenv('QD_PORT', PORT_NUMBER),
-        'root': os.path.normpath(os.getenv('QD_PATH', home_path)),
+        'host': os.getenv('QD_BIND', DEFAULT_HOST),
+        'port': os.getenv('QD_PORT', DEFAULT_PORT),
+        'root': files_root, # Root directory for serving files
+        'qd_root': qd_root, # QDashboard root directory
         'key': os.getenv('QD_KEY', ""),
         'home_path': home_path,
         'user': os.environ.get('USER'),
         'environment': os.environ.get('VIRTUAL_ENV', None),
-        'log_path': os.path.join(home_path, ".qdashboard/logs/slurm_output.txt")
+        'logs_dir': os.path.join(qd_root, 'logs'),
+        'data_dir': os.path.join(qd_root, 'data'),
+        'temp_dir': os.path.join(qd_root, 'temp'),
+        'log_path': os.path.join(qd_root, 'logs', 'slurm_output.txt'),
+        'last_report_path': os.path.join(qd_root, 'logs', 'last_report_path')
     }
-    
-    logger.info("Useful information during execution")
     
     return config

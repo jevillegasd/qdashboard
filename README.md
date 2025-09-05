@@ -1,29 +1,68 @@
 # QDashboard
 
-A professional quantum computing dashboard with file browsing, experiment monitoring, QPU status tracking, and report visualization capabilities.
+A quantum computing dashboard with file browsing, experiment monitoring, QPU status tracking, and report visualization capabilities.
 
 ![screenshot](screenshot.png)
 
 ## About
 
-QDashboard is a comprehensive web-based dashboard designed for quantum computing environments. It provides real-time monitoring, file management, and experiment tracking capabilities for quantum computing workflows. 
+# QDashboard
+
+QDashboard is a web-based dashboard for quantum computing workflows. It provides an interface for file management, quantum experiment building, SLURM job monitoring, and quantum hardware platform management. Built on a file server foundation, QDashboard extends file browsing with quantum-specific functionalities. 
+
 The file server functionality is based on the [flask-file-server](https://github.com/Wildog/flask-file-server) project by Wildog.
 
 ## Features
 
-- **Dashboard**: Real-time QPU health monitoring, job queue status, and package version tracking
-- **File Browser**: Elegant file browsing and management interface (based on flask-file-server)
-- **Report Viewer**: Advanced rendering of quantum experiment reports with Plotly support and dark theme
-- **QPU Status**: Live monitoring of quantum processing unit availability and SLURM queue integration
-- **Job Submission**: SLURM job submission and monitoring interface
-- **Package Monitoring**: Real-time display of installed qibo, qibolab, and qibocal versions
+### Core Dashboard
+- **Real-time QPU Monitoring**: Live status tracking of quantum processing units
+- **SLURM Integration**: Job queue monitoring and submission interface
+- **Package Tracking**: Automatic detection of qibo, qibolab, and qibocal versions
+- **Professional UI**: Dark theme with responsive design
+
+### Experiment Builder
+- **Interactive Protocol Selection**: Browse and configure qibocal protocols
+- **Mixed Qubit Support**: Handle both numeric (0, 1, 2) and string qubits ("control", "target")
+- **YAML Generation**: Automatic runcard generation with proper formatting
+- **Parameter Validation**: Type checking and constraint validation
+- **One-Click Submission**: Direct SLURM job submission from the interface
+
+### QPU Management
+- **Platform Repository Management**: Automated git operations for qibolab platforms
+- **Branch Switching**: Live platform branch management with updates
+- **Topology Visualization**: Quantum device connectivity analysis
+- **Multi-Platform Support**: Handle multiple QPU configurations
+
+### File Management
+- **Elegant File Browser**: Beautiful interface for file navigation
+- **Report Viewer**: Advanced rendering of quantum experiment reports
+- **Upload/Download**: Seamless file operations
+- **Search Functionality**: Quick file and directory search
+
+### Configuration
+- **Centralized Config**: Consistent configuration management across all modules
+- **Environment Variables**: Full QD_* environment variable support
+- **CLI Interface**: Comprehensive command-line interface
+- **Cross-Platform**: Works on Linux, macOS, and Windows
 
 ## Installation
 
+### Prerequisites
+- Python >= 3.8
+- Optional: qibo, qibolab, qibocal packages for full quantum functionality
+
+### For Production
+
+```bash
+pip install qdashboard
+```
+
 ### For Development
 
-1. **Create and activate a virtual environment:**
+1. **Clone and setup:**
 ```bash
+git clone https://github.com/qiboteam/qdashboard.git
+cd qdashboard
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
@@ -33,46 +72,61 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -e .
 ```
 
-3. **Or use the convenience script:**
+3. **Install with quantum dependencies:**
 ```bash
-source activate_dev.sh
+pip install -e ".[quantum]"
 ```
 
-### For Production
-
+4. **Install with all development tools:**
 ```bash
-pip install qdashboard
+pip install -e ".[all]"
 ```
 
 ## Quick Start
 
 ### Using the CLI (Recommended)
 ```bash
-# After installation, run:
-qdashboard 5005
+# Basic startup (default: localhost:5005)
+qdashboard
 
-# Or with custom options:
-qdashboard --host 0.0.0.0 --port 8000 --root /data --debug
+# Custom port and host
+qdashboard --port 8080 --host 0.0.0.0
+
+# With custom root directory
+qdashboard --root /path/to/quantum/data --debug
+
+# Full configuration
+qdashboard --host 0.0.0.0 --port 8080 --root /data --auth-key mykey123 --debug
 ```
 
-### Development Server (Legacy)
+### Using Environment Variables
 ```bash
-python quantum_dashboard.py
+# Set configuration via environment
+export QD_PORT=8080
+export QD_BIND=0.0.0.0
+export QD_PATH=/custom/qdashboard/root
+export QD_KEY=myauthkey
+
+# Run with environment configuration
+qdashboard
 ```
 
-### Using the Startup Script (Legacy)
+### Development Mode
 ```bash
-./start_qdashboard.sh
+# Direct Python execution
+python app.py
+
+# Using the startup script
+./qdashboard.sh
 ```
 
-### Docker Build
+### Docker
 ```bash
-docker build --rm -t qdashboard:latest .
-```
+# Build
+docker build -t qdashboard .
 
-### Docker Run
-```bash
-docker run -p 5005:5005 qdashboard
+# Run
+docker run -p 5005:5005 -v /your/data:/data qdashboard
 ```
 
 ## QPU Platforms Management
@@ -98,6 +152,29 @@ qdashboard-platforms --root /path/to/directory setup
 
 # Update platforms repository
 qdashboard-platforms update
+```
+
+## Key Features
+
+### Experiment Builder
+The experiment builder allows you to:
+
+1. **Browse Protocols**: Discover available qibocal protocols automatically
+2. **Configure Parameters**: Set protocol-specific parameters with validation
+3. **Generate YAML**: Create formatted qibocal runcards
+4. **Submit Jobs**: SLURM job submission from the web interface
+
+### Platform Management
+- **Setup**: Auto-clone qibolab platforms repository
+- **Branch Management**: Switch between platform branches
+- **Git Integration**: Built-in git operations for platform updates
+- **Status Monitoring**: Platform and QPU status
+
+### Configuration Management
+- **Config**: All settings in one place with defaults
+- **Environment Support**: QD_* environment variable support
+- **Validation**: Configuration validation with errors
+- **Cross-Platform**: Works across operating systems
 
 # List available branches
 qdashboard-platforms branches
@@ -110,12 +187,12 @@ qdashboard-platforms switch new-branch --create
 ```
 
 ### Branch Management
-The qibolab platforms repository contains multiple branches with different platform configurations:
+The qibolab platforms repository contains branches with platform configurations:
 
-- **main**: Latest stable platform configurations
+- **main**: Stable platform configurations
 - **0.1**, **0.2**: Version-specific platform definitions
-- **Platform-specific branches**: Calibrated configurations for specific QPUs
-- **Feature branches**: Experimental or development configurations
+- **Platform-specific branches**: Configurations for specific QPUs
+- **Feature branches**: Development configurations
 
 Different branches may contain different sets of platforms or different calibration parameters for the same platforms.
 
@@ -153,9 +230,9 @@ docker run -p 8000:8000 -e QD_BIND=0.0.0.0 -e QD_PORT=8000 -e QD_PATH=/data -e Q
 
 QDashboard extends the file server capabilities with quantum computing specific features:
 
-- **Quantum Package Integration**: Automatic detection and monitoring of qibo ecosystem packages
-- **SLURM Integration**: Real-time queue monitoring and job submission capabilities
-- **Report Rendering**: Enhanced HTML report rendering with Plotly support and dark theme compatibility
+- **Quantum Package Integration**: Detection and monitoring of qibo ecosystem packages
+- **SLURM Integration**: Queue monitoring and job submission capabilities
+- **Report Rendering**: HTML report rendering with Plotly support and dark theme compatibility
 - **QPU Management**: Platform configuration parsing and status monitoring
 
 ## Installation
@@ -262,6 +339,6 @@ The package provides two equivalent commands:
 
 ## Acknowledgments
 
-- File server functionality based on [flask-file-server](https://github.com/Wildog/flask-file-server) by [Wildog](https://github.com/Wildog)
-- Dark theme inspired by IBM Quantum Computing platform
-- Built for quantum computing workflows using the qibo ecosystem
+- File server functionality based on [flask-file-server](https://github.com/Wildog/flask-file-server) by [Wildog](https://github.com/Wildog).
+- Dark theme inspired by IBM Quantum Computing platform.
+- Built for quantum computing workflows using the qibo ecosystem.

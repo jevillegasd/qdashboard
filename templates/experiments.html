@@ -365,7 +365,8 @@ Extended with quantum computing specific features:
         qpu: {
             parameters: {},      // Currently loaded QPU parameters from API
             calibration: {},     // Currently loaded QPU calibration data from API
-            selectedName: ''     // Currently selected QPU name
+            selectedName: '',    // Currently selected QPU name
+            availableQubits: []  // Available qubits for target selection
         },
         
         // Action card builder state
@@ -470,6 +471,30 @@ Extended with quantum computing specific features:
         document.cookie = `${name}=${value}; expires=${expires}; path=/`;
     }
 
+    // Parse qubit value - handles both numeric and string qubit names
+    function parseQubit(value) {
+        if (value === null || value === undefined || value === '') {
+            return null;
+        }
+        
+        // Convert to string first to handle any input type
+        const strValue = String(value).trim();
+        
+        if (strValue === '') {
+            return null;
+        }
+        
+        // Try to parse as number - if successful and not NaN, return as number
+        const numValue = parseFloat(strValue);
+        if (!isNaN(numValue) && isFinite(numValue)) {
+            // For integers, return as integer; for floats, return as float
+            return Number.isInteger(numValue) ? parseInt(strValue) : numValue;
+        }
+        
+        // Return as string if not a valid number
+        return strValue;
+    }
+
     // Generate dynamic input fields based on protocol attributes
     function generateInputFields(experiment, savedDefaults) {
         let html = '';
@@ -482,16 +507,25 @@ Extended with quantum computing specific features:
                      aria-expanded="false" aria-controls="${commonId}">
                     <i class="fas fa-cog mr-2"></i>
                     <span>Common Parameters</span>
-                    <span class="badge badge-secondary ml-2">2</span>
+                    <span class="badge badge-secondary ml-2">3</span>
                     <i class="fas fa-chevron-down ml-auto"></i>
                 </div>
                 <div class="collapse" id="${commonId}">
                     <div class="protocol-section-body">
                         <div class="form-group-compact">
                             <div class="input-row">
+                                <label class="input-label">Target Qubit:</label>
+                                <select class="form-control protocol-input compact-input target-qubit-select" 
+                                        data-field="targets" title="Target qubit for this action (optional)">
+                                    <option value="">[Use Global Targets]</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group-compact">
+                            <div class="input-row">
                                 <label class="input-label">Shots:</label>
                                 <input type="number" class="form-control protocol-input compact-input" 
-                                       data-field="shots" value="${savedDefaults.shots || '1024'}" min="1"
+                                       data-field="nshots" value="${savedDefaults.shots || '1024'}" min="1"
                                        title="Number of measurement repetitions">
                             </div>
                         </div>
@@ -620,7 +654,8 @@ Extended with quantum computing specific features:
 
     // Collect current protocol values from form
     function collectProtocolValues(actionItem) {
-        const values = {};
+        const parameters = {};
+        const actionData = {};
         const inputs = actionItem.querySelectorAll('.protocol-input');
         
         inputs.forEach(input => {
@@ -631,19 +666,29 @@ Extended with quantum computing specific features:
                 value = input.checked;
             } else if (input.type === 'number') {
                 value = input.value ? parseFloat(input.value) : null;
+            } else if (input.tagName === 'SELECT') {
+                value = input.value;
             } else {
                 value = input.value;
             }
-            // Skip empty values and optional parameters with "[Optional]" placeholder
-            if (value !== null && value !== '' && value !== '[Optional]') {
-                values[fieldName] = value;
+            
+            // Handle target qubit selection specially - goes outside parameters
+            if (fieldName === 'targets' && value && value !== '') {
+                // Convert single qubit to list format for qibocal using unified parseQubit function
+                const qubitValue = parseQubit(value);
+                if (qubitValue !== null) {
+                    actionData[fieldName] = [qubitValue];
+                }
+            } else if (value !== null && value !== '' && value !== '[Optional]') {
+                // Skip empty values and optional parameters with "[Optional]" placeholder
+                // All other parameters go inside the parameters object
+                parameters[fieldName] = value;
             }
         });
         
-        // Add platform from the QPU selector
-        values.platform = ExperimentBuilder.qpu.selectedName;
+        // Don't add platform to action parameters - it should only be global
         
-        return values;
+        return { parameters, actionData };
     }
 
     // Load all data for the selected QPU
@@ -678,6 +723,19 @@ Extended with quantum computing specific features:
                 document.getElementById('qpu-calibration-tables').innerHTML = `<p class="text-danger">Error loading QPU calibration data: ${error.message}.</p>`;
             });
         
+        // Fetch available qubits for target selection
+        fetch(`/api/qpu_qubits/${selectedQpu}`)
+            .then(response => response.json())
+            .then(data => {
+                ExperimentBuilder.availableQubits = data.qubits || [];
+                updateTargetQubitDropdowns();
+                updateQubitDropdown(); // Update global qubit dropdown
+            })
+            .catch(error => {
+                console.error('Error loading QPU qubits:', error);
+                ExperimentBuilder.availableQubits = [];
+            });
+        
         // Fetch action nodes
         fetch(`/api/action_nodes/${selectedQpu}`)
             .then(response => response.json())
@@ -695,12 +753,12 @@ Extended with quantum computing specific features:
         const qubitSelect = document.getElementById('qubit-select');
         qubitSelect.innerHTML = '';
 
-        if (ExperimentBuilder.qpu.parameters.qubits) {
-            Object.keys(ExperimentBuilder.qpu.parameters.qubits).forEach(qubit => {
+        if (ExperimentBuilder.availableQubits.length > 0) {
+            ExperimentBuilder.availableQubits.forEach(qubit => {
                 const option = document.createElement('option');
                 option.value = qubit;
                 option.textContent = `Qubit ${qubit}`;
-                if (qubit === '0') option.selected = true; // Select qubit 0 by default
+                if (qubit === 0) option.selected = true; // Select qubit 0 by default
                 qubitSelect.appendChild(option);
             });
         }
@@ -738,6 +796,28 @@ Extended with quantum computing specific features:
         });
         
         parametersDiv.innerHTML = html;
+    }
+
+    // Update target qubit dropdowns in all action cards
+    function updateTargetQubitDropdowns() {
+        const targetQubitSelects = document.querySelectorAll('.target-qubit-select');
+        
+        targetQubitSelects.forEach(select => {
+            const currentValue = select.value;
+            select.innerHTML = '<option value="">[Use Global Targets]</option>';
+            
+            if (ExperimentBuilder.availableQubits) {
+                ExperimentBuilder.availableQubits.forEach(qubit => {
+                    const option = document.createElement('option');
+                    option.value = qubit;
+                    option.textContent = `Qubit ${qubit}`;
+                    if (qubit.toString() === currentValue) {
+                        option.selected = true;
+                    }
+                    select.appendChild(option);
+                });
+            }
+        });
     }
 
     // Extract experiment attributes from DOM for drag and drop
@@ -904,6 +984,9 @@ Extended with quantum computing specific features:
         actionBuilder.appendChild(actionItem);
         ExperimentBuilder.actionCard.items.push(experiment);
         
+        // Update target qubit dropdowns for the new action item
+        updateTargetQubitDropdowns();
+        
         // Enable buttons and save node button
         document.getElementById('generate-yaml-btn').disabled = false;
         document.getElementById('run-experiment-btn').disabled = false;
@@ -941,11 +1024,70 @@ Extended with quantum computing specific features:
         const actionItems = document.querySelectorAll('.action-item');
         actionItems.forEach(actionItem => {
             const experimentId = actionItem.dataset.experimentId;
-            const values = collectProtocolValues(actionItem);
+            const { parameters, actionData } = collectProtocolValues(actionItem);
+            // Combine parameters and actionData for saving defaults
+            const values = { ...parameters, ...actionData };
             if (Object.keys(values).length > 0) {
                 saveProtocolDefaults(experimentId, values);
             }
         });
+    }
+
+    // Convert JavaScript object to YAML format
+    function convertToYAML(obj, indent = 0) {
+        const spaces = '  '.repeat(indent);
+        let yaml = '';
+        
+        for (const [key, value] of Object.entries(obj)) {
+            if (value === null || value === undefined) {
+                yaml += `${spaces}${key}: null\n`;
+            } else if (Array.isArray(value)) {
+                if (value.length === 0) {
+                    yaml += `${spaces}${key}: []\n`;
+                } else if (value.every(item => typeof item !== 'object')) {
+                    // Simple array on one line
+                    // Format elements properly (numbers without quotes, strings as needed)
+                    const formattedItems = value.map(item => {
+                        if (typeof item === 'string') {
+                            // Only quote strings if they contain special characters or spaces
+                            if (/[\s\n\r\t'"#{}[\],:|>@`!%&*=]/.test(item)) {
+                                return `"${item.replace(/"/g, '\\"')}"`;
+                            }
+                            return item;
+                        }
+                        return item;
+                    });
+                    yaml += `${spaces}${key}: [${formattedItems.join(', ')}]\n`;
+                } else {
+                    // Complex array with objects
+                    yaml += `${spaces}${key}:\n`;
+                    value.forEach(item => {
+                        if (typeof item === 'object') {
+                            yaml += `${spaces}  -\n`;
+                            yaml += convertToYAML(item, indent + 2).replace(/^/gm, '    ');
+                        } else {
+                            yaml += `${spaces}  - ${item}\n`;
+                        }
+                    });
+                }
+            } else if (typeof value === 'object') {
+                yaml += `${spaces}${key}:\n`;
+                yaml += convertToYAML(value, indent + 1);
+            } else if (typeof value === 'string') {
+                // Handle strings that might need quoting
+                if (/[\s\n\r\t'"#{}[\],:|>@`!%&*=]/.test(value)) {
+                    yaml += `${spaces}${key}: "${value.replace(/"/g, '\\"')}"\n`;
+                } else {
+                    yaml += `${spaces}${key}: ${value}\n`;
+                }
+            } else if (typeof value === 'boolean') {
+                yaml += `${spaces}${key}: ${value}\n`;
+            } else {
+                yaml += `${spaces}${key}: ${value}\n`;
+            }
+        }
+        
+        return yaml;
     }
 
     // Placeholder for YAML generation
@@ -959,7 +1101,10 @@ Extended with quantum computing specific features:
         const config = {
             backend: 'qibolab',
             platform: ExperimentBuilder.qpu.selectedName,
-            targets: Array.from(document.getElementById('qubit-select').selectedOptions).map(opt => parseInt(opt.value)),
+            targets: Array.from(document.getElementById('qubit-select').selectedOptions).map(opt => {
+                // Use unified parseQubit function for consistent handling
+                return parseQubit(opt.value);
+            }).filter(value => value !== null), // Remove any null values
             actions: []
         };
 
@@ -968,12 +1113,13 @@ Extended with quantum computing specific features:
         actionItems.forEach((actionItem, index) => {
             const experimentOperation = actionItem.dataset.experimentId;
             let experimentName = actionItem.dataset.experimentName;
-            const values = collectProtocolValues(actionItem);
+            const { parameters, actionData } = collectProtocolValues(actionItem);
             
             console.log(`Action ${index + 1}:`, {
                 operation: experimentOperation,
                 name: experimentName,
-                values: values
+                parameters: parameters,
+                actionData: actionData
             });
             
             // Check if there is already an action with the experimentName
@@ -984,24 +1130,32 @@ Extended with quantum computing specific features:
                 console.log(`Duplicate name found, renamed to: ${experimentName}`);
             } 
 
-            config.actions.push({
+            const action = {
                 id: experimentName,
                 operation: experimentOperation,
-                parameters: values
-            });
+                parameters: parameters,
+                update: false  // Always set to false as requested
+            };
+
+            // Add targets if they override the global ones
+            if (actionData.targets) {
+                action.targets = actionData.targets;
+            }
+
+            config.actions.push(action);
         });
 
         console.log('Final config:', config);
 
-        // Display YAML in a modal or new window
-        const yamlContent = JSON.stringify(config, null, 2);
+        // Convert to YAML format
+        const yamlContent = convertToYAML(config);
         const newWindow = window.open('', '_blank');
         if (newWindow) {
             newWindow.document.write(`
                 <html>
                     <head><title>Generated Experiment Configuration</title></head>
                     <body style="font-family: monospace; padding: 20px; background: #f8f9fa;">
-                        <h3>Experiment Configuration (JSON)</h3>
+                        <h3>Experiment Configuration (YAML)</h3>
                         <div style="margin: 20px 0;">
                             <button onclick="navigator.clipboard.writeText(document.getElementById('config-content').textContent)" 
                                     style="padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
@@ -1009,7 +1163,7 @@ Extended with quantum computing specific features:
                             </button>
                         </div>
                         <pre id="config-content" style="background: #ffffff; padding: 15px; border-radius: 5px; border: 1px solid #dee2e6; overflow: auto;">${yamlContent}</pre>
-                        <p style="color: #6c757d; margin-top: 20px;"><em>Note: This JSON configuration can be converted to YAML format for qibocal.</em></p>
+                        <p style="color: #6c757d; margin-top: 20px;"><em>This YAML configuration is ready for use with qibocal.</em></p>
                     </body>
                 </html>
             `);
@@ -1020,7 +1174,7 @@ Extended with quantum computing specific features:
         }
     }
 
-    // Placeholder for experiment execution
+    // Submit experiment to SLURM using the new job submission functionality
     function runExperiment() {
         const actionItems = document.querySelectorAll('.action-item');
         if (actionItems.length === 0) {
@@ -1028,10 +1182,119 @@ Extended with quantum computing specific features:
             return;
         }
 
-        if (confirm('Are you sure you want to run this experiment configuration?')) {
-            // In a real implementation, this would submit the experiment to the execution system
-            alert('Experiment submitted! (This is a placeholder - in reality this would submit to SLURM/qibocal)');
+        if (!confirm('Are you sure you want to run this experiment configuration?')) {
+            return;
         }
+
+        // Disable the button to prevent double submission
+        const runButton = document.getElementById('run-experiment-btn');
+        const originalText = runButton.innerHTML;
+        runButton.disabled = true;
+        runButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
+
+        try {
+            // Build the runcard configuration
+            const config = {
+                backend: 'qibolab',
+                platform: ExperimentBuilder.qpu.selectedName,
+                targets: Array.from(document.getElementById('qubit-select').selectedOptions).map(opt => {
+                    // Use unified parseQubit function for consistent handling
+                    return parseQubit(opt.value);
+                }).filter(value => value !== null), // Remove any null values
+                actions: []
+            };
+
+            // Collect all action items and their parameters
+            actionItems.forEach((actionItem, index) => {
+                const experimentOperation = actionItem.dataset.experimentId;
+                let experimentName = actionItem.dataset.experimentName;
+                const { parameters, actionData } = collectProtocolValues(actionItem);
+                
+                // Check if there is already an action with the experimentName
+                const existingAction = config.actions.find(action => action.id === experimentName);
+                if (existingAction) {
+                    // If so, append a number to the name
+                    experimentName = experimentName + '_' + Math.floor(Math.random() * 1000);
+                } 
+
+                const action = {
+                    id: experimentName,
+                    operation: experimentOperation,
+                    parameters: parameters,
+                    update: false  // Always set to false as requested
+                };
+
+                // Add targets if they override the global ones
+                if (actionData.targets) {
+                    action.targets = actionData.targets;
+                }
+
+                config.actions.push(action);
+            });
+
+            console.log('Submitting experiment configuration:', config);
+
+            // Submit the experiment using the new API endpoint
+            fetch('/api/submit_experiment_data', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    runcard_data: config,
+                    environment: null  // Could be made configurable later
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(`Experiment submitted successfully!\n\nExperiment ID: ${data.experiment_id}\nJob ID: ${data.job_id}\n\nThe experiment is now running on SLURM. Check the QPU Status or Dashboard for updates.`);
+                    
+                    // Optionally clear the action card or keep it for resubmission
+                    // clearActionCard();
+                } else {
+                    alert(`Failed to submit experiment:\n${data.message}`);
+                }
+            })
+            .catch(error => {
+                console.error('Error submitting experiment:', error);
+                alert(`Error submitting experiment: ${error.message || 'Network error'}`);
+            })
+            .finally(() => {
+                // Re-enable the button
+                runButton.disabled = false;
+                runButton.innerHTML = originalText;
+            });
+
+        } catch (error) {
+            console.error('Error building experiment configuration:', error);
+            alert(`Error building experiment configuration: ${error.message}`);
+            
+            // Re-enable the button
+            runButton.disabled = false;
+            runButton.innerHTML = originalText;
+        }
+    }
+
+    // Helper function to clear the action card
+    function clearActionCard() {
+        const actionBuilder = document.getElementById('action-card-builder');
+        actionBuilder.innerHTML = `
+            <div class="drop-zone-empty" id="empty-state">
+                <div>
+                    <i class="fas fa-plus-circle fa-3x mb-3"></i>
+                    <p>Drag experiments here to build your action card</p>
+                </div>
+            </div>
+        `;
+        
+        // Clear the state
+        ExperimentBuilder.actionCard.items = [];
+        
+        // Disable buttons
+        document.getElementById('generate-yaml-btn').disabled = true;
+        document.getElementById('run-experiment-btn').disabled = true;
+        document.getElementById('save-action-node-btn').disabled = true;
     }
 
     function saveActionNode(nodeName) {

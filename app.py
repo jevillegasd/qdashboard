@@ -9,10 +9,9 @@ File server functionality based on flask-file-server by Wildog:
 https://github.com/Wildog/flask-file-server
 
 Extended with quantum computing specific features:
-- QPU status monitoring and SLURM integration
-- Real-time package version tracking (qibo, qibolab, qibocal)
-- Enhanced report rendering with Plotly support
-- Dark theme optimized for quantum computing workflows
+- QPU status 'monitoring' and SLURM integration
+- Protocol builder and YAML generation
+- Centralized configuration management
 """
 
 import sys

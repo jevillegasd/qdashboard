@@ -15,6 +15,7 @@ from ..qpu.platforms import get_platforms_path, list_repository_branches, switch
 from ..qpu.slurm import get_slurm_status, get_slurm_output, parse_slurm_log_for_errors, slurm_log_path
 from ..qpu.topology import qpu_connectivity, infer_topology_from_connectivity, generate_topology_visualization
 from ..experiments.protocols import get_qibocal_protocols, get_protocol_attributes
+from ..experiments import submit_experiment, repeat_experiment, get_experiment_status, list_user_experiments
 from ..web.reports import report_viewer, get_latest_report_path
 from ..utils.formatters import yaml_response, json_response
 from qdashboard.utils.logger import get_logger
@@ -91,7 +92,7 @@ def register_routes(app, config):
             has_error, error_message = parse_slurm_log_for_errors()
             
             # Set last_path for file browser link
-            last_path = config.get('home_path', '/home')
+            last_path = config.get('home_path', os.path.expanduser('~'))
             
             logger.warning(f"Last report not found, using default path: {last_path}")
             response = make_response(render_template('latest_not_found.html',
@@ -598,6 +599,51 @@ def register_routes(app, config):
             'image': img_base64
         })
 
+    @app.route("/api/qpu_qubits/<platform>")
+    def qpu_qubits_api(platform):
+        """API endpoint to get the list of available qubits for a specific QPU."""
+        config = current_app.config['QDASHBOARD_CONFIG']
+        qrc_path = get_platforms_path(config['root'])
+        
+        if not qrc_path:
+            logger.warning("QPU platforms directory not available")
+            return jsonify({'error': 'QPU platforms directory not available'}), 404
+            
+        qpu_path = os.path.join(qrc_path, platform)
+        
+        if not os.path.exists(qpu_path):
+            logger.warning(f"QPU not found: {platform}")
+            return jsonify({'error': 'QPU not found'}), 404
+        
+        # Get connectivity data to extract qubits
+        connectivity_data = qpu_connectivity(platform)  
+        if not connectivity_data:
+            logger.warning("No connectivity data found for this QPU")
+            return jsonify({'error': 'No connectivity data found for this QPU'}), 404
+        
+        # Extract unique qubits from connectivity data
+        raw_qubits = list(set([q for conn in connectivity_data for q in conn[:2]]))
+        
+        # Sort qubits properly handling both strings and numbers
+        def qubit_sort_key(qubit):
+            """Sort qubits: numbers first (by value), then strings (alphabetically)"""
+            if isinstance(qubit, (int, float)):
+                return (0, qubit)  # Numbers get priority 0
+            else:
+                # Try to parse as number for mixed cases
+                try:
+                    return (0, int(qubit))
+                except (ValueError, TypeError):
+                    return (1, str(qubit))  # Strings get priority 1
+        
+        qubits = sorted(raw_qubits, key=qubit_sort_key)
+        
+        logger.info(f"Available qubits retrieved for {platform}: {qubits}")
+        return jsonify({
+            'qubits': qubits,
+            'num_qubits': len(qubits)
+        })
+
     @app.route("/api/qpu_calibration/<platform>")
     def qpu_calibration_api(platform):
         """API endpoint to get calibration data for a specific QPU."""
@@ -697,7 +743,7 @@ def register_routes(app, config):
             return jsonify({'success': False, 'message': f'Error executing qibocal {action}: {str(e)}'}), 500
 
     @app.route("/repeat_experiment", methods=['POST'])
-    def repeat_experiment():
+    def repeat_experiment_route():
         """Repeat an experiment by submitting it to SLURM."""
         try:
             config = current_app.config['QDASHBOARD_CONFIG']
@@ -706,170 +752,132 @@ def register_routes(app, config):
             if not report_path:
                 return jsonify({'success': False, 'message': 'Report path is required'}), 400
             
-            # Construct full path
-            full_report_path = os.path.join(config['root'], report_path.lstrip('/'))
+            # Use the modular repeat_experiment function
+            result = repeat_experiment(report_path, config)
             
-            if not os.path.exists(full_report_path):
-                return jsonify({'success': False, 'message': f'Report path does not exist: {report_path}'}), 404
-            
-            # Check for required files
-            runcard_path = None
-            parameters_json_path = None
-            
-            # Look for runcard.yml in the report directory
-            for filename in os.listdir(full_report_path):
-                if filename.startswith('runcard') and filename.endswith('.yml'):
-                    runcard_path = os.path.join(full_report_path, filename)
-                    break
-            
-            if not runcard_path:
-                return jsonify({'success': False, 'message': 'No runcard.yml file found in report directory'}), 400
-            
-            # Generate a unique temporary directory name with 8-digit hex timestamp
-            import time
-            timestamp_hex = format(int(time.time()), '08x')
-            temp_dir_name = f"qq_{timestamp_hex}"
-            
-            # Create temporary directory in user's home directory instead of /tmp
-            user_home = os.path.expanduser("~")
-            temp_base = os.path.join(user_home, '.qdashboard', 'temp')
-            os.makedirs(temp_base, exist_ok=True)
-            temp_dir = os.path.join(temp_base, temp_dir_name)
-            
-            # Create temporary directory
-            os.makedirs(temp_dir, exist_ok=True)
-            
-            # Copy runcard.yml to temporary directory
-            import shutil
-            temp_runcard_path = os.path.join(temp_dir, 'runcard.yml')
-            shutil.copy2(runcard_path, temp_runcard_path)
-            
-            # Read the runcard to extract platform information
-            import yaml
-            try:
-                with open(temp_runcard_path, 'r') as f:
-                    runcard_data = yaml.safe_load(f)
-                platform = runcard_data.get('platform')
-                partition = runcard_data.get('partition')
-                environment = runcard_data.get('environment')
-                if not platform:
-                    return jsonify({'success': False, 'message': 'No platform specified in runcard'}), 400
-                if not environment:
-                    # Use the app running environment 
-                    environment = config['environment']
-                    if not environment:
-                        return jsonify({'success': False, 'message': f'No environment specified in runcard or {environment}'}), 400
-                
-                # If no partition specified, try to infer it from the platform
-                if not partition:
-                    platforms_base = get_platforms_path(config['root'])
-                    partition = get_partition(platform)
-                    logger.warning(f"{platforms_base}:{partition}")
-                    if not partition:
-                        return jsonify({'success': False, 'message': f'No partition specified in runcard and could not infer partition for platform {platform}'}), 400
-            except Exception as e:
-                return jsonify({'success': False, 'message': f'Error reading runcard: {e}{str(e.__traceback__)}'}), 400
-            
-            # Check if parameters.json exists in the report and copy it as backup
-            report_parameters_path = os.path.join(full_report_path, 'parameters.json')
-            
-            # Determine platform path and parameters.json location
-            platforms_base = get_platforms_path(config['root'])
-            platform_dir = os.path.join(platforms_base, platform)
-            platform_parameters_path = os.path.join(platform_dir, 'parameters.json')
-            
-            if os.path.exists(report_parameters_path) and os.path.exists(platform_parameters_path):
-                # Backup current platform parameters.json
-                backup_parameters_path = os.path.join(temp_dir, 'parameters_backup.json')
-                shutil.copy2(platform_parameters_path, backup_parameters_path)
-                
-                # # Replace platform parameters.json with report's version
-                # # We could to this in the future to ensure the experiment is the
-                # # exact same as the open report.
-                # shutil.copy2(report_parameters_path, platform_parameters_path)
-                # logger.info(f"Backed up platform parameters and replaced with report parameters for {platform}")
-            
-            # Generate output directory name (parent directory + timestamp)
-            parent_dir = os.path.dirname(full_report_path)
-            report_dir_name = f"qq_{timestamp_hex}"
-            new_report_path = os.path.join(parent_dir, report_dir_name)
-            os.makedirs(new_report_path, exist_ok=True)
-            # Prepare SLURM job submission script based on run.sh
-            job_script = f"""#!/bin/bash
-#SBATCH --job-name=qq_{platform}
-#SBATCH --partition={partition}
-#SBATCH --output=logs/slurm_output.log
-#SBATCH --time=01:00:00
-
-# Set environment variables
-export QIBOLAB_PLATFORMS={platforms_base}
-export QIBO_PLATFORM={platform}
-
-# Activate environment (using {environment} environment)
-# source ~/.env/{environment}/bin/activate
-
-# Run the experiment
-qq run {temp_runcard_path} -o {new_report_path} -f --no-update
-
-exit 0
-"""
-            
-            # Write job script to temporary file
-            job_script_path = os.path.join(temp_dir, 'job_script.sh')
-            with open(job_script_path, 'w') as f:
-                f.write(job_script)
-            
-            # Make script executable
-            os.chmod(job_script_path, 0o755)
-            
-            # Submit job to SLURM
-            result = subprocess.run(['sbatch', job_script_path], 
-                                  capture_output=True, text=True, timeout=30)
-            
-            if result.returncode == 0:
-                # Extract job ID from sbatch output
-                job_id = None
-                for line in result.stdout.split('\n'):
-                    if 'Submitted batch job' in line:
-                        job_id = line.split()[-1]
-                        break
-                
-                # Save job information to temporary directory
-                job_info = {
-                    'job_id': job_id,
-                    'output_dir': new_report_path,
-                    'temp_dir': temp_dir,
-                    'platform': platform,
-                    'submitted_at': time.time(),
-                    'original_report': full_report_path
-                }
-                
-                job_info_path = os.path.join(temp_dir, 'job_info.json')
-                with open(job_info_path, 'w') as f:
-                    json.dump(job_info, f, indent=2)
-                    
-                logger.info(f"Experiment repeat job submitted: {job_id}, output: {new_report_path}")
-                # Save to file logs/last_report_path
-                slurm_log = slurm_log_path()
-                config = current_app.config['QDASHBOARD_CONFIG']
-                last_report_path = config.get('last_report_path', '.qdashboard/logs/last_report_path')
-                with open(os.path.join(config['root'], last_report_path), 'w') as f:
-                    f.write(new_report_path)
-                return jsonify({
-                    'success': True,
-                    'message': 'Experiment submitted successfully',
-                    'job_id': job_id,
-                    'output_dir': new_report_path,
-                    'temp_dir': temp_dir,
-                    'job_info': job_info
-                })
+            if result['success']:
+                logger.info(f"Experiment repeat submitted: {result['experiment_id']}")
+                return jsonify(result)
             else:
-                logger.error(f"Failed to submit SLURM job: {result.stderr}")
-                return jsonify({'success': False, 'message': f'Failed to submit job: {result.stderr}'}), 500
+                logger.error(f"Failed to repeat experiment: {result['message']}")
+                return jsonify(result), 400
                 
         except Exception as e:
-            logger.error(f"Error repeating experiment: {str(e)}")
+            logger.error(f"Error in repeat_experiment route: {str(e)}")
             return jsonify({'success': False, 'message': f'Error repeating experiment: {str(e)}'}), 500
+
+    @app.route("/submit_experiment", methods=['POST'])
+    def submit_experiment_route():
+        """Submit a new experiment to SLURM."""
+        try:
+            config = current_app.config['QDASHBOARD_CONFIG']
+            
+            # Check if runcard file was uploaded
+            if 'runcard' not in request.files:
+                return jsonify({'success': False, 'message': 'No runcard file provided'}), 400
+            
+            runcard_file = request.files['runcard']
+            if runcard_file.filename == '':
+                return jsonify({'success': False, 'message': 'No runcard file selected'}), 400
+            
+            # Get optional environment parameter
+            environment = request.form.get('environment')
+            
+            # Save uploaded file temporarily
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.yml', delete=False) as tmp_file:
+                runcard_content = runcard_file.read().decode('utf-8')
+                tmp_file.write(runcard_content)
+                tmp_runcard_path = tmp_file.name
+            
+            try:
+                # Use the modular submit_experiment function
+                result = submit_experiment(tmp_runcard_path, config, environment)
+                
+                if result['success']:
+                    logger.info(f"New experiment submitted: {result['experiment_id']}")
+                    return jsonify(result)
+                else:
+                    logger.error(f"Failed to submit experiment: {result['message']}")
+                    return jsonify(result), 400
+            finally:
+                # Clean up temporary file
+                os.unlink(tmp_runcard_path)
+                
+        except Exception as e:
+            logger.error(f"Error in submit_experiment route: {str(e)}")
+            return jsonify({'success': False, 'message': f'Error submitting experiment: {str(e)}'}), 500
+
+    @app.route("/api/submit_experiment_data", methods=['POST'])
+    def submit_experiment_data_route():
+        """Submit a new experiment to SLURM using runcard data."""
+        try:
+            config = current_app.config['QDASHBOARD_CONFIG']
+            
+            # Get JSON data from request
+            if not request.is_json:
+                return jsonify({'success': False, 'message': 'Request must be JSON'}), 400
+            
+            data = request.get_json()
+            if not data:
+                return jsonify({'success': False, 'message': 'No data provided'}), 400
+            
+            # Extract runcard data and optional environment
+            runcard_data = data.get('runcard_data')
+            environment = data.get('environment')
+            
+            if not runcard_data:
+                return jsonify({'success': False, 'message': 'No runcard_data provided'}), 400
+            
+            # Validate required fields
+            if 'platform' not in runcard_data:
+                return jsonify({'success': False, 'message': 'Missing required field: platform'}), 400
+            
+            # Use the enhanced submit_experiment function with runcard_data
+            result = submit_experiment(runcard_data=runcard_data, config=config, environment=environment)
+            
+            if result['success']:
+                logger.info(f"New experiment submitted with data: {result['experiment_id']}")
+                return jsonify(result)
+            else:
+                logger.error(f"Failed to submit experiment with data: {result['message']}")
+                return jsonify(result), 400
+                
+        except Exception as e:
+            logger.error(f"Error in submit_experiment_data route: {str(e)}")
+            return jsonify({'success': False, 'message': f'Error submitting experiment: {str(e)}'}), 500
+
+    @app.route("/api/experiments", methods=['GET'])
+    def api_list_experiments():
+        """API endpoint to list user experiments."""
+        try:
+            config = current_app.config['QDASHBOARD_CONFIG']
+            experiments = list_user_experiments(config)
+            return jsonify({
+                'success': True,
+                'experiments': experiments,
+                'count': len(experiments)
+            })
+        except Exception as e:
+            logger.error(f"Error listing experiments: {str(e)}")
+            return jsonify({'success': False, 'message': f'Error listing experiments: {str(e)}'}), 500
+
+    @app.route("/api/experiments/<experiment_id>", methods=['GET'])
+    def api_experiment_status(experiment_id):
+        """API endpoint to get experiment status."""
+        try:
+            config = current_app.config['QDASHBOARD_CONFIG']
+            status = get_experiment_status(experiment_id, config)
+            if status:
+                return jsonify({
+                    'success': True,
+                    'experiment': status
+                })
+            else:
+                return jsonify({'success': False, 'message': 'Experiment not found'}), 404
+        except Exception as e:
+            logger.error(f"Error getting experiment status: {str(e)}")
+            return jsonify({'success': False, 'message': f'Error getting experiment status: {str(e)}'}), 500
 
     logger.debug("Routes module initialized")
     return app
