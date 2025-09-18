@@ -5,13 +5,13 @@ include requirements.txt
 include CHANGELOG.md
 
 # Include templates
-recursive-include templates *.html
+recursive-include qdashboard/templates *.html
 
 # Include static assets
-recursive-include assets *.css *.js *.ttf *.woff *.woff2 *.eot *.svg *.png *.jpg *.gif *.ico
-recursive-include assets/css *
-recursive-include assets/js *
-recursive-include assets/fonts *
+recursive-include qdashboard/assets *.css *.js *.ttf *.woff *.woff2 *.eot *.svg *.png *.jpg *.gif *.ico
+recursive-include qdashboard/assets/css *
+recursive-include qdashboard/assets/js *
+recursive-include qdashboard/assets/fonts *
 
 # Include configuration files
 include *.yml *.yaml *.toml *.cfg *.ini *.sh

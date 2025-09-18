@@ -10,10 +10,10 @@ readme = "README.md"
 requires-python = ">=3.8"
 license = "MIT"
 authors = [
-    {name = "TII Quantum Team", email = "quantum@tii.ae"}
+    {name = "TII Quantum Hardware", email = "qcomp@tii.ae"}
 ]
 maintainers = [
-    {name = "TII Quantum Team", email = "quantum@tii.ae"}
+    {name = "TII Quantum Hardware", email = "qcomp@tii.ae"}
 ]
 keywords = [
     "quantum", 
@@ -42,7 +42,6 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Physics",
     "Topic :: System :: Monitoring",
     "Framework :: Flask",
-    "License :: OSI Approved :: MIT License",
     "Environment :: Web Environment"
 ]
 
@@ -59,10 +58,16 @@ dependencies = [
 # Quantum computing dependencies (optional but recommended)
 quantum = [
     "qibo>=0.2.0",
-    "qibolab>=0.2.8",
-    "qibocal>=0.2.3"
+    "qibolab==0.2.8",
+    "qibocal>=0.2.3",
+    "rustworkx==0.16.0",
+    "qcodes"
 ]
 
+# Dependencies for Quantum machines Hardware
+qm = [
+    "qm-qua==1.2.3a1"
+]
 # Development dependencies
 dev = [
     "pytest>=7.0.0",
@@ -113,7 +118,7 @@ include = ["qdashboard*"]
 exclude = ["tests*", "build*", "dist*"]
 
 [tool.setuptools.package-data]
-"*" = [
+"qdashboard" = [
     "templates/*.html",
     "assets/css/*.css", 
     "assets/js/*.js",

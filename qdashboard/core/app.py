@@ -15,13 +15,13 @@ logger = get_logger(__name__)
 
 def create_app():
     """Create and configure Flask application."""
-    # Get the absolute path to the project root
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    # Get the absolute path to the qdashboard package
+    package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     
     app = Flask(__name__, 
                 static_url_path='/assets', 
-                static_folder=os.path.join(project_root, 'assets'),
-                template_folder=os.path.join(project_root, 'templates'))
+                static_folder=os.path.join(package_dir, 'assets'),
+                template_folder=os.path.join(package_dir, 'templates'))
     
     app.config['APPLICATION_NAME'] = 'QDashboard'
     

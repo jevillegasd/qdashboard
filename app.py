@@ -2,7 +2,7 @@
 """
 QDashboard - Quantum Computing Dashboard
 
-A professional quantum computing dashboard with file browsing, experiment monitoring, 
+A quantum computing dashboard with file browsing, experiment monitoring, 
 QPU status tracking, and report visualization capabilities.
 
 File server functionality based on flask-file-server by Wildog:
