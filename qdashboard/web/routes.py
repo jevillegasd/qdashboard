@@ -8,7 +8,7 @@ import json
 import time
 import shutil
 import yaml
-from flask import render_template, request, jsonify, send_file, make_response, current_app
+from flask import render_template, request, jsonify, send_file, make_response, current_app, Response
 
 from ..qpu.monitoring import get_qpu_health, get_available_qpus, get_qibo_versions, get_qpu_details, get_qpu_list, qpu_parameters
 from ..qpu.platforms import get_platforms_path, list_repository_branches, switch_repository_branch, get_current_branch_info, commit_changes, push_changes, stash_changes, list_stashes, apply_latest_stash, discard_changes, get_partition
@@ -225,6 +225,76 @@ def register_routes(app, config):
             
         except Exception as e:
             logger.error(f"Error fetching SLURM status: {str(e)}")
+            return jsonify({'status': 'error', 'message': str(e)}), 500
+
+    @app.route("/api/slurm_stream")
+    def api_slurm_stream():
+        """Server-Sent Events endpoint for streaming SLURM status updates."""
+        def slurm_event_stream():
+            """Generate SLURM status updates as Server-Sent Events."""
+            last_data = None
+            last_log = None
+            
+            try:
+                while True:
+                    try:
+                        # Get current SLURM data
+                        slurm_queue_status = get_slurm_status()
+                        current_log = get_slurm_output()
+                        
+                        # Format queue status for comparison and transmission
+                        queue_status = [
+                            {
+                                'job_id': job.job_id,
+                                'name': job.name,
+                                'user': job.user,
+                                'state': job.state,
+                                'time': job.time,
+                                'time_limit': job.time_limit,
+                                'nodes': job.nodes,
+                                'nodelist': job.nodelist,
+                                'is_current_user': job.is_current_user
+                            } for job in slurm_queue_status
+                        ]
+                        
+                        # Only send if data has changed (compare JSON strings)
+                        current_data = json.dumps(queue_status, sort_keys=True)
+                        current_log_str = current_log
+                        
+                        if current_data != last_data or current_log_str != last_log:
+                            last_data = current_data
+                            last_log = current_log_str
+                            
+                            event_data = {
+                                'queue_status': queue_status,
+                                'last_log': current_log,
+                                'timestamp': time.time()
+                            }
+                            
+                            # SSE format: data: <json>\n\n
+                            yield f"data: {json.dumps(event_data)}\n\n"
+                        
+                    except Exception as e:
+                        logger.warning(f"Error in SLURM stream: {str(e)}")
+                        error_event = {'error': str(e), 'timestamp': time.time()}
+                        yield f"data: {json.dumps(error_event)}\n\n"
+                    
+                    # Poll every 2 seconds (adjust as needed)
+                    time.sleep(2)
+                    
+            except GeneratorExit:
+                logger.info("Client disconnected from SLURM stream")
+        
+        try:
+            logger.info("SLURM stream connection established")
+            response = Response(slurm_event_stream(), mimetype='text/event-stream')
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+            response.headers['X-Accel-Buffering'] = 'no'  # Disable nginx buffering
+            return response
+        except Exception as e:
+            logger.error(f"Error establishing SLURM stream: {str(e)}")
             return jsonify({'status': 'error', 'message': str(e)}), 500
 
     @app.route("/qpus")

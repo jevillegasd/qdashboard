@@ -28,9 +28,11 @@
  */
 
 // Global variables for auto-refresh functionality
-let slurmDataInterval;
-let slurmLogInterval;
+let eventSource;
 let isAutoRefreshActive = false;
+let reconnectAttempts = 0;
+let maxReconnectAttempts = 5;
+let reconnectDelay = 3000; // 3 seconds
 
 /**
  * Job cancellation function
@@ -280,59 +282,159 @@ function refreshSlurmLog() {
 }
 
 /**
- * Start auto-refresh functionality
+ * Handle incoming SSE messages
+ * @param {Object} data - The parsed SLURM data from server
  */
-function startAutoRefresh() {
-    if (isAutoRefreshActive) return;
-    
-    isAutoRefreshActive = true;
-    
-    // Refresh SLURM queue every 2 seconds
-    slurmDataInterval = setInterval(refreshSlurmData, 2000);
-    // Refresh SLURM log every 2 seconds
-    slurmLogInterval = setInterval(refreshSlurmLog, 2000);
-    
-    // Update toggle button
-    const toggleBtn = document.getElementById('toggle-auto-refresh');
-    if (toggleBtn) {
-        toggleBtn.innerHTML = '<i class="fas fa-pause"></i>';
-        toggleBtn.title = 'Stop auto-refresh (2s interval)';
-        toggleBtn.classList.remove('btn-outline-secondary');
-        toggleBtn.classList.add('btn-outline-warning');
+function handleSlurmUpdate(data) {
+    if (data.error) {
+        console.error('Server error in stream:', data.error);
+        return;
     }
     
-    // Update refresh button text to indicate auto-refresh is active
-    const refreshBtn = document.getElementById('refresh-slurm-btn');
-    const refreshLogBtn = document.getElementById('refresh-log-btn');
-    
-    if (refreshBtn) {
-        refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Auto (2s)';
-        refreshBtn.title = 'Auto-refresh active (2s interval)';
+    // Update SLURM queue table
+    if (data.queue_status) {
+        updateSlurmTable(data.queue_status);
     }
     
-    if (refreshLogBtn) {
-        refreshLogBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Auto (2s)';
-        refreshLogBtn.title = 'Auto-refresh active (2s interval)';
+    // Update SLURM log
+    if (data.last_log) {
+        updateSlurmLog(data.last_log);
+    }
+    
+    // Update timestamp indicator
+    const timestamp = document.getElementById('slurm-last-update');
+    if (timestamp) {
+        const now = new Date();
+        timestamp.textContent = `Last updated: ${now.toLocaleTimeString()}`;
+    }
+    
+    // Update log timestamp
+    const logTimestamp = document.getElementById('slurm-log-last-update');
+    if (logTimestamp) {
+        const now = new Date();
+        logTimestamp.textContent = `Last updated: ${now.toLocaleTimeString()}`;
     }
 }
 
 /**
- * Stop auto-refresh functionality
+ * Establish Server-Sent Events connection for real-time SLURM updates
+ */
+function startAutoRefresh() {
+    if (isAutoRefreshActive) return;
+    
+    // Check if EventSource is available
+    if (typeof EventSource === 'undefined') {
+        console.error('EventSource not supported in this browser');
+        alert('Your browser does not support Server-Sent Events. Please use a modern browser.');
+        return;
+    }
+    
+    try {
+        isAutoRefreshActive = true;
+        reconnectAttempts = 0;
+        
+        // Establish SSE connection
+        eventSource = new EventSource('/api/slurm_stream');
+        
+        // Handle incoming messages
+        eventSource.addEventListener('message', (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                handleSlurmUpdate(data);
+                
+                // Reset reconnect attempts on successful message
+                reconnectAttempts = 0;
+            } catch (e) {
+                console.error('Error parsing SSE message:', e);
+            }
+        });
+        
+        // Handle connection open
+        eventSource.addEventListener('open', () => {
+            console.log('SLURM stream connection established');
+            reconnectAttempts = 0;
+        });
+        
+        // Handle errors
+        eventSource.addEventListener('error', (event) => {
+            console.error('SLURM stream error:', event);
+            
+            if (eventSource.readyState === EventSource.CLOSED) {
+                stopAutoRefresh();
+                attemptReconnect();
+            }
+        });
+        
+        // Update toggle button
+        const toggleBtn = document.getElementById('toggle-auto-refresh');
+        if (toggleBtn) {
+            toggleBtn.innerHTML = '<i class="fas fa-pause"></i>';
+            toggleBtn.title = 'Stop auto-refresh (server-driven)';
+            toggleBtn.classList.remove('btn-outline-secondary');
+            toggleBtn.classList.add('btn-outline-warning');
+        }
+        
+        // Update refresh button text to indicate auto-refresh is active
+        const refreshBtn = document.getElementById('refresh-slurm-btn');
+        const refreshLogBtn = document.getElementById('refresh-log-btn');
+        
+        if (refreshBtn) {
+            refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Live';
+            refreshBtn.title = 'Server-driven updates active';
+        }
+        
+        if (refreshLogBtn) {
+            refreshLogBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Live';
+            refreshLogBtn.title = 'Server-driven updates active';
+        }
+        
+    } catch (e) {
+        console.error('Error starting SLURM stream:', e);
+        isAutoRefreshActive = false;
+        alert('Failed to establish real-time connection');
+    }
+}
+
+/**
+ * Attempt to reconnect to SSE stream after a delay
+ */
+function attemptReconnect() {
+    if (reconnectAttempts >= maxReconnectAttempts) {
+        console.error('Max reconnection attempts reached');
+        alert('Connection lost and could not reconnect after ' + maxReconnectAttempts + ' attempts');
+        return;
+    }
+    
+    reconnectAttempts++;
+    console.log(`Attempting to reconnect (attempt ${reconnectAttempts}/${maxReconnectAttempts})...`);
+    
+    setTimeout(() => {
+        if (!isAutoRefreshActive) {
+            startAutoRefresh();
+        }
+    }, reconnectDelay * reconnectAttempts); // Exponential backoff
+}
+
+/**
+ * Stop auto-refresh functionality and close SSE connection
  */
 function stopAutoRefresh() {
     if (!isAutoRefreshActive) return;
     
     isAutoRefreshActive = false;
     
-    clearInterval(slurmDataInterval);
-    clearInterval(slurmLogInterval);
+    // Close EventSource connection
+    if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+    }
     
     // Update toggle button
     const toggleBtn = document.getElementById('toggle-auto-refresh');
     
     if (toggleBtn) {
         toggleBtn.innerHTML = '<i class="fas fa-play"></i>';
-        toggleBtn.title = 'Start auto-refresh (2s interval)';
+        toggleBtn.title = 'Start auto-refresh (server-driven)';
         toggleBtn.classList.remove('btn-outline-warning');
         toggleBtn.classList.add('btn-outline-secondary');
     }
@@ -395,5 +497,20 @@ function initializeDashboardCommon() {
     }
 }
 
+/**
+ * Cleanup function to close EventSource when page unloads
+ */
+function cleanupSlurmStream() {
+    if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+    }
+    isAutoRefreshActive = false;
+}
+
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', initializeDashboardCommon);
+
+// Cleanup when page unloads or navigates away
+window.addEventListener('beforeunload', cleanupSlurmStream);
+window.addEventListener('pagehide', cleanupSlurmStream);
