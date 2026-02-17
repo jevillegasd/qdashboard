@@ -31,12 +31,13 @@ qdashboard/
 │   │   ├── job_submission.py # SLURM job submission and management
 │   │   └── protocols.py  # Qibocal protocol discovery and management
 │   └── web/              # Web interface components
-│       ├── __init__.py
-│       ├── routes.py     # Main application routes
-│       ├── file_browser.py # File browser functionality
-│       └── reports.py    # Report viewing utilities
-├── assets/               # Static assets (CSS, JS, images)
-├── templates/            # Jinja2 templates
+|   │   ├── __init__.py
+|   │   ├── routes.py     # Main application routes
+|   │   ├── file_browser.py # File browser functionality
+|   │   └── reports.py    # Report viewing utilities
+|   ├── assets/           # Static assets (CSS, JS, images)
+|   └── templates/        # Jinja2 templates
+|
 └── quantum_dashboard.py.backup # Backup of original monolithic file
 ```
 

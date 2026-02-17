@@ -129,7 +129,7 @@ def create_slurm_script(experiment_id: str, experiment_dir: str, runcard_path: s
 #SBATCH --job-name={experiment_id}
 #SBATCH --partition={partition}
 #SBATCH --output={logs_dir}/slurm_output.log
-#SBATCH --error={logs_dir}/slurm_error.log
+# #SBATCH --error={logs_dir}/slurm_error.log
 #SBATCH --time=01:00:00
 
 # Set environment variables

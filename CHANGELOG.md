@@ -113,10 +113,8 @@ QDashboard file browsing uses [flask-file-server](https://github.com/Wildog/flas
 
 ## Attribution
 
-This project extends and builds upon the foundation provided by:
+This project's file browsing capabilities extends and builds upon the foundation provided by:
 - **Original Project**: [flask-file-server](https://github.com/Wildog/flask-file-server)
-- **Original Author**: [Wildog](https://github.com/Wildog)
-- **License**: Maintains compatibility with original project licensing
 
 ## Future Roadmap
 
@@ -126,3 +124,4 @@ This project extends and builds upon the foundation provided by:
 - Multi-platform QPU management
 - API endpoints for programmatic access
 - Authentication and user management
+- Indpenedently developped file server
