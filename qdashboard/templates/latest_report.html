@@ -54,24 +54,47 @@ Enhanced with quantum computing dashboard integration, dark theme, and consisten
 
         <!-- Page Content -->
         <div id="page-content-wrapper">
-            <!-- <nav class="navbar navbar-expand-lg navbar-dark">
-                
+             <!-- <nav class="navbar navbar-expand-lg navbar-dark">
+            PLACEHOLDER FOR A NAVIGATION BAR ONE DAY
             </nav> -->
-
+            
             <div class="container-fluid">
+                <h1 class="page-title">Calibration Report</h1>
+
                 {% if access_mode == "latest" %}
-                    <h1 class="page-title">Calibration Report</h1>
-                    <div>
-                        <small class="text-muted">Last experiment report.</small>
-                    </div>
+                    <p class="page-subtitle">Last experiment report.</p>
                 {% else %}
-                    <h1 class="page-title">Calibration Report</h1>
+                    <p class="page-subtitle">Experiment report from the file browser.</p>
                 {% endif %}
-                {% if report_path_for_link %}
+
+                {% if access_mode == "latest" and report_path_for_link %}
                     <p class="text-muted">Report path: <a href="/files/{{ report_path_for_link }}" target="_blank" class="text-info"><code>{{ report_path_for_link }}</code></a></p>
                 {% endif %}
-                
-                <div class="row mt-4">
+                <!-- Breadcrumb Navigation -->
+                {% if access_mode == "file_browser" and report_path_for_link %}
+                <div class="row mb-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-body p-2">
+                                <ol class="breadcrumb bg-transparent mb-0" dir="ltr">
+                                    <li class="breadcrumb-item"><a href="/files"><i class="fa fa-fw fa-home fa-lg"></i> </a></li>
+                                    {% set path_parts = report_path_for_link.strip('/').split('/') %}
+                                    {% for part in path_parts %}
+                                        {% set partial_path = path_parts[:loop.index]|join('/') %}
+                                        {% if loop.last %}
+                                            <li class="breadcrumb-item active" aria-current="page"><strong>{{ part }}</strong></li>
+                                        {% else %}
+                                            <li class="breadcrumb-item"><a href="/files/{{ partial_path }}"><strong>{{ part }}</strong></a></li>
+                                        {% endif %}
+                                    {% endfor %}
+                                </ol>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="row">
                     <div class="col-md-12">
                         <div class="card">
                             <div class="card-header d-flex justify-content-between align-items-center">
@@ -148,6 +171,14 @@ Enhanced with quantum computing dashboard integration, dark theme, and consisten
     <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
     <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+
+    <!-- Menu Toggle Script -->
+    <script>
+    $("#menu-toggle").click(function(e) {
+        e.preventDefault();
+        $("#wrapper").toggleClass("toggled");
+    });
+    </script>
 
     <script>
 
