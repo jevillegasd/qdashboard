@@ -4,7 +4,6 @@ SLURM queue management and monitoring utilities.
 
 import os
 import subprocess
-from flask import current_app
 
 
 def get_slurm_status():
@@ -76,11 +75,12 @@ def check_queue_running_jobs(queue_name):
 def slurm_log_path():
     """Get the SLURM log path from application configuration."""
     try:
-        config = current_app.config.get('QDASHBOARD_CONFIG', {})
+        from ..core.config import get_config
+        config = get_config()
         logs_dir = config.get('logs_dir', os.path.join(config.get('root', os.path.join(os.environ.get('HOME', ''), '.qdashboard')), 'logs'))
         return os.path.join(logs_dir, 'slurm_output.log')
-    except RuntimeError:
-        # Fallback for when outside application context
+    except Exception:
+        # Fallback when config not yet set
         home_path = os.environ.get('HOME', '')
         qd_root = os.path.normpath(os.getenv('QD_PATH', os.path.join(home_path, '.qdashboard')))
         return os.path.join(qd_root, 'logs', 'slurm_output.log')

@@ -1,65 +1,57 @@
 """
-Core Flask application configuration and setup.
+Core FastAPI application configuration and setup.
 """
 
 import os
-from flask import Flask
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
 from ..utils.formatters import size_fmt, time_desc, data_fmt, icon_fmt, time_humanize
 from qdashboard.utils.logger import get_logger
-from .config import DEFAULT_PORT, DEFAULT_HOST, DEFAULT_QD_ROOT
+from .config import DEFAULT_PORT, DEFAULT_HOST, DEFAULT_QD_ROOT, set_config
 
 
 logger = get_logger(__name__)
 
+# Module-level templates instance — imported by route modules
+templates: Jinja2Templates = None  # type: ignore[assignment]
 
-def create_app():
-    """Create and configure Flask application."""
-    # Get the absolute path to the qdashboard package
+
+def create_app(config: dict = None) -> FastAPI:
+    """Create and configure the FastAPI application."""
+    global templates
+
     package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    
-    app = Flask(__name__, 
-                static_url_path='/assets', 
-                static_folder=os.path.join(package_dir, 'assets'),
-                template_folder=os.path.join(package_dir, 'templates'))
-    
-    app.config['APPLICATION_NAME'] = 'QDashboard'
-    
-    # Register template filters
-    app.template_filter('size_fmt')(size_fmt)
-    app.template_filter('time_fmt')(time_desc)
-    app.template_filter('data_fmt')(data_fmt)
-    app.template_filter('icon_fmt')(icon_fmt)
-    app.template_filter('humanize')(time_humanize)
-    
+    assets_dir = os.path.join(package_dir, "assets")
+    templates_dir = os.path.join(package_dir, "templates")
+
+    if config is not None:
+        set_config(config)
+
+    app = FastAPI(title="QDashboard", docs_url=None, redoc_url=None)
+
+    # Store config in app state for access via request.app.state.config
+    app.state.config = config or {}
+
+    # Mount static files at /assets
+    app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    # Set up Jinja2 templates with custom filters
+    templates = Jinja2Templates(directory=templates_dir)
+    templates.env.filters["size_fmt"] = size_fmt
+    templates.env.filters["time_fmt"] = time_desc
+    templates.env.filters["data_fmt"] = data_fmt
+    templates.env.filters["icon_fmt"] = icon_fmt
+    templates.env.filters["humanize"] = time_humanize
+
     logger.debug("App module initialized")
-    
+
     return app
 
 
 def get_config():
     """Get application configuration from environment variables."""
-    home_path = os.environ.get('HOME')
-    
-    # QDashboard root directory - can be overridden with QD_PATH
-    qd_root = os.path.normpath(os.getenv('QD_PATH', DEFAULT_QD_ROOT))
-    files_root = os.getenv('QD_PATH', home_path) # We serve files from home by default otherwise is the same as the QD root
-
-    # Standard QDashboard directories
-    config = {
-        'host': os.getenv('QD_BIND', DEFAULT_HOST),
-        'port': os.getenv('QD_PORT', DEFAULT_PORT),
-        'root': files_root, # Root directory for serving files
-        'qd_root': qd_root, # QDashboard root directory
-        'key': os.getenv('QD_KEY', ""),
-        'home_path': home_path,
-        'user': os.environ.get('USER'),
-        'environment': os.environ.get('VIRTUAL_ENV', None),
-        'logs_dir': os.path.join(qd_root, 'logs'),
-        'data_dir': os.path.join(qd_root, 'data'),
-        'temp_dir': os.path.join(qd_root, 'temp'),
-        'log_path': os.path.join(qd_root, 'logs', 'slurm_output.txt'),
-        'last_report_path': os.path.join(qd_root, 'logs', 'last_report_path')
-    }
-    
-    return config
+    from .config import get_config as _get_config
+    return _get_config()

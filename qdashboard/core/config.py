@@ -7,7 +7,6 @@ across all modules and avoiding hardcoded values.
 
 import os
 from typing import Dict, Any, Optional
-from flask import current_app
 
 
 class ConfigError(Exception):
@@ -15,41 +14,53 @@ class ConfigError(Exception):
     pass
 
 
-def get_app_config() -> Dict[str, Any]:
+# Module-level config store — set once at startup via set_config()
+_config: Dict[str, Any] = {}
+
+
+def set_config(config: Dict[str, Any]) -> None:
+    """Store the application configuration at startup."""
+    global _config
+    _config = config
+
+
+def get_config() -> Dict[str, Any]:
     """
     Get the current application configuration.
-    
+
     Returns:
         Dict containing the application configuration
-        
+
     Raises:
-        ConfigError: If configuration is not available
+        ConfigError: If configuration has not been set yet
     """
-    try:
-        return current_app.config['QDASHBOARD_CONFIG']
-    except (RuntimeError, KeyError) as e:
+    if not _config:
         raise ConfigError(
             "Application configuration not available. "
-            "This function must be called within a Flask application context."
-        ) from e
+            "Call set_config() before accessing config values."
+        )
+    return _config
+
+
+def get_app_config() -> Dict[str, Any]:
+    """Alias for get_config() — kept for backwards compatibility."""
+    return get_config()
 
 
 def get_config_value(key: str, default: Any = None) -> Any:
     """
     Get a specific configuration value.
-    
+
     Args:
         key: Configuration key to retrieve
         default: Default value if key is not found
-        
+
     Returns:
         Configuration value or default
     """
     try:
-        config = get_app_config()
-        return config.get(key, default)
+        return get_config().get(key, default)
     except ConfigError:
-        # Fallback for cases outside Flask context
         return default
 
 

@@ -10,8 +10,9 @@ import os
 import argparse
 from typing import Optional, List
 
-from qdashboard.core.app import create_app, get_config
-from qdashboard.core.config import DEFAULT_PORT, DEFAULT_HOST, validate_config
+import uvicorn
+from qdashboard.core.app import create_app
+from qdashboard.core.config import DEFAULT_PORT, DEFAULT_HOST, validate_config, set_config
 from qdashboard.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -88,26 +89,36 @@ def get_default_config(args: argparse.Namespace) -> dict:
     # Set default root path to user's home directory if not specified
     root_path = args.root or os.path.expanduser('~')
     root_path = os.path.abspath(root_path)
-    config = get_config()
-    if args.root:
-        config['root'] = root_path
-    if args.auth_key:
-        config['key'] = args.auth_key
-    if args.debug:
-        config['debug'] = args.debug
-    if args.environment:
-        config['environment'] = args.environment
-    if args.home_path:
-        config['home_path'] = args.home_path
-    if args.host:
-        config['host'] = args.host
-    if args.log_path:
-        config['log_path'] = args.log_path
-    if args.port:
-        config['port'] = args.port
+    qd_root = os.path.expanduser('~/.qdashboard')
+    config = {
+        'root': root_path,
+        'key': args.auth_key or '',
+        'debug': args.debug,
+        'environment': args.environment or 'default',
+        'home_path': args.home_path or os.path.expanduser('~'),
+        'host': args.host or DEFAULT_HOST,
+        'port': args.port or DEFAULT_PORT,
+        'log_path': args.log_path or os.path.join(qd_root, 'logs', 'slurm_output.txt'),
+        'logs_dir': os.path.join(qd_root, 'logs'),
+        'temp_dir': os.path.join(qd_root, 'tmp'),
+        'data_dir': os.path.join(qd_root, 'data'),
+    }
     
     config['version'] = __import__("qdashboard").__version__
     return config
+
+
+def _read_config_file(root_path: str) -> dict:
+    """Read config file from root path if it exists."""
+    import yaml
+    config_path = os.path.join(root_path, '.qdashboard', 'config.yml')
+    if os.path.exists(config_path):
+        try:
+            with open(config_path) as f:
+                return yaml.safe_load(f) or {}
+        except Exception as e:
+            logger.warning(f'Could not read config file: {e}')
+    return {}
 
 
 def validate_config_legacy(config: dict) -> None:
@@ -157,13 +168,13 @@ def main(argv: Optional[List[str]] = None) -> None:
         # Import here to avoid import errors if package is not fully installed
         from .core.app import create_app
         from .web.routes import register_routes
-        from .web.file_browser import PathView
+        from .web.file_browser import make_file_router
         from .qpu.platforms import get_platforms_path
-        
+
         # Ensure qibolab platforms directory is available
         logger.info('QDashboard - CLI - Quantum Computing Dashboard')
         logger.info('Initializing QPU platforms...')
-        
+
         try:
             platforms_path = get_platforms_path(config['root'])
             if not platforms_path:
@@ -171,43 +182,39 @@ def main(argv: Optional[List[str]] = None) -> None:
         except Exception as e:
             logger.warning(f'Error setting up QPU platforms: {e}')
 
-        # Create Flask application
-        app = create_app()
-        
-        # Store config for routes to access
-        app.config['QDASHBOARD_CONFIG'] = config
-        
-        # Register routes
-        register_routes(app, config)
-        
-        # Register file browser - create a proper class-based view
-        class ConfiguredPathView(PathView):
-            def __init__(self):
-                super().__init__(root_path=config['root'], key=config['key'])
-        path_view = ConfiguredPathView.as_view('path_view')
+        # Set config before creating app
+        set_config(config)
 
-        app.add_url_rule('/files/', defaults={'p': ''}, view_func=path_view)
-        app.add_url_rule('/files/<path:p>', view_func=path_view)
-        
+        # Create FastAPI application (also calls set_config internally)
+        app = create_app(config)
+
+        # Register main routes
+        register_routes(app, config)
+
+        # Register file browser router
+        file_router = make_file_router(config['root'], config.get('key', ''))
+        app.include_router(file_router)
+
         # Print startup information
         logger.info('QDashboard server starting...')
         logger.info(f'Server running on: http://{config["host"]}:{config["port"]}')
         logger.info(f'Serving directory: {config["root"]}')
         logger.info(f'QDashboard root: {config["root"]}')
         logger.info(f'Logs directory: {config["logs_dir"]}')
-        if config['key']:
+        if config.get('key'):
             logger.info(f'Authentication key: {config["key"]}')
-        logger.info(f'Environment: {config["environment"]}')
+        logger.info(f'Environment: {config.get("environment", "default")}')
         logger.info('Press Ctrl+C to stop the server')
 
         if 'debug' not in config:
             config['debug'] = False
-        # Start the Flask application
-        app.run(
+        # Start the Uvicorn ASGI server
+        uvicorn.run(
+            app,
             host=config['host'],
-            port=config['port'],
-            debug=config['debug'],
-            threaded=True
+            port=int(config['port']),
+            reload=False,
+            log_level='debug' if config['debug'] else 'info',
         )
         
     except KeyboardInterrupt:

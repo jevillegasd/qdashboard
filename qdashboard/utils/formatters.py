@@ -8,7 +8,6 @@ import mimetypes
 import json
 import yaml
 from datetime import datetime
-from flask import make_response
 
 try:
     from humanize import naturaltime
@@ -122,13 +121,11 @@ def write_json_file(file_path, data):
 
 def yaml_response(data):
     """Format YAML as HTTP response."""
-    response = make_response(yaml.dump(data), 200)
-    response.headers.add('Content-type', 'application/x-yaml')
-    return response
+    from starlette.responses import Response
+    return Response(content=yaml.dump(data), status_code=200, media_type='application/x-yaml')
 
 
 def json_response(data):
-    """Format JSON as HTTP response."""    
-    response = make_response(json.dumps(data), 200)
-    response.headers.add('Content-type', 'application/json')
-    return response
+    """Format JSON as HTTP response."""
+    from starlette.responses import Response
+    return Response(content=json.dumps(data), status_code=200, media_type='application/json')
