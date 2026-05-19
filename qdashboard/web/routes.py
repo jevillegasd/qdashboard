@@ -685,28 +685,33 @@ def register_routes(app, config):
             logger.warning(f"QPU not found: {platform}")
             return jsonify({'error': 'QPU not found'}), 404
         
-        # Get connectivity data to extract qubits
-        connectivity_data = qpu_connectivity(platform)  
-        if not connectivity_data:
-            logger.warning("No connectivity data found for this QPU")
-            return jsonify({'error': 'No connectivity data found for this QPU'}), 404
-        
-        # Extract unique qubits from connectivity data
-        raw_qubits = list(set([q for conn in connectivity_data for q in conn[:2]]))
-        
         # Sort qubits properly handling both strings and numbers
         def qubit_sort_key(qubit):
             """Sort qubits: numbers first (by value), then strings (alphabetically)"""
             if isinstance(qubit, (int, float)):
-                return (0, qubit)  # Numbers get priority 0
+                return (0, qubit)
             else:
-                # Try to parse as number for mixed cases
                 try:
                     return (0, int(qubit))
                 except (ValueError, TypeError):
-                    return (1, str(qubit))  # Strings get priority 1
-        
-        qubits = sorted(raw_qubits, key=qubit_sort_key)
+                    return (1, str(qubit))
+
+        # Get connectivity data to extract qubits
+        connectivity_data = qpu_connectivity(platform)
+        if connectivity_data:
+            raw_qubits = list(set([q for conn in connectivity_data for q in conn[:2]]))
+            qubits = sorted(raw_qubits, key=qubit_sort_key)
+        else:
+            # Fall back to single_qubit_gates from qpu_parameters (platforms with no 2Q connectivity)
+            params = qpu_parameters(platform)
+            sq_gates = params.get('single_qubit_gates', {}) if params else {}
+            all_qubits = set()
+            for gate_qubits in sq_gates.values():
+                all_qubits.update(gate_qubits)
+            if not all_qubits:
+                logger.warning("No qubit data found for this QPU")
+                return jsonify({'error': 'No qubit data found for this QPU'}), 404
+            qubits = sorted(all_qubits, key=qubit_sort_key)
         
         logger.info(f"Available qubits retrieved for {platform}: {qubits}")
         return jsonify({

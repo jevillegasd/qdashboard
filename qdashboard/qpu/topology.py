@@ -108,7 +108,7 @@ def get_connectivity_data_from_qpu_config(qpu_path):
                 connectivity = None
                 connectivity_keys = [
                     'topology', 'connectivity', 'connections', 'coupling_map', 'couplings',
-                    'native_gates', 'edges', 
+                    'edges',
                 ]
                 
                 # Search through the config structure
@@ -128,6 +128,21 @@ def get_connectivity_data_from_qpu_config(qpu_path):
                                     break
                             if connectivity:
                                 break
+
+                # Check native_gates.two_qubit for qibolab parameters.json format (keys like "A-B")
+                if not connectivity and 'native_gates' in config_data:
+                    two_qubit = config_data['native_gates'].get('two_qubit', {})
+                    if two_qubit:
+                        pairs = []
+                        for pair_key in two_qubit.keys():
+                            parts = pair_key.split('-')
+                            if len(parts) == 2:
+                                try:
+                                    pairs.append([int(parts[0]), int(parts[1])])
+                                except ValueError:
+                                    pairs.append([parts[0], parts[1]])
+                        if pairs:
+                            return pairs
                 
                 # If we found connectivity data, format it
                 if connectivity:
@@ -136,12 +151,16 @@ def get_connectivity_data_from_qpu_config(qpu_path):
                     elif isinstance(connectivity, dict):
                         pairs = []
                         for source, targets in connectivity.items():
-                            if isinstance(targets, list):
-                                for target in targets:
-                                    pairs.append([int(source), int(target)])
-                            else:
-                                pairs.append([int(source), int(targets)])
-                        return pairs
+                            try:
+                                if isinstance(targets, list):
+                                    for target in targets:
+                                        pairs.append([int(source), int(target)])
+                                else:
+                                    pairs.append([int(source), int(targets)])
+                            except (ValueError, TypeError):
+                                continue
+                        if pairs:
+                            return pairs
                 
             except Exception as e:
                 print(f"Error reading config file {config_path}: {e}")
@@ -318,7 +337,7 @@ def get_topology_from_qpu_config(qpu_path) -> str:
                 # Common key names for connectivity data
                 connectivity_keys = [
                     'topology', 'connectivity', 'connections', 'coupling_map', 'couplings',
-                    'native_gates', 'edges', 
+                    'edges',
                 ]
                 
                 # Search through the config structure
@@ -338,6 +357,21 @@ def get_topology_from_qpu_config(qpu_path) -> str:
                                     break
                             if connectivity:
                                 break
+
+                # Check native_gates.two_qubit for qibolab parameters.json format (keys like "A-B")
+                if not connectivity and 'native_gates' in config_data:
+                    two_qubit = config_data['native_gates'].get('two_qubit', {})
+                    if two_qubit:
+                        pairs = []
+                        for pair_key in two_qubit.keys():
+                            parts = pair_key.split('-')
+                            if len(parts) == 2:
+                                try:
+                                    pairs.append([int(parts[0]), int(parts[1])])
+                                except ValueError:
+                                    pairs.append([parts[0], parts[1]])
+                        if pairs:
+                            return infer_topology_from_connectivity(pairs)
                 
                 # If we found connectivity data, analyze it
                 if connectivity:
@@ -349,12 +383,16 @@ def get_topology_from_qpu_config(qpu_path) -> str:
                         # Dictionary format - extract pairs
                         pairs = []
                         for source, targets in connectivity.items():
-                            if isinstance(targets, list):
-                                for target in targets:
-                                    pairs.append([int(source), int(target)])
-                            else:
-                                pairs.append([int(source), int(targets)])
-                        return infer_topology_from_connectivity(pairs)
+                            try:
+                                if isinstance(targets, list):
+                                    for target in targets:
+                                        pairs.append([int(source), int(target)])
+                                else:
+                                    pairs.append([int(source), int(targets)])
+                            except (ValueError, TypeError):
+                                continue
+                        if pairs:
+                            return infer_topology_from_connectivity(pairs)
                 else:
                     logger.warning(f"No connectivity data found in {config_file} at {qpu_path}")
                 

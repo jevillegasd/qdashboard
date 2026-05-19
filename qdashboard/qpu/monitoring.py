@@ -422,7 +422,7 @@ def __get_parameters(platform) -> dict:
                                 if gate_info is not None:  # Only include gates that are not None
                                     if gate_name not in parameters['single_qubit_gates']:
                                         parameters['single_qubit_gates'][gate_name] = []
-                                    parameters['single_qubit_gates'][gate_name].append(qubit_name)
+                                    parameters['single_qubit_gates'][gate_name].append(str(qubit_name))
                                     
                                     # Add to legacy gates list for backward compatibility
                                     if gate_name not in parameters['gates']:
@@ -433,7 +433,7 @@ def __get_parameters(platform) -> dict:
                                 if gate_info is not None:  # Only include gates that are not None
                                     if gate_name not in parameters['single_qubit_gates']:
                                         parameters['single_qubit_gates'][gate_name] = []
-                                    parameters['single_qubit_gates'][gate_name].append(qubit_name)
+                                    parameters['single_qubit_gates'][gate_name].append(str(qubit_name))
                                     
                                     # Add to legacy gates list for backward compatibility
                                     if gate_name not in parameters['gates']:
