@@ -219,7 +219,13 @@ async def report_assets(request: Request, filename: str):
     try:
         latest_path = get_latest_report_path()
         if latest_path:
-            asset_path = os.path.join(latest_path, filename)
+            latest_path = os.path.realpath(latest_path)
+            asset_path = os.path.realpath(os.path.join(latest_path, filename))
+
+            if os.path.commonpath([latest_path, asset_path]) != latest_path:
+                logger.warning(f"Attempted path traversal for asset: {filename}")
+                return Response(content='Asset not found', status_code=404)
+
             if os.path.exists(asset_path):
                 logger.info(f"Serving asset: {asset_path}")
                 return FileResponse(asset_path)
