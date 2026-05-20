@@ -200,7 +200,7 @@ async def latest(request: Request):
         return _not_found_response(last_path)
 
     try:
-        res = report_viewer(last_path, config['root'], version_data['versions'], access_mode="latest")
+        res = report_viewer(last_path, config['root'], request, version_data['versions'], access_mode="latest")
         logger.info(f"Latest report viewed: {last_path}")
         return res
     except FileNotFoundError:

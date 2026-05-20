@@ -87,7 +87,7 @@ def make_file_router(root_path: str, key: str = "") -> APIRouter:
             if is_qibocal_report(path):
                 try:
                     version_data = get_qibo_versions(request=request)
-                    response = report_viewer(path, root_path, version_data['versions'],
+                    response = report_viewer(path, root_path, request, version_data['versions'],
                                             access_mode="file_browser")
                     if not version_data.get('from_cache', False):
                         response.set_cookie('qibo_versions', version_data['cookie_data'],
@@ -146,7 +146,7 @@ def make_file_router(root_path: str, key: str = "") -> APIRouter:
                 if is_qibocal_report(parent_dir):
                     try:
                         version_data = get_qibo_versions(request=request)
-                        response = report_viewer(parent_dir, root_path, version_data['versions'],
+                        response = report_viewer(parent_dir, root_path, request, version_data['versions'],
                                                  access_mode="file_browser")
                         if not version_data.get('from_cache', False):
                             response.set_cookie('qibo_versions', version_data['cookie_data'],

@@ -22,7 +22,7 @@ def check_qibocal_availability():
         return False
  
 
-def report_viewer(report_path, root_path, qibo_versions=None, access_mode="latest"):
+def report_viewer(report_path, root_path, request, qibo_versions=None, access_mode="latest"):
     """
     Generate report viewer with proper asset handling.
     
@@ -84,8 +84,8 @@ def report_viewer(report_path, root_path, qibo_versions=None, access_mode="lates
     if qibo_versions is None:
         qibo_versions = get_qibo_versions()
     from ..core.app import templates
-    from starlette.requests import Request as StarletteRequest
     report_viewer_template = templates.get_template('latest_report.html').render(
+                                                     request=request,
                                                      qibo_versions=qibo_versions,
                                                      report_head_content=head_content,
                                                      report_body_content=report_viewer_body,
