@@ -3,6 +3,7 @@ File browser and web interface utilities.
 """
 
 import os
+import pathlib
 import re
 import json
 import mimetypes
@@ -10,7 +11,6 @@ from pathlib2 import Path
 from fastapi import APIRouter, Request, UploadFile, File
 from fastapi.responses import FileResponse, Response
 from starlette.responses import HTMLResponse
-from werkzeug.utils import secure_filename
 
 from ..utils.formatters import get_type
 from ..qpu.monitoring import get_qibo_versions
@@ -203,7 +203,7 @@ def make_file_router(root_path: str, key: str = "") -> APIRouter:
         Path(path).mkdir(parents=True, exist_ok=True)
         for file in files:
             if file and file.filename:
-                filename = secure_filename(file.filename)
+                filename = pathlib.Path(file.filename).name  # secure_filename(file.filename)
                 contents = await file.read()
                 with open(os.path.join(path, filename), 'wb') as f:
                     f.write(contents)

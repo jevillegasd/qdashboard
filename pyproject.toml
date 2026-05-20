@@ -60,16 +60,21 @@ dependencies = [
 [project.optional-dependencies]
 # Quantum computing dependencies (optional but recommended)
 quantum = [
-    "qibo>=0.2.0",
-    "qibolab==0.2.8",
-    "qibocal>=0.2.3",
+    "qibo>=0.2.16",
+    "qibolab>=0.2.12",
+    "qibocal>=0.2.4",
     "rustworkx==0.16.0",
     "qcodes"
 ]
 
-# Dependencies for Quantum machines Hardware
+# Dependencies for Qblox hardware
+qblox = [
+    "qibolab-qblox>=0.0.4"
+]
+
+# Dependencies for Quantum Machines hardware
 qm = [
-    "qm-qua==1.2.3a1"
+    "qibolab-qm>=0.0.1"
 ]
 # Development dependencies
 dev = [
@@ -96,7 +101,7 @@ docs = [
     "myst-parser>=2.0.0"
 ]
 
-# All optional dependencies
+# All optional dependencies (qm/qblox excluded due to broken/unavailable transitive deps)
 all = [
     "qdashboard[quantum,dev,test,docs]"
 ]

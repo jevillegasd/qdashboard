@@ -54,8 +54,8 @@ def create_app(config: dict = None) -> FastAPI:
             "url": "https://github.com/tii-qcomp",
         },
         license_info={
-            "name": "MIT",
-            "url": "https://opensource.org/licenses/MIT",
+            "name": "Technology Innovation Institute General License (TII-GL)",
+            "url": "",
         },
         openapi_version="3.1.0",
         docs_url=None,   # served by custom auth-aware route below

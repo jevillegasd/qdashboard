@@ -1,352 +1,260 @@
 # QDashboard
 
-A quantum computing dashboard with file browsing, experiment monitoring, QPU status tracking, and report visualization capabilities.
+A web dashboard for quantum computing workflows built on the [Qibo](https://github.com/qiboteam/qibo) stack. QDashboard provides a unified interface for browsing experiment data, monitoring QPU health and SLURM job queues, submitting calibration experiments, managing qibolab platform repositories, and viewing qibocal reports.
 
 ![screenshot](screenshot.png)
 
-## About
-
-# QDashboard
-
-QDashboard is a web-based dashboard for quantum computing workflows. It provides an interface for file management, quantum experiment building, SLURM job monitoring, and quantum hardware platform management. Built on a file server foundation, QDashboard extends file browsing with quantum-specific functionalities. 
-
-The file server functionality is based on the [flask-file-server](https://github.com/Wildog/flask-file-server) project by Wildog, rewritten for ASGI with FastAPI.
+---
 
 ## Features
 
-### Core Dashboard
-- **Real-time QPU Monitoring**: Live status tracking of quantum processing units
-- **SLURM Integration**: Job queue monitoring and submission interface
-- **Package Tracking**: Automatic detection of qibo, qibolab, and qibocal versions
-- **Professional UI**: Dark theme with responsive design
-
-### Experiment Builder
-- **Interactive Protocol Selection**: Browse and configure qibocal protocols
-- **Mixed Qubit Support**: Handle both numeric (0, 1, 2) and string qubits ("control", "target")
-- **YAML Generation**: Automatic runcard generation with proper formatting
-- **Parameter Validation**: Type checking and constraint validation
-- **One-Click Submission**: Direct SLURM job submission from the interface
-
-### QPU Management
-- **Platform Repository Management**: Automated git operations for qibolab platforms
-- **Branch Switching**: Live platform branch management with updates
-- **Topology Visualization**: Quantum device connectivity analysis
-- **Multi-Platform Support**: Handle multiple QPU configurations
-
-### File Management
-- **Elegant File Browser**: Beautiful interface for file navigation
-- **Report Viewer**: Advanced rendering of quantum experiment reports
-- **Upload/Download**: Seamless file operations
-- **Search Functionality**: Quick file and directory search
-
-### Configuration
-- **Centralized Config**: Consistent configuration management across all modules
-- **Environment Variables**: Full QD_* environment variable support
-- **CLI Interface**: Comprehensive command-line interface
-- **Cross-Platform**: Works on Linux, macOS, and Windows
-
-## Installation
-
-### Prerequisites
-- Python >= 3.10
-- Optional: qibo, qibolab, qibocal packages for full quantum functionality
-
-### For Production
-
-```bash
-pip install qdashboard
-```
-
-### For Development
-
-1. **Clone and setup:**
-```bash
-git clone https://github.com/qiboteam/qdashboard.git
-cd qdashboard
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-2. **Install in editable mode:**
-```bash
-pip install -e .
-```
-
-3. **Install with quantum dependencies:**
-```bash
-pip install -e ".[quantum]"
-```
-
-4. **Install with all development tools:**
-```bash
-pip install -e ".[all]"
-```
-
-## Quick Start
-
-### Using the CLI (Recommended)
-```bash
-# Basic startup (default: localhost:5005)
-qdashboard
-
-# Custom port and host
-qdashboard --port 8080 --host 0.0.0.0
-
-# With custom root directory
-qdashboard --root /path/to/quantum/data --debug
-
-# Full configuration
-qdashboard --host 0.0.0.0 --port 8080 --root /data --auth-key mykey123 --debug
-```
-
-### Using Environment Variables
-```bash
-# Set configuration via environment
-export QD_PORT=8080
-export QD_BIND=0.0.0.0
-export QD_PATH=/custom/qdashboard/root
-export QD_KEY=myauthkey
-
-# Run with environment configuration
-qdashboard
-```
-
-### Development Mode
-```bash
-# Direct Python execution
-python app.py
-
-# Using the startup script
-./qdashboard.sh
-```
-
-### Docker
-```bash
-# Build
-docker build -t qdashboard .
-
-# Run
-docker run -p 5005:5005 -v /your/data:/data qdashboard
-```
-
-## QPU Platforms Management
-
-QDashboard automatically manages the qibolab platforms repository for you:
-
-### Automatic Setup
-When you start QDashboard, it automatically:
-1. Checks if `QIBOLAB_PLATFORMS` environment variable is set
-2. If not set, creates a `qibolab_platforms_qrc` directory in your specified root directory
-3. Automatically clones the [qibolab_platforms_qrc](https://github.com/qiboteam/qibolab_platforms_qrc) repository
-4. Makes all QPU platforms available to the dashboard
-
-### Manual Management
-Use the dedicated platforms CLI tool:
-
-```bash
-# Check current status
-qdashboard-platforms status
-
-# Set up platforms in a specific directory
-qdashboard-platforms --root /path/to/directory setup
-
-# Update platforms repository
-qdashboard-platforms update
-```
-
-## Key Features
-
-### Experiment Builder
-The experiment builder allows you to:
-
-1. **Browse Protocols**: Discover available qibocal protocols automatically
-2. **Configure Parameters**: Set protocol-specific parameters with validation
-3. **Generate YAML**: Create formatted qibocal runcards
-4. **Submit Jobs**: SLURM job submission from the web interface
-
-### Platform Management
-- **Setup**: Auto-clone qibolab platforms repository
-- **Branch Management**: Switch between platform branches
-- **Git Integration**: Built-in git operations for platform updates
-- **Status Monitoring**: Platform and QPU status
-
-### Configuration Management
-- **Config**: All settings in one place with defaults
-- **Environment Support**: QD_* environment variable support
-- **Validation**: Configuration validation with errors
-- **Cross-Platform**: Works across operating systems
-
-# List available branches
-qdashboard-platforms branches
-
-# Switch to a specific branch
-qdashboard-platforms switch branch-name
-
-# Create and switch to a new branch
-qdashboard-platforms switch new-branch --create
-```
-
-### Branch Management
-The qibolab platforms repository contains branches with platform configurations:
-
-- **main**: Stable platform configurations
-- **0.1**, **0.2**: Version-specific platform definitions
-- **Platform-specific branches**: Configurations for specific QPUs
-- **Feature branches**: Development configurations
-
-Different branches may contain different sets of platforms or different calibration parameters for the same platforms.
-
-### Environment Variable
-If you prefer to use your own platforms directory:
-```bash
-export QIBOLAB_PLATFORMS=/path/to/your/platforms
-qdashboard
-```
-
-## Configuration
-
-Environment variables:
-
-- `QD_BIND` - Bind address, default 127.0.0.1
-- `QD_PORT` - Server port, default 5005  
-- `QD_PATH` - Root path to serve, default $HOME
-- `QD_KEY` - Authentication key (base64 encoded username:password), default none
-- `QIBOLAB_PLATFORMS` - Path to qibolab platforms directory
-
-### Example with custom configuration:
-```bash
-docker run -p 8000:8000 -e QD_BIND=0.0.0.0 -e QD_PORT=8000 -e QD_PATH=/data -e QD_KEY=dGVzdDp0ZXN0 qdashboard
-```
-
-## Dependencies
-
-- fastapi >= 0.111.0
-- uvicorn[standard] >= 0.29.0
-- python-multipart >= 0.0.9
-- aiofiles >= 23.0
-- jinja2 >= 3.1.0
-- humanize >= 4.0.0
-- pathlib2 >= 2.3.0
-- PyYAML >= 6.0.0
-
-## Architecture
-
-QDashboard extends the file server capabilities with quantum computing specific features:
-
-- **ASGI Server**: FastAPI + Uvicorn replace the former Flask/Werkzeug WSGI stack
-- **Async-first**: SSE streaming and file uploads use native async handlers
-- **Quantum Package Integration**: Detection and monitoring of qibo ecosystem packages
-- **SLURM Integration**: Queue monitoring and job submission capabilities
-- **Report Rendering**: HTML report rendering with Plotly support and dark theme compatibility
-- **QPU Management**: Platform configuration parsing and status monitoring
-
-## Installation
-
-### From PyPI (when released)
-
-```bash
-pip install qdashboard
-```
-
-### From Source
-
-```bash
-git clone https://github.com/qiboteam/qdashboard.git
-cd qdashboard
-pip install .
-```
-
-### With Quantum Dependencies
-
-```bash
-pip install qdashboard[quantum]
-```
-
-### Development Installation
-
-```bash
-git clone https://github.com/qiboteam/qdashboard.git
-cd qdashboard
-pip install -e .[dev]
-```
-
-## Usage
-
-### Command Line Interface
-
-After installation, you can start the dashboard using the command line:
-
-```bash
-# Start on default port 5005
-qdashboard
-
-# Start on custom port
-qdashboard 8080
-
-# Start with custom host and root directory
-qdashboard --host 0.0.0.0 --root /path/to/quantum/data 8080
-
-# Enable debug mode
-qdashboard --debug 5005
-
-# View all options
-qdashboard --help
-```
-
-### Python API
-
-You can also start the dashboard programmatically:
-
-```python
-from qdashboard.cli import main
-
-# Start with default settings
-main()
-
-# Start with custom arguments
-main(['--host', '0.0.0.0', '--port', '8080'])
-```
-
-### Alternative Scripts
-
-The package provides two equivalent commands:
-- `qdashboard` - Main command
-- `qdashboard-server` - Alternative alias
-
-## Configuration
-
-### Environment Variables
-
-- `QIBOLAB_PLATFORMS`: Path to qibolab platforms directory
-- `HOME`: User home directory (default root for file serving)
-
-### Command Line Options
-
-- `--host HOST`: Host address to bind the server (default: 127.0.0.1)
-- `--root ROOT`: Root directory for file serving (default: user home)
-- `--auth-key KEY`: Authentication key for dashboard access
-- `--debug`: Enable Uvicorn reload mode
-- `--version`: Show version information
+| Area | Capabilities |
+|---|---|
+| **Dashboard** | Live QPU health, SLURM queue overview, package version tracking |
+| **Experiment Builder** | Browse qibocal protocols, configure parameters, generate YAML runcards, submit to SLURM |
+| **QPU Management** | Platform Git repository management (branch switching, commits, stashes, push), topology visualisation |
+| **File Browser** | Navigate the experiment data directory, view and download files |
+| **Report Viewer** | Render qibocal HTML reports with dark-theme asset rewriting |
+| **REST API** | OAS 3.1-compliant JSON API — interactive docs at `/docs` (Swagger UI) and `/redoc` |
+
+---
 
 ## Requirements
 
-### Core Dependencies
-- Python 3.10+
-- FastAPI 0.111+
-- Uvicorn 0.29+
-- python-multipart 0.0.9+
-- aiofiles 23.0+
-- Jinja2 3.1+
-- PyYAML 6.0+
-- humanize 4.0+
+- Python ≥ 3.10
+- [uv](https://docs.astral.sh/uv/) (recommended) or pip
 
-### Optional Dependencies
-- qibo: Quantum simulation library
-- qibolab: Quantum hardware control
-- qibocal: Quantum calibration tools
+Optional but recommended:
 
-## Acknowledgments
+- `qibo ≥ 0.3.3` — quantum simulation and gate library
+- `qibolab ≥ 0.2.15` — hardware control layer
+- `qibocal ≥ 0.2.5` — calibration protocol suite
+- `qibolab-qblox ≥ 0.0.4` — Qblox hardware driver
+- `qibolab-qm ≥ 0.0.1` — Quantum Machines hardware driver
 
-- File server functionality based on [flask-file-server](https://github.com/Wildog/flask-file-server) by [Wildog](https://github.com/Wildog), rewritten for ASGI.
-- Dark theme inspired by IBM Quantum Computing platform.
-- Built for quantum computing workflows using the qibo ecosystem.
+---
+
+## Installation
+
+### From PyPI
+
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install qdashboard
+```
+
+For hardware-specific extras:
+
+```bash
+# Qblox instruments
+uv pip install "qdashboard[quantum,qblox]"
+
+# Quantum Machines
+uv pip install "qdashboard[quantum,qm]"
+
+# All hardware + dev tools
+uv pip install "qdashboard[all]"
+```
+
+### From Source (Development)
+
+```bash
+git clone https://github.com/qiboteam/qdashboard.git
+cd qdashboard
+
+uv venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+
+# Minimal install
+uv pip install -e .
+
+# With quantum stack
+uv pip install -e ".[quantum]"
+
+# With a specific hardware backend
+uv pip install -e ".[quantum,qblox]"
+uv pip install -e ".[quantum,qm]"
+
+# Everything (quantum + all dev/test/docs tools)
+uv pip install -e ".[all]"
+```
+
+---
+
+## Quick Start
+
+```bash
+# Default: http://127.0.0.1:5005
+qdashboard
+
+# Custom host and port
+qdashboard --host 0.0.0.0 --port 8080
+
+# Custom data root + debug mode (full stack traces in error responses)
+qdashboard --root ~/.qdashboard --debug
+
+# With authentication
+qdashboard --auth-key mysecretkey
+```
+
+---
+
+## Configuration
+
+Settings are resolved in priority order:  
+**CLI args › shell environment variables › `.env` file › built-in defaults**
+
+### `.env` File
+
+On startup QDashboard looks for a `.env` file first in the current working directory, then in `~/.qdashboard/.env`. Copy the example and edit it:
+
+```bash
+cp .env.example .env   # or ~/.qdashboard/.env
+```
+
+### Environment Variables
+
+| Variable | CLI equivalent | Default | Description |
+|---|---|---|---|
+| `QD_ROOT` | `--root` | `~/.qdashboard` | Root directory for logs, temp files, and the platforms repo |
+| `QD_DATA_DIR` | — | `$QD_ROOT/data` | Directory served by the file browser and used to store experiment results |
+| `QD_HOST` | `--host` | `127.0.0.1` | Bind address |
+| `QD_PORT` | `--port` | `5005` | Listen port |
+| `QD_KEY` | `--auth-key` | *(none)* | Authentication key — if set, every request must include `X-Auth-Key: <key>` header or `?key=<key>` query parameter (including `/docs`) |
+| `QD_DEBUG` | `--debug` | `false` | Enable debug mode — full tracebacks in JSON error responses and styled HTML error pages |
+| `QD_LOG_PATH` | — | `$QD_ROOT/logs` | Log file directory |
+| `QD_ENVIRONMENT` | — | *(none)* | Deployment environment label passed to experiment submissions |
+| `QIBOLAB_PLATFORMS` | — | `$QD_ROOT/qibolab_platforms_qrc` | Path to the qibolab platforms repository |
+
+### CLI Reference
+
+```
+qdashboard [--host HOST] [--port PORT] [--root ROOT]
+           [--auth-key KEY] [--debug] [--version]
+```
+
+---
+
+## Directory Layout
+
+```
+~/.qdashboard/
+├── data/                        # Experiment results (QD_DATA_DIR)
+│   └── <platform>/
+│       └── <YYYYMMDD>/
+│           └── <YYYYmmDD-xxxxxx>/   # Experiment ID (date + 6-char hash)
+│               ├── runcard.yml
+│               ├── meta.json
+│               └── ...
+├── logs/                        # Server logs
+├── temp/                        # Temporary files
+└── qibolab_platforms_qrc/       # Platforms Git repository (QIBOLAB_PLATFORMS)
+```
+
+---
+
+## QPU Platforms Management
+
+QDashboard manages the qibolab platforms Git repository automatically:
+
+1. Checks the `QIBOLAB_PLATFORMS` environment variable.
+2. Falls back to `~/.qdashboard/qibolab_platforms_qrc` (auto-cloned on first run).
+
+Use the dedicated CLI for manual operations:
+
+```bash
+qdashboard-platforms status              # Current branch and commit
+qdashboard-platforms setup               # (Re-)clone the platforms repository
+qdashboard-platforms update              # Pull latest changes
+qdashboard-platforms branches            # List all branches
+qdashboard-platforms switch <branch>     # Switch to a branch
+qdashboard-platforms switch <branch> --create   # Create and switch
+```
+
+---
+
+## REST API
+
+The full API is documented interactively at:
+
+- **Swagger UI** — `http://localhost:5005/docs`
+- **ReDoc** — `http://localhost:5005/redoc`
+- **Raw schema** — `http://localhost:5005/openapi.json`
+
+The schema conforms to **OpenAPI 3.1.0**. When an auth key is configured the documentation endpoints are protected by the same key.
+
+### Endpoint Groups
+
+| Tag | Prefix | Summary |
+|---|---|---|
+| **SLURM** | `/cancel_job`, `/api/slurm_*` | Queue snapshot, SSE live stream, job cancellation |
+| **Platforms** | `/api/platforms/*` | Branch listing, switching, commits, stashes, push |
+| **QPU** | `/api/qpu_*` | Parameters, topology image, qubit list, calibration data |
+| **Protocols** | `/api/protocols*` | Protocol discovery and parameter schemas |
+| **Experiments** | `/api/experiments*`, `/submit_*`, `/repeat_*`, `/qibocal/*` | Submission, status tracking, qibocal CLI actions |
+
+---
+
+## Docker
+
+```bash
+docker build -t qdashboard .
+
+docker run -p 5005:5005 \
+  -e QD_HOST=0.0.0.0 \
+  -e QD_PORT=5005 \
+  -e QD_DATA_DIR=/data \
+  -e QIBOLAB_PLATFORMS=/platforms \
+  -v /your/data:/data \
+  -v /your/platforms:/platforms \
+  qdashboard
+```
+
+---
+
+## Development
+
+```bash
+# Lint & format
+black qdashboard/
+flake8 qdashboard/
+
+# Type check
+mypy qdashboard/
+
+# Tests
+pytest qdashboard/tests/
+
+# Start with live reload
+qdashboard --debug
+```
+
+---
+
+## Architecture
+
+```
+qdashboard/
+├── core/           # FastAPI app factory (app.py) + centralised config (config.py)
+├── web/            # All HTTP endpoints (routes.py), file browser, report viewer
+├── qpu/            # QPU health/monitoring, SLURM queue, platform git ops, topology
+├── experiments/    # Qibocal protocol discovery, job submission, runcard generation
+├── utils/          # Formatters, logger
+├── templates/      # Jinja2 HTML templates (Bootstrap 4 dark theme)
+└── assets/         # Static CSS/JS served at /assets/
+```
+
+- **ASGI stack**: FastAPI ≥ 0.111 + Uvicorn ≥ 0.29
+- **Templates**: server-side rendering via Jinja2 with Bootstrap 4
+- **SSE streaming**: live SLURM queue updates via `StreamingResponse`
+- **Debug mode**: structured JSON error responses with full tracebacks; dark-theme HTML error pages
+- **OAS 3.1**: OpenAPI 3.1.0 schema with auth-guarded Swagger UI and ReDoc
+
+---
+
+## Acknowledgements
+
+- File browser inspired by [flask-file-server](https://github.com/Wildog/flask-file-server) by [Wildog](https://github.com/Wildog), rewritten for ASGI.
+- Dark theme inspired by the IBM Quantum Computing platform.
+- Built for quantum computing workflows using the [Qibo](https://qibo.science) ecosystem.
