@@ -694,6 +694,9 @@ async def qpu_calibration_api(request: Request, platform: str):
     """API endpoint to get calibration data for a specific QPU."""
     config = _get_config(request)
     platforms_path = get_platforms_path(config['root'])
+    if not platforms_path:
+        return Response(content=json.dumps({'error': 'QPU platforms directory not available'}),
+                        status_code=404, media_type='application/json')
     calibration_path = os.path.join(platforms_path, platform, 'calibration.json')
     if os.path.exists(calibration_path):
         with open(calibration_path, 'r') as f:
