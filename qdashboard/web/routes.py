@@ -120,7 +120,7 @@ def register_routes(app, config):
     return app
 
 
-@router.get("/", name="dashboard")
+@router.get("/", name="dashboard", include_in_schema=False)
 async def dashboard(request: Request):
     """Main dashboard route with QPU health and SLURM status."""
     from ..core.app import templates
@@ -148,7 +148,7 @@ async def dashboard(request: Request):
     return response
 
 
-@router.get("/qqsubmit", name="qqsubmit")
+@router.get("/qqsubmit", name="qqsubmit", include_in_schema=False)
 async def qqsubmit(request: Request, qpu: Optional[str] = Query(None)):
     """Submit a job to the SLURM queue."""
     from ..core.app import templates
@@ -166,7 +166,7 @@ async def qqsubmit(request: Request, qpu: Optional[str] = Query(None)):
     return HTMLResponse(content=html)
 
 
-@router.get("/latest", name="latest")
+@router.get("/latest", name="latest", include_in_schema=False)
 async def latest(request: Request):
     """View the latest report."""
     from ..core.app import templates
@@ -211,7 +211,7 @@ async def latest(request: Request):
         return _html_error_response(request, e)
 
 
-@router.get("/report_assets/{filename:path}", name="report_assets")
+@router.get("/report_assets/{filename:path}", name="report_assets", include_in_schema=False)
 async def report_assets(request: Request, filename: str):
     """Serve assets from the latest report directory."""
     config = _get_config(request)
@@ -228,7 +228,8 @@ async def report_assets(request: Request, filename: str):
         return _html_error_response(request, e)
 
 
-@router.post("/cancel_job", name="cancel_job")
+@router.post("/cancel_job", name="cancel_job", tags=["SLURM"],
+             summary="Cancel a SLURM job")
 async def cancel_job(request: Request):
     """Cancel a SLURM job."""
     try:
@@ -252,7 +253,8 @@ async def cancel_job(request: Request):
         return _error_response(request, e, {'status': 'error', 'message': str(e)})
 
 
-@router.get("/api/slurm_status", name="api_slurm_status")
+@router.get("/api/slurm_status", name="api_slurm_status", tags=["SLURM"],
+            summary="Snapshot of the current SLURM queue and last log")
 async def api_slurm_status(request: Request):
     """API endpoint to get fresh SLURM status data."""
     try:
@@ -277,7 +279,8 @@ async def api_slurm_status(request: Request):
         return _error_response(request, e, {'status': 'error', 'message': str(e)})
 
 
-@router.get("/api/slurm_stream", name="api_slurm_stream")
+@router.get("/api/slurm_stream", name="api_slurm_stream", tags=["SLURM"],
+            summary="Server-Sent Events stream of live SLURM queue updates")
 async def api_slurm_stream(request: Request):
     """Server-Sent Events endpoint for streaming SLURM status updates."""
     async def slurm_event_stream():
@@ -325,7 +328,7 @@ async def api_slurm_stream(request: Request):
     )
 
 
-@router.get("/qpus", name="qpus")
+@router.get("/qpus", name="qpus", include_in_schema=False)
 async def qpus(request: Request):
     """QPU status and monitoring page."""
     from ..core.app import templates
@@ -355,7 +358,8 @@ async def qpus(request: Request):
     return response
 
 
-@router.get("/api/platforms/branches", name="api_platforms_branches")
+@router.get("/api/platforms/branches", name="api_platforms_branches", tags=["Platforms"],
+            summary="List all branches in the platforms repository")
 async def api_platforms_branches(request: Request):
     """API endpoint to get available branches."""
     try:
@@ -373,7 +377,8 @@ async def api_platforms_branches(request: Request):
         return _error_response(request, e)
 
 
-@router.post("/api/platforms/switch", name="api_platforms_switch")
+@router.post("/api/platforms/switch", name="api_platforms_switch", tags=["Platforms"],
+             summary="Switch the platforms repository to a different branch")
 async def api_platforms_switch(request: Request):
     """API endpoint to switch platform branch."""
     try:
@@ -416,7 +421,8 @@ async def api_platforms_switch(request: Request):
         return _error_response(request, e)
 
 
-@router.get("/api/platforms/current", name="api_platforms_current")
+@router.get("/api/platforms/current", name="api_platforms_current", tags=["Platforms"],
+            summary="Get the currently checked-out branch and its metadata")
 async def api_platforms_current(request: Request):
     """API endpoint to get current branch information."""
     try:
@@ -434,7 +440,8 @@ async def api_platforms_current(request: Request):
         return _error_response(request, e)
 
 
-@router.post("/api/platforms/commit", name="api_platforms_commit")
+@router.post("/api/platforms/commit", name="api_platforms_commit", tags=["Platforms"],
+             summary="Commit pending changes in the platforms repository")
 async def api_platforms_commit(request: Request):
     """API endpoint to commit changes to the platforms repository."""
     try:
@@ -454,7 +461,8 @@ async def api_platforms_commit(request: Request):
         return _error_response(request, e)
 
 
-@router.post("/api/platforms/stash", name="api_platforms_stash")
+@router.post("/api/platforms/stash", name="api_platforms_stash", tags=["Platforms"],
+             summary="Stash uncommitted changes in the platforms repository")
 async def api_platforms_stash(request: Request):
     """API endpoint to stash changes in the platforms repository."""
     try:
@@ -474,7 +482,8 @@ async def api_platforms_stash(request: Request):
         return _error_response(request, e)
 
 
-@router.post("/api/platforms/discard", name="api_platforms_discard")
+@router.post("/api/platforms/discard", name="api_platforms_discard", tags=["Platforms"],
+             summary="Discard all uncommitted changes in the platforms repository")
 async def api_platforms_discard(request: Request):
     """API endpoint to discard all uncommitted changes."""
     try:
@@ -492,7 +501,8 @@ async def api_platforms_discard(request: Request):
         return _error_response(request, e)
 
 
-@router.get("/api/platforms/stashes", name="api_platforms_list_stashes")
+@router.get("/api/platforms/stashes", name="api_platforms_list_stashes", tags=["Platforms"],
+            summary="List all stash entries in the platforms repository")
 async def api_platforms_list_stashes(request: Request):
     """API endpoint to list all stashes."""
     try:
@@ -510,7 +520,8 @@ async def api_platforms_list_stashes(request: Request):
         return _error_response(request, e)
 
 
-@router.post("/api/platforms/push", name="api_platforms_push")
+@router.post("/api/platforms/push", name="api_platforms_push", tags=["Platforms"],
+             summary="Push the current branch to the remote platforms repository")
 async def api_platforms_push(request: Request):
     """API endpoint to push changes to the remote repository."""
     try:
@@ -528,7 +539,8 @@ async def api_platforms_push(request: Request):
         return _error_response(request, e)
 
 
-@router.get("/api/protocols", name="api_protocols")
+@router.get("/api/protocols", name="api_protocols", tags=["Protocols"],
+            summary="List all available qibocal calibration protocols grouped by category")
 async def api_protocols():
     """API endpoint to get all available protocols."""
     protocols = get_qibocal_protocols()
@@ -544,7 +556,8 @@ async def api_protocols():
     return jsonifiable_protocols
 
 
-@router.get("/api/protocols/{protocol_id}", name="api_protocol_details")
+@router.get("/api/protocols/{protocol_id}", name="api_protocol_details", tags=["Protocols"],
+            summary="Get the parameter schema for a single qibocal protocol")
 async def api_protocol_details(protocol_id: str):
     """API endpoint to get details of a specific protocol."""
     try:
@@ -556,7 +569,7 @@ async def api_protocol_details(protocol_id: str):
                         status_code=404, media_type='application/json')
 
 
-@router.get("/experiments", name="experiments")
+@router.get("/experiments", name="experiments", include_in_schema=False)
 async def experiments(request: Request):
     """Experiment builder page."""
     from ..core.app import templates
@@ -591,7 +604,8 @@ async def experiments(request: Request):
     return response
 
 
-@router.get("/api/qpu_parameters/{platform}", name="qpu_parameters_api")
+@router.get("/api/qpu_parameters/{platform}", name="qpu_parameters_api", tags=["QPU"],
+            summary="Retrieve gate parameters for a specific QPU platform")
 async def qpu_parameters_api(platform: str):
     """API endpoint to get parameters for a specific QPU."""
     platform_params = qpu_parameters(platform)
@@ -599,7 +613,8 @@ async def qpu_parameters_api(platform: str):
     return platform_params
 
 
-@router.get("/api/qpu_topology/{platform}", name="qpu_topology_visualization_api")
+@router.get("/api/qpu_topology/{platform}", name="qpu_topology_visualization_api", tags=["QPU"],
+            summary="Generate a base-64 topology graph image for a QPU platform")
 async def qpu_topology_visualization_api(request: Request, platform: str):
     """API endpoint to generate topology visualization for a specific QPU."""
     config = _get_config(request)
@@ -632,7 +647,8 @@ async def qpu_topology_visualization_api(request: Request, platform: str):
     }
 
 
-@router.get("/api/qpu_qubits/{platform}", name="qpu_qubits_api")
+@router.get("/api/qpu_qubits/{platform}", name="qpu_qubits_api", tags=["QPU"],
+            summary="List the qubits available on a QPU platform")
 async def qpu_qubits_api(request: Request, platform: str):
     """API endpoint to get the list of available qubits for a specific QPU."""
     config = _get_config(request)
@@ -671,7 +687,8 @@ async def qpu_qubits_api(request: Request, platform: str):
     return {'qubits': qubits, 'num_qubits': len(qubits)}
 
 
-@router.get("/api/qpu_calibration/{platform}", name="qpu_calibration_api")
+@router.get("/api/qpu_calibration/{platform}", name="qpu_calibration_api", tags=["QPU"],
+            summary="Return the calibration.json data for a QPU platform")
 async def qpu_calibration_api(request: Request, platform: str):
     """API endpoint to get calibration data for a specific QPU."""
     config = _get_config(request)
@@ -685,7 +702,8 @@ async def qpu_calibration_api(request: Request, platform: str):
                     status_code=404, media_type='application/json')
 
 
-@router.post("/qibocal/{action}", name="qibocal_cli_action")
+@router.post("/qibocal/{action}", name="qibocal_cli_action", tags=["Experiments"],
+             summary="Run a qibocal CLI action (fit / report / update) on an existing report")
 async def qibocal_cli_action(request: Request, action: str,
                               report_path: str = Form(...)):
     """Execute qibocal CLI commands."""
@@ -734,7 +752,8 @@ async def qibocal_cli_action(request: Request, action: str,
                                {'success': False, 'message': f'Error executing qibocal {action}: {str(e)}'})
 
 
-@router.post("/repeat_experiment", name="repeat_experiment_route")
+@router.post("/repeat_experiment", name="repeat_experiment_route", tags=["Experiments"],
+             summary="Re-submit an existing experiment runcard to SLURM")
 async def repeat_experiment_route(request: Request,
                                    report_path: str = Form(...)):
     """Repeat an experiment by submitting it to SLURM."""
@@ -752,7 +771,8 @@ async def repeat_experiment_route(request: Request,
                                {'success': False, 'message': f'Error repeating experiment: {str(e)}'})
 
 
-@router.post("/submit_experiment", name="submit_experiment_route")
+@router.post("/submit_experiment", name="submit_experiment_route", tags=["Experiments"],
+             summary="Submit a new experiment to SLURM via an uploaded YAML runcard")
 async def submit_experiment_route(request: Request,
                                    runcard: UploadFile = File(...),
                                    environment: Optional[str] = Form(None)):
@@ -782,7 +802,8 @@ async def submit_experiment_route(request: Request,
                                {'success': False, 'message': f'Error submitting experiment: {str(e)}'})
 
 
-@router.post("/api/submit_experiment_data", name="submit_experiment_data_route")
+@router.post("/api/submit_experiment_data", name="submit_experiment_data_route", tags=["Experiments"],
+             summary="Submit a new experiment to SLURM using a JSON runcard payload")
 async def submit_experiment_data_route(request: Request):
     """Submit a new experiment to SLURM using runcard data (JSON body)."""
     try:
@@ -816,7 +837,8 @@ async def submit_experiment_data_route(request: Request):
                                {'success': False, 'message': f'Error submitting experiment: {str(e)}'})
 
 
-@router.get("/api/experiments", name="api_list_experiments")
+@router.get("/api/experiments", name="api_list_experiments", tags=["Experiments"],
+            summary="List all submitted experiments")
 async def api_list_experiments(request: Request):
     """API endpoint to list user experiments."""
     try:
@@ -828,7 +850,8 @@ async def api_list_experiments(request: Request):
                                {'success': False, 'message': f'Error listing experiments: {str(e)}'})
 
 
-@router.get("/api/experiments/{experiment_id}", name="api_experiment_status")
+@router.get("/api/experiments/{experiment_id}", name="api_experiment_status", tags=["Experiments"],
+            summary="Get the status and metadata of a single experiment")
 async def api_experiment_status(request: Request, experiment_id: str):
     """API endpoint to get experiment status."""
     try:

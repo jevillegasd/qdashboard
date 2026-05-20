@@ -8,6 +8,7 @@ import os
 import traceback as _tb
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
+from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -34,7 +35,63 @@ def create_app(config: dict = None) -> FastAPI:
     if config is not None:
         set_config(config)
 
-    app = FastAPI(title="QDashboard", docs_url=None, redoc_url=None)
+    app = FastAPI(
+        title="QDashboard",
+        version="0.0.3",
+        description=(
+            "REST API for the QDashboard quantum computing dashboard.\n\n"
+            "QDashboard exposes endpoints for monitoring QPU health, browsing\n"
+            "calibration experiment files, managing platform Git repositories,\n"
+            "submitting and tracking SLURM jobs, and discovering qibocal protocols.\n\n"
+            "**Authentication** — when the server is started with an auth key\n"
+            "(`QD_KEY` env var / `--auth-key` CLI flag), all API requests must\n"
+            "include the header `X-Auth-Key: <key>` or the query parameter `key=<key>`.\n"
+            "The same check applies to this documentation page."
+        ),
+        contact={
+            "name": "TII Quantum Research Center",
+            "email": "quantum@tii.ae",
+            "url": "https://github.com/tii-qcomp",
+        },
+        license_info={
+            "name": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+        },
+        openapi_version="3.1.0",
+        docs_url=None,   # served by custom auth-aware route below
+        redoc_url=None,
+        openapi_url=None,  # served by custom auth-aware route below
+        openapi_tags=[
+            {
+                "name": "SLURM",
+                "description": "SLURM queue monitoring and job management.",
+            },
+            {
+                "name": "Platforms",
+                "description": (
+                    "QPU platform Git repository operations — branch switching, "
+                    "commits, stashes, pushes."
+                ),
+            },
+            {
+                "name": "QPU",
+                "description": (
+                    "QPU parameters, qubit topology visualisation, and "
+                    "calibration data."
+                ),
+            },
+            {
+                "name": "Protocols",
+                "description": "Qibocal calibration protocol discovery.",
+            },
+            {
+                "name": "Experiments",
+                "description": (
+                    "Experiment submission to SLURM and experiment status tracking."
+                ),
+            },
+        ],
+    )
 
     # Store config in app state for access via request.app.state.config
     app.state.config = config or {}
@@ -72,6 +129,56 @@ def create_app(config: dict = None) -> FastAPI:
         return JSONResponse(content=body, status_code=500)
 
     logger.debug("App module initialized")
+
+    # ------------------------------------------------------------------ #
+    # Auth-guarded OpenAPI schema + documentation endpoints               #
+    # ------------------------------------------------------------------ #
+    def _check_docs_auth(request: Request) -> bool:
+        """Return True when the request is authorised to view the API docs."""
+        key = (config or {}).get('key', '')
+        if not key:
+            return True
+        provided = (
+            request.headers.get('X-Auth-Key')
+            or request.query_params.get('key', '')
+        )
+        return provided == key
+
+    @app.get("/openapi.json", include_in_schema=False)
+    async def _openapi_schema(request: Request) -> JSONResponse:
+        if not _check_docs_auth(request):
+            return JSONResponse({'error': 'Unauthorized'}, status_code=401)
+        return JSONResponse(app.openapi())
+
+    @app.get("/docs", include_in_schema=False)
+    async def _swagger_ui(request: Request) -> HTMLResponse:
+        if not _check_docs_auth(request):
+            return HTMLResponse(
+                '<html><head><title>401</title></head>'
+                '<body style="font-family:sans-serif;padding:2rem">'
+                '<h2>401 — Unauthorised</h2>'
+                '<p>Provide the auth key via the <code>X-Auth-Key</code> '
+                'header or the <code>key</code> query parameter.</p>'
+                '</body></html>',
+                status_code=401,
+            )
+        return get_swagger_ui_html(
+            openapi_url="/openapi.json",
+            title="QDashboard — API Docs",
+            swagger_favicon_url="/assets/favicon.ico",
+        )
+
+    @app.get("/redoc", include_in_schema=False)
+    async def _redoc_ui(request: Request) -> HTMLResponse:
+        if not _check_docs_auth(request):
+            return HTMLResponse(
+                '<html><body><h2>401 Unauthorised</h2></body></html>',
+                status_code=401,
+            )
+        return get_redoc_html(
+            openapi_url="/openapi.json",
+            title="QDashboard — API Reference",
+        )
 
     return app
 
