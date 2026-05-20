@@ -5,8 +5,9 @@ Report viewing and processing utilities.
 import os
 import re
 import subprocess
-from flask import make_response, render_template, send_file, current_app
+from starlette.responses import HTMLResponse, FileResponse, Response
 from ..qpu.monitoring import get_qibo_versions
+from ..core.config import get_config
 
 
 def check_qibocal_availability():
@@ -21,7 +22,7 @@ def check_qibocal_availability():
         return False
  
 
-def report_viewer(report_path, root_path, qibo_versions=None, access_mode="latest"):
+def report_viewer(report_path, root_path, request, qibo_versions=None, access_mode="latest"):
     """
     Generate report viewer with proper asset handling.
     
@@ -82,23 +83,30 @@ def report_viewer(report_path, root_path, qibo_versions=None, access_mode="lates
     # Render the template with all variables in a single call
     if qibo_versions is None:
         qibo_versions = get_qibo_versions()
-    report_viewer_template = render_template('latest_report.html',
-                                             qibo_versions=qibo_versions,
-                                             report_head_content=head_content,
-                                             report_body_content=report_viewer_body,
-                                             report_path_for_link=report_path_for_link,
-                                             access_mode=access_mode,
-                                             qibocal_available=qibocal_available)
+    from ..core.app import templates
+    report_viewer_template = templates.get_template('latest_report.html').render(
+                                                     request=request,
+                                                     qibo_versions=qibo_versions,
+                                                     report_head_content=head_content,
+                                                     report_body_content=report_viewer_body,
+                                                     report_path_for_link=report_path_for_link,
+                                                     access_mode=access_mode,
+                                                     qibocal_available=qibocal_available)
 
-    res = make_response(report_viewer_template, 200)
-    return res
+    return HTMLResponse(content=report_viewer_template, status_code=200)
 
 
 def get_latest_report_path():
     """Get the path to the latest report from .last_report_path file."""
-    config = current_app.config['QDASHBOARD_CONFIG']
-    logs_dir = config.get('logs_dir', os.path.join(config['root'], 'logs'))
-    last_report_path = config.get('last_report_path', os.path.join(logs_dir, 'last_report_path'))
+    from ..core.config import ConfigError, DEFAULT_QD_ROOT
+    try:
+        config = get_config()
+        logs_dir = config.get('logs_dir', os.path.join(config['root'], 'logs'))
+        last_report_path = config.get('last_report_path', os.path.join(logs_dir, 'last_report_path'))
+    except ConfigError:
+        root = os.path.expanduser(os.environ.get('QD_ROOT', DEFAULT_QD_ROOT))
+        logs_dir = os.path.expanduser(os.environ.get('QD_LOGS_DIR', os.path.join(root, 'logs')))
+        last_report_path = os.path.join(logs_dir, 'last_report_path')
 
     try:
         with open(last_report_path, 'r') as file:

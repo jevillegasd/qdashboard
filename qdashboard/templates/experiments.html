@@ -12,9 +12,9 @@ Extended with quantum computing specific features:
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Experiment Builder - QDashboard</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
-    <link rel="stylesheet" href="{{url_for('static', filename='css/dashboard.css')}}">
-    <link rel="stylesheet" href="{{url_for('static', filename='css/menu.css')}}">
-    <link rel="stylesheet" href="{{url_for('static', filename='css/experiments.css')}}">
+    <link rel="stylesheet" href="{{url_for('assets', path='css/dashboard.css')}}">
+    <link rel="stylesheet" href="{{url_for('assets', path='css/menu.css')}}">
+    <link rel="stylesheet" href="{{url_for('assets', path='css/experiments.css')}}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;700&display=swap" rel="stylesheet">
     
@@ -63,6 +63,17 @@ Extended with quantum computing specific features:
 
             <div class="container-fluid">
                 <h1 class="page-title">Experiment Builder</h1>
+
+                <!-- Notification card (replaces all alert() popups) -->
+                <div id="notification-card" class="alert alert-dismissible mb-3"
+                     role="alert" style="display:none; transition: opacity 0.8s ease-out;">
+                    <span id="notification-icon"></span>
+                    <span id="notification-msg"></span>
+                    <button type="button" class="close" aria-label="Close"
+                            onclick="hideNotification();">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
 
     <div class="row">
         <!-- Left Panel: Experiment Library -->
@@ -691,8 +702,41 @@ Extended with quantum computing specific features:
         return { parameters, actionData };
     }
 
+    function showNotification(message, type, autofade) {
+        if (autofade === undefined) autofade = true;
+        const typeMap = {
+            success: { cls: 'alert-success', icon: '<i class="fas fa-check-circle mr-2"></i>' },
+            warning: { cls: 'alert-warning', icon: '<i class="fas fa-exclamation-triangle mr-2"></i>' },
+            danger:  { cls: 'alert-danger',  icon: '<i class="fas fa-times-circle mr-2"></i>' },
+            info:    { cls: 'alert-info',    icon: '<i class="fas fa-info-circle mr-2"></i>' },
+        };
+        const t = typeMap[type] || typeMap.info;
+        const card = document.getElementById('notification-card');
+        card.className = `alert alert-dismissible mb-3 ${t.cls}`;
+        card.style.opacity = '1';
+        document.getElementById('notification-icon').innerHTML = t.icon;
+        document.getElementById('notification-msg').innerHTML = message;
+        card.style.display = 'block';
+        clearTimeout(card._fadeTimer);
+        if (autofade) {
+            const delay = type === 'success' ? 4000 : 8000;
+            card._fadeTimer = setTimeout(function() {
+                card.style.opacity = '0';
+                setTimeout(function() { card.style.display = 'none'; card.style.opacity = '1'; }, 800);
+            }, delay);
+        }
+    }
+
+    function hideNotification() {
+        const card = document.getElementById('notification-card');
+        clearTimeout(card._fadeTimer);
+        card.style.display = 'none';
+        card.style.opacity = '1';
+    }
+
     // Load all data for the selected QPU
     function loadQpuData() {
+        hideNotification();
         const qpuSelect = document.getElementById('qpu-select');
         const selectedQpu = qpuSelect.value;
         ExperimentBuilder.qpu.selectedName = selectedQpu;
@@ -701,6 +745,14 @@ Extended with quantum computing specific features:
         fetch(`/api/qpu_parameters/${selectedQpu}`)
             .then(response => response.json())
             .then(data => {
+                if (data.error) {
+                    const lines = data.error.trim().split('\n').filter(l => l.trim().length > 0);
+                    const rootCause = lines[lines.length - 1] || data.error;
+                    showNotification(
+                        `Platform <strong>${selectedQpu}</strong> could not be loaded — a required backend dependency is missing.<br><code>${rootCause}</code>`,
+                        'warning', false
+                    );
+                }
                 ExperimentBuilder.qpu.parameters = data;
                 document.getElementById('qpu-config-data').textContent = JSON.stringify(data, null, 2);
                 updateQubitDropdown();
@@ -1094,7 +1146,7 @@ Extended with quantum computing specific features:
     function generateYAML() {
         const actionItems = document.querySelectorAll('.action-item');
         if (actionItems.length === 0) {
-            alert('No experiments added to action card.');
+            showNotification('No experiments added to action card.', 'warning');
             return;
         }
 
@@ -1170,7 +1222,7 @@ Extended with quantum computing specific features:
         } else {
             // Fallback if popup is blocked
             console.log('Generated YAML:', yamlContent);
-            alert('Popup blocked. Check console for generated configuration.');
+            showNotification('Browser blocked the YAML preview window. The configuration has been printed to the console.', 'info');
         }
     }
 
@@ -1178,7 +1230,7 @@ Extended with quantum computing specific features:
     function runExperiment() {
         const actionItems = document.querySelectorAll('.action-item');
         if (actionItems.length === 0) {
-            alert('No experiments added to action card.');
+            showNotification('No experiments added to action card.', 'warning');
             return;
         }
 
@@ -1248,17 +1300,21 @@ Extended with quantum computing specific features:
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    alert(`Experiment submitted successfully!\n\nExperiment ID: ${data.experiment_id}\nJob ID: ${data.job_id}\n\nThe experiment is now running on SLURM. Check the QPU Status or Dashboard for updates.`);
-                    
+                    showNotification(
+                        `Experiment submitted successfully. ` +
+                        `ID: <strong>${data.experiment_id}</strong> &mdash; Job: <strong>${data.job_id}</strong><br>` +
+                        `The experiment is now running on SLURM. Check the QPU Status or Dashboard for updates.`,
+                        'success'
+                    );
                     // Optionally clear the action card or keep it for resubmission
                     // clearActionCard();
                 } else {
-                    alert(`Failed to submit experiment:\n${data.message}`);
+                    showNotification(`Failed to submit experiment: ${data.message}`, 'danger');
                 }
             })
             .catch(error => {
                 console.error('Error submitting experiment:', error);
-                alert(`Error submitting experiment: ${error.message || 'Network error'}`);
+                showNotification(`Error submitting experiment: ${error.message || 'Network error'}`, 'danger');
             })
             .finally(() => {
                 // Re-enable the button
@@ -1268,8 +1324,7 @@ Extended with quantum computing specific features:
 
         } catch (error) {
             console.error('Error building experiment configuration:', error);
-            alert(`Error building experiment configuration: ${error.message}`);
-            
+            showNotification(`Error building experiment configuration: ${error.message}`, 'danger');
             // Re-enable the button
             runButton.disabled = false;
             runButton.innerHTML = originalText;
@@ -1320,14 +1375,14 @@ Extended with quantum computing specific features:
             if (data.success) {
                 ExperimentBuilder.actionCard.savedNodes = data.nodes;
                 updateActionNodesList();
-                alert(`Action node "${nodeName}" saved successfully.`);
+                showNotification(`Action node <strong>${nodeName}</strong> saved successfully.`, 'success');
             } else {
-                alert(`Error saving action node: ${data.error}`);
+                showNotification(`Error saving action node: ${data.error}`, 'danger');
             }
         })
         .catch(error => {
             console.error('Error saving action node:', error);
-            alert('An error occurred while saving the action node.');
+            showNotification('An error occurred while saving the action node.', 'danger');
         });
     }
 
@@ -1372,7 +1427,7 @@ Extended with quantum computing specific features:
             nodeData.action_card.forEach(experiment => {
                 addExperimentToActionCard(experiment);
             });
-            alert(`Action node "${nodeName}" loaded.`);
+            showNotification(`Action node <strong>${nodeName}</strong> loaded.`, 'success');
         }
     }
 
@@ -1387,14 +1442,14 @@ Extended with quantum computing specific features:
                 if (data.success) {
                     ExperimentBuilder.actionCard.savedNodes = data.nodes;
                     updateActionNodesList();
-                    alert(`Action node "${nodeName}" deleted.`);
+                    showNotification(`Action node <strong>${nodeName}</strong> deleted.`, 'success');
                 } else {
-                    alert(`Error deleting action node: ${data.error}`);
+                    showNotification(`Error deleting action node: ${data.error}`, 'danger');
                 }
             })
             .catch(error => {
                 console.error('Error deleting action node:', error);
-                alert('An error occurred while deleting the action node.');
+                showNotification('An error occurred while deleting the action node.', 'danger');
             });
         }
     }

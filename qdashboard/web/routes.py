@@ -3,12 +3,18 @@ Main application routes and endpoints.
 """
 
 import os
+import re
 import subprocess
 import json
+import asyncio
 import time
 import shutil
 import yaml
-from flask import render_template, request, jsonify, send_file, make_response, current_app, Response
+import traceback as _tb
+from typing import Optional
+from fastapi import APIRouter, Request, Form, File, UploadFile, Query
+from fastapi.responses import FileResponse, Response, StreamingResponse
+from starlette.responses import HTMLResponse
 
 from ..qpu.monitoring import get_qpu_health, get_available_qpus, get_qibo_versions, get_qpu_details, get_qpu_list, qpu_parameters
 from ..qpu.platforms import get_platforms_path, list_repository_branches, switch_repository_branch, get_current_branch_info, commit_changes, push_changes, stash_changes, list_stashes, apply_latest_stash, discard_changes, get_partition
@@ -23,936 +29,890 @@ from packaging.version import parse as parse_version
 
 logger = get_logger(__name__)
 
+router = APIRouter()
+
+
+def _get_config(request: Request) -> dict:
+    """Helper to retrieve config from app state."""
+    return request.app.state.config
+
+
+def _no_cache_headers() -> dict:
+    return {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+    }
+
+
+def _error_response(
+    request: Request,
+    exc: Exception,
+    body: dict = None,
+    status_code: int = 500,
+) -> Response:
+    """Build a JSON error response.
+
+    In debug mode the full traceback, exception type, and request context are
+    included so problems can be diagnosed directly in the browser / API client.
+    In production only the safe error message is returned.
+    """
+    debug = request.app.state.config.get('debug', False)
+    trace = _tb.format_exc()
+    logger.error("[%s %s] %s: %s\n%s",
+                 request.method, request.url.path,
+                 type(exc).__name__, exc, trace)
+    if body is None:
+        body = {'error': str(exc)}
+    if debug:
+        body['exception_type'] = type(exc).__name__
+        body['traceback'] = trace
+        body['request'] = f"{request.method} {request.url}"
+    return Response(
+        content=json.dumps(body),
+        status_code=status_code,
+        media_type='application/json',
+    )
+
+
+def _html_error_response(
+    request: Request,
+    exc: Exception,
+    status_code: int = 500,
+) -> HTMLResponse:
+    """Return an HTML error page.
+
+    In debug mode a styled traceback page is rendered so developers can see
+    the full stack without leaving the browser.
+    """
+    debug = request.app.state.config.get('debug', False)
+    trace = _tb.format_exc()
+    logger.error("[%s %s] %s: %s\n%s",
+                 request.method, request.url.path,
+                 type(exc).__name__, exc, trace)
+    if debug:
+        import html as _html
+        safe_trace = _html.escape(trace)
+        safe_msg   = _html.escape(str(exc))
+        safe_type  = _html.escape(type(exc).__name__)
+        content = (
+            '<html><head><title>QDashboard Error</title>'
+            '<style>body{background:#1a1a2e;color:#e0e0e0;font-family:monospace;padding:2rem}'
+            'h2{color:#ff6b6b}pre{background:#0d0d1a;padding:1.2rem;overflow:auto;'
+            'border-left:3px solid #ff6b6b;white-space:pre-wrap}'
+            '.ctx{color:#888;font-size:.85em;margin-bottom:1rem}</style></head><body>'
+            f'<h2>&#9888; {safe_type}</h2>'
+            f'<p class="ctx">{request.method} {request.url}</p>'
+            f'<pre>{safe_trace}</pre>'
+            '</body></html>'
+        )
+    else:
+        content = (
+            f'<html><body><h2>Internal Server Error</h2>'
+            f'<p>{status_code}: {type(exc).__name__}</p></body></html>'
+        )
+    return HTMLResponse(content=content, status_code=status_code)
+
+
+def _safe_path_join(base: str, user_path: str) -> str | None:
+    """Return realpath of user_path relative to base, or None if it escapes base."""
+    resolved_base = os.path.realpath(base)
+    candidate = os.path.realpath(os.path.join(base, user_path))
+    if candidate != resolved_base and not candidate.startswith(resolved_base + os.sep):
+        return None
+    return candidate
+
 
 def register_routes(app, config):
-    """Register all application routes."""
-    
-    # Store config in app for access in routes
-    app.config['QDASHBOARD_CONFIG'] = config
-    
-    @app.route("/")
-    def dashboard():
-        """Main dashboard route with QPU health and SLURM status."""
-        qpu_health = get_qpu_health()
-        available_qpus = get_available_qpus()
-        version_data = get_qibo_versions(request=request)
-        slurm_queue_status = get_slurm_status()
-        last_slurm_log = get_slurm_output()
-        
-        logger.info("Dashboard loaded with QPU health and SLURM status")
-        
-        response = make_response(render_template('dashboard.html',
-                               qpu_health=qpu_health,
-                               available_qpus=available_qpus,
-                               qibo_versions=version_data['versions'],
-                               slurm_queue_status=slurm_queue_status,
-                               last_slurm_log=last_slurm_log))
-        
-        # Prevent caching of SLURM data
-        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-        response.headers['Pragma'] = 'no-cache'
-        response.headers['Expires'] = '0'
-        
-        # Set cookie if we have fresh data
-        if not version_data.get('from_cache', False):
-            response.set_cookie('qibo_versions', 
-                              version_data['cookie_data'],
-                              max_age=24*60*60,  # 24 hours
-                              httponly=True,
-                              secure=False)
-        
-        return response
-
-    @app.route("/qqsubmit")
-    def qqsubmit():
-        """Submit a job to the SLURM queue."""
-        config = current_app.config['QDASHBOARD_CONFIG']
-        qpu = request.args.get('qpu')
-        os_process = subprocess.Popen(
-            ["bash", os.path.join(config['root'], "work/qqsubmit.sh"), config['home_path'], qpu],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
-        stdout, stderr = os_process.communicate()
-        
-        out_string = stdout.decode('utf-8').replace('\n', '<br>')
-        logger.info(f"Job submitted to SLURM queue for QPU: {qpu}")
-        return render_template('job_submission.html', output_content=out_string)
-
-    @app.route("/latest")
-    def latest():
-        """View the latest report."""
-        config = current_app.config['QDASHBOARD_CONFIG']
-        last_path = get_latest_report_path()
-        version_data = get_qibo_versions(request=request)
-        
-        if not last_path:
-            # Get SLURM information for the not found page
-            slurm_queue_status = get_slurm_status()
-            last_slurm_log = get_slurm_output()
-            has_error, error_message = parse_slurm_log_for_errors()
-            
-            # Set last_path for file browser link
-            last_path = config.get('home_path', os.path.expanduser('~'))
-            
-            logger.warning(f"Last report not found, using default path: {last_path}")
-            response = make_response(render_template('latest_not_found.html',
-                                   has_error=has_error,
-                                   error_message=error_message,
-                                   last_path=last_path,
-                                   slurm_queue_status=slurm_queue_status,
-                                   last_slurm_log=last_slurm_log,
-                                   qibo_versions=version_data['versions']))
-            
-            # Set cookie if we have fresh data
-            if not version_data.get('from_cache', False):
-                response.set_cookie('qibo_versions', 
-                                  version_data['cookie_data'],
-                                  max_age=24*60*60,
-                                  httponly=True,
-                                  secure=False)
-            
-            return response
-        
-        try:
-            res = report_viewer(last_path, config['root'], version_data['versions'], access_mode="latest")
-            logger.info(f"Latest report viewed: {last_path}")
-        except FileNotFoundError:
-            # Get SLURM information for the not found page
-            slurm_queue_status = get_slurm_status()
-            last_slurm_log = get_slurm_output()
-            has_error, error_message = parse_slurm_log_for_errors()
-            
-            #remove home from last path for file browser link
-            last_path = "/"+last_path.replace(config['home_path'], "").lstrip("/")
-            logger.warning(f"Report not found: {last_path}")
-            response = make_response(render_template('latest_not_found.html',
-                                   has_error=has_error,
-                                   error_message=error_message,
-                                   last_path=last_path,
-                                   slurm_queue_status=slurm_queue_status,
-                                   last_slurm_log=last_slurm_log,
-                                   qibo_versions=version_data['versions']))
-            
-            # Set cookie if we have fresh data
-            if not version_data.get('from_cache', False):
-                response.set_cookie('qibo_versions', 
-                                  version_data['cookie_data'],
-                                  max_age=24*60*60,
-                                  httponly=True,
-                                  secure=False)
-            
-            return response
-        except Exception as e:
-            logger.error(f"Error loading report: {str(e)}")
-            return make_response(f'Error loading report: {str(e)}', 500)
-        
-        return res
-
-    @app.route("/report_assets/<path:filename>")
-    def report_assets(filename):
-        """Serve assets from the latest report directory."""
-        config = current_app.config['QDASHBOARD_CONFIG']
-        try:
-            latest_path = get_latest_report_path(config['home_path'])
-            if latest_path:
-                asset_path = os.path.join(latest_path, filename)
-                if os.path.exists(asset_path):
-                    logger.info(f"Serving asset: {asset_path}")
-                    return send_file(asset_path)
-            logger.warning(f"Asset not found: {filename}")
-            return make_response('Asset not found', 404)
-        except Exception as e:
-            logger.error(f'Error serving asset: {str(e)}')
-            return make_response(f'Error serving asset: {str(e)}', 500)
-
-    @app.route("/cancel_job", methods=['POST'])
-    def cancel_job():
-        """Cancel a SLURM job."""
-        try:
-            job_id = request.json.get('job_id')
-            if job_id:
-                result = subprocess.run(['scancel', str(job_id)], 
-                                      capture_output=True, text=True, timeout=10)
-                if result.returncode == 0:
-                    logger.info(f"Job {job_id} cancelled successfully")
-                    return jsonify({'status': 'success', 'message': f'Job {job_id} cancelled'})
-                else:
-                    logger.error(f"Failed to cancel job {job_id}: {result.stderr}")
-                    return jsonify({'status': 'error', 'message': f'Failed to cancel job: {result.stderr}'})
-            else:
-                logger.warning("No job ID provided for cancellation")
-                return jsonify({'status': 'error', 'message': 'No job ID provided'})
-        except subprocess.TimeoutExpired:
-            logger.error("Cancel command timed out")
-            return jsonify({'status': 'error', 'message': 'Cancel command timed out'})
-        except Exception as e:
-            logger.error(f"Error cancelling job: {str(e)}")
-            return jsonify({'status': 'error', 'message': str(e)})
-
-    @app.route("/api/slurm_status", methods=['GET'])
-    def api_slurm_status():
-        """API endpoint to get fresh SLURM status data."""
-        try:
-            slurm_queue_status = get_slurm_status()
-            last_slurm_log = get_slurm_output()
-            
-            logger.info("Fresh SLURM status data retrieved via API")
-            
-            response = jsonify({
-                'status': 'success',
-                'queue_status': [
-                    {
-                        'job_id': job.job_id,
-                        'name': job.name,
-                        'user': job.user,
-                        'state': job.state,
-                        'time': job.time,
-                        'time_limit': job.time_limit,
-                        'nodes': job.nodes,
-                        'nodelist': job.nodelist,
-                        'is_current_user': job.is_current_user
-                    } for job in slurm_queue_status
-                ],
-                'last_log': last_slurm_log
-            })
-            
-            # Prevent caching
-            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-            response.headers['Pragma'] = 'no-cache'
-            response.headers['Expires'] = '0'
-            
-            return response
-            
-        except Exception as e:
-            logger.error(f"Error fetching SLURM status: {str(e)}")
-            return jsonify({'status': 'error', 'message': str(e)}), 500
-
-    @app.route("/api/slurm_stream")
-    def api_slurm_stream():
-        """Server-Sent Events endpoint for streaming SLURM status updates."""
-        def slurm_event_stream():
-            """Generate SLURM status updates as Server-Sent Events."""
-            last_data = None
-            last_log = None
-            
-            try:
-                while True:
-                    try:
-                        # Get current SLURM data
-                        slurm_queue_status = get_slurm_status()
-                        current_log = get_slurm_output()
-                        
-                        # Format queue status for comparison and transmission
-                        queue_status = [
-                            {
-                                'job_id': job.job_id,
-                                'name': job.name,
-                                'user': job.user,
-                                'state': job.state,
-                                'time': job.time,
-                                'time_limit': job.time_limit,
-                                'nodes': job.nodes,
-                                'nodelist': job.nodelist,
-                                'is_current_user': job.is_current_user
-                            } for job in slurm_queue_status
-                        ]
-                        
-                        # Only send if data has changed (compare JSON strings)
-                        current_data = json.dumps(queue_status, sort_keys=True)
-                        current_log_str = current_log
-                        
-                        if current_data != last_data or current_log_str != last_log:
-                            last_data = current_data
-                            last_log = current_log_str
-                            
-                            event_data = {
-                                'queue_status': queue_status,
-                                'last_log': current_log,
-                                'timestamp': time.time()
-                            }
-                            
-                            # SSE format: data: <json>\n\n
-                            yield f"data: {json.dumps(event_data)}\n\n"
-                        
-                    except Exception as e:
-                        logger.warning(f"Error in SLURM stream: {str(e)}")
-                        error_event = {'error': str(e), 'timestamp': time.time()}
-                        yield f"data: {json.dumps(error_event)}\n\n"
-                    
-                    # Poll every 2 seconds (adjust as needed)
-                    time.sleep(2)
-                    
-            except GeneratorExit:
-                logger.info("Client disconnected from SLURM stream")
-        
-        try:
-            logger.info("SLURM stream connection established")
-            response = Response(slurm_event_stream(), mimetype='text/event-stream')
-            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-            response.headers['Pragma'] = 'no-cache'
-            response.headers['Expires'] = '0'
-            response.headers['X-Accel-Buffering'] = 'no'  # Disable nginx buffering
-            return response
-        except Exception as e:
-            logger.error(f"Error establishing SLURM stream: {str(e)}")
-            return jsonify({'status': 'error', 'message': str(e)}), 500
-
-    @app.route("/qpus")
-    def qpus():
-        """QPU status and monitoring page."""
-        config = current_app.config['QDASHBOARD_CONFIG']
-        qpu_details = get_qpu_details()
-        version_data = get_qibo_versions(request=request)
-        
-        # Get branch information for the dropdown
-        platforms_path = get_platforms_path(config['root'])
-        git_branches_info = list_repository_branches(platforms_path) if platforms_path else None
-        git_current_branch_info = get_current_branch_info(platforms_path) if platforms_path else None
-        
-        logger.info("QPU status page loaded")
-        
-        response = make_response(render_template('qpus.html', 
-                               qpus=qpu_details,
-                               git_branch=  git_current_branch_info['branch'] if git_current_branch_info else None,
-                               git_commit=  git_current_branch_info['commit'] if git_current_branch_info else None,
-                               platforms_path= platforms_path,
-                               branches_info=git_branches_info,
-                               current_branch_info=git_current_branch_info,
-                               qibo_versions=version_data['versions']))
-        
-        # Set cookie if we have fresh data
-        if not version_data.get('from_cache', False):
-            response.set_cookie('qibo_versions', 
-                              version_data['cookie_data'],
-                              max_age=24*60*60,
-                              httponly=True,
-                              secure=False)
-        
-        return response
-
-    @app.route("/api/platforms/branches")
-    def api_platforms_branches():
-        """API endpoint to get available branches."""
-        try:
-            config = current_app.config['QDASHBOARD_CONFIG']
-            platforms_path = get_platforms_path(config['root'])
-            if not platforms_path:
-                logger.warning("Platforms directory not available")
-                return jsonify({'error': 'Platforms directory not available'}), 404
-            
-            branches_info = list_repository_branches(platforms_path)
-            if not branches_info:
-                logger.error("Failed to retrieve branch information")
-                return jsonify({'error': 'Failed to retrieve branch information'}), 500
-            
-            logger.info("Branch information retrieved successfully")
-            return jsonify(branches_info)
-        except Exception as e:
-            logger.error(f"Error retrieving branches: {str(e)}")
-            return jsonify({'error': str(e)}), 500
-
-    @app.route("/api/platforms/switch", methods=['POST'])
-    def api_platforms_switch():
-        """API endpoint to switch platform branch."""
-        try:
-            config = current_app.config['QDASHBOARD_CONFIG']
-            data = request.get_json()
-            if not data or 'branch' not in data:
-                logger.warning("Branch name is required for switching")
-                return jsonify({'error': 'Branch name is required'}), 400
-            
-            branch_name = data['branch']
-            create_if_not_exists = data.get('create', False)
-            handle_changes = data.get('handle_changes', 'fail')  # 'fail', 'stash', or 'commit'
-            
-            platforms_path = get_platforms_path(config['root'])
-            if not platforms_path:
-                logger.warning("Platforms directory not available")
-                return jsonify({'error': 'Platforms directory not available'}), 404
-            
-            # Perform the switch
-            switch_result = switch_repository_branch(platforms_path, branch_name, create_if_not_exists, handle_changes)
-            if not switch_result['success']:
-                logger.error(f"Failed to switch to branch: {branch_name} - {switch_result.get('error', 'Unknown error')}")
-                return jsonify({
-                    'error': switch_result.get('error', f'Failed to switch to branch: {branch_name}'),
-                    'has_changes': switch_result.get('has_changes', False)
-                }), 400
-            
-            # Get updated information
-            current_branch_info = get_current_branch_info(platforms_path)
-            qpu_details = get_qpu_details()  # Get updated QPU list
-            
-            response_data = {
-                'success': True,
-                'branch': branch_name,
-                'branch_info': current_branch_info,
-                'qpus': qpu_details,  
-                'platforms_path': platforms_path
-            }
-            
-            # Add stash information if changes were stashed
-            if switch_result.get('changes_handled') == 'stashed':
-                response_data['stash_created'] = switch_result.get('stash_created')
-                response_data['changes_handled'] = 'stashed'
-            
-            # Add stash restoration information
-            if switch_result.get('stash_restored'):
-                response_data['stash_applied'] = switch_result.get('stash_applied')
-                response_data['stash_restored'] = True
-            
-            logger.info(f"Switched to branch: {branch_name}")
-            return jsonify(response_data)
-            
-        except Exception as e:
-            logger.error(f"Error switching branch: {str(e)}")
-            return jsonify({'error': str(e)}), 500
-
-    @app.route("/api/platforms/current")
-    def api_platforms_current():
-        """API endpoint to get current branch information."""
-        try:
-            config = current_app.config['QDASHBOARD_CONFIG']
-            platforms_path = get_platforms_path(config['root'])
-            if not platforms_path:
-                logger.warning("Platforms directory not available")
-                return jsonify({'error': 'Platforms directory not available'}), 404
-            
-            current_branch_info = get_current_branch_info(platforms_path)
-            if not current_branch_info:
-                logger.error("Failed to get current branch information")
-                return jsonify({'error': 'Failed to get current branch information'}), 500
-            
-            logger.info("Current branch information retrieved")
-            return jsonify(current_branch_info)
-        except Exception as e:
-            logger.error(f"Error retrieving current branch information: {str(e)}")
-            return jsonify({'error': str(e)}), 500
-
-    @app.route("/api/platforms/commit", methods=['POST'])
-    def api_platforms_commit():
-        """API endpoint to commit changes to the platforms repository."""
-        try:
-            config = current_app.config['QDASHBOARD_CONFIG']
-            platforms_path = get_platforms_path(config['root'])
-            if not platforms_path:
-                logger.warning("Platforms directory not available")
-                return jsonify({'error': 'Platforms directory not available'}), 404
-            
-            data = request.get_json() or {}
-            commit_message = data.get('message', 'Update platform configurations (qibolab version detection)')
-            
-            # Perform the commit
-            result = commit_changes(platforms_path, commit_message)
-            
-            if not result['success']:
-                logger.warning(f"Commit failed: {result.get('error', 'Unknown error')}")
-                return jsonify({'error': result.get('error', 'Commit failed')}), 400
-            
-            logger.info(f"Successfully committed changes with hash: {result['commit_hash']}")
-            return jsonify(result)
-            
-        except Exception as e:
-            logger.error(f"Error committing changes: {str(e)}")
-            return jsonify({'error': str(e)}), 500
-
-    @app.route("/api/platforms/stash", methods=['POST'])
-    def api_platforms_stash():
-        """API endpoint to stash changes in the platforms repository."""
-        try:
-            config = current_app.config['QDASHBOARD_CONFIG']
-            platforms_path = get_platforms_path(config['root'])
-            if not platforms_path:
-                logger.warning("Platforms directory not available")
-                return jsonify({'error': 'Platforms directory not available'}), 404
-            
-            data = request.get_json() or {}
-            stash_message = data.get('message', 'WIP: Stashed via QDashboard')
-            
-            # Perform the stash
-            result = stash_changes(platforms_path, stash_message)
-            
-            if not result['success']:
-                logger.warning(f"Stash failed: {result.get('error', 'Unknown error')}")
-                return jsonify({'error': result.get('error', 'Stash failed')}), 400
-            
-            logger.info(f"Successfully stashed changes: {result['stash_name']}")
-            return jsonify(result)
-            
-        except Exception as e:
-            logger.error(f"Error stashing changes: {str(e)}")
-            return jsonify({'error': str(e)}), 500
-
-    @app.route("/api/platforms/discard", methods=['POST'])
-    def api_platforms_discard():
-        """API endpoint to discard all uncommitted changes in the platforms repository."""
-        try:
-            config = current_app.config['QDASHBOARD_CONFIG']
-            platforms_path = get_platforms_path(config['root'])
-            if not platforms_path:
-                logger.warning("Platforms directory not available")
-                return jsonify({'error': 'Platforms directory not available'}), 404
-            
-            # Perform the discard
-            result = discard_changes(platforms_path)
-            
-            if not result['success']:
-                logger.warning(f"Discard failed: {result.get('error', 'Unknown error')}")
-                return jsonify({'error': result.get('error', 'Discard failed')}), 400
-            
-            logger.info(f"Successfully discarded changes: {result.get('discarded_files', [])}")
-            return jsonify(result)
-            
-        except Exception as e:
-            logger.error(f"Error discarding changes: {str(e)}")
-            return jsonify({'error': str(e)}), 500
-
-    @app.route("/api/platforms/stashes")
-    def api_platforms_list_stashes():
-        """API endpoint to list all stashes in the platforms repository."""
-        try:
-            config = current_app.config['QDASHBOARD_CONFIG']
-            platforms_path = get_platforms_path(config['root'])
-            if not platforms_path:
-                logger.warning("Platforms directory not available")
-                return jsonify({'error': 'Platforms directory not available'}), 404
-            
-            result = list_stashes(platforms_path)
-            
-            if not result['success']:
-                logger.warning(f"Failed to list stashes: {result.get('error', 'Unknown error')}")
-                return jsonify({'error': result.get('error', 'Failed to list stashes')}), 400
-            
-            logger.info("Successfully retrieved stash list")
-            return jsonify(result)
-            
-        except Exception as e:
-            logger.error(f"Error listing stashes: {str(e)}")
-            return jsonify({'error': str(e)}), 500
-
-    @app.route("/api/platforms/push", methods=['POST'])
-    def api_platforms_push():
-        """API endpoint to push changes to the remote repository."""
-        try:
-            config = current_app.config['QDASHBOARD_CONFIG']
-            platforms_path = get_platforms_path(config['root'])
-            if not platforms_path:
-                logger.warning("Platforms directory not available")
-                return jsonify({'error': 'Platforms directory not available'}), 404
-            
-            # Perform the push
-            result = push_changes(platforms_path)
-            
-            if not result['success']:
-                logger.warning(f"Push failed: {result.get('error', 'Unknown error')}")
-                return jsonify({'error': result.get('error', 'Push failed')}), 400
-            
-            logger.info(f"Successfully pushed changes to {result['remote']}/{result['branch']}")
-            return jsonify(result)
-            
-        except Exception as e:
-            logger.error(f"Error pushing changes: {str(e)}")
-            return jsonify({'error': str(e)}), 500
-
-    @app.route("/api/protocols")
-    def api_protocols():
-        """API endpoint to get all available protocols."""
-        protocols = get_qibocal_protocols()
-
-        jsonifiable_protocols = {}
-        for category in protocols:
-            jsonifiable_protocols[category] = {item['name']: {'id': item['id'],
-                                    'class_name': item['class_name'],
-                                    'module_name': item['module_name'],
-                                    'module_path': item['module_path']}
-                      for item in protocols[category]}
-        
-        logger.info(f"Protocols retrieved successfully: {jsonifiable_protocols}")
-        return jsonify(jsonifiable_protocols), 200
-
-    @app.route("/api/protocols/<protocol_id>")
-    def api_protocol_details(protocol_id):
-        """API endpoint to get details of a specific protocol."""
-        try:
-            attributes = get_protocol_attributes(protocol_id)
-            return jsonify(attributes), 200
-        except Exception as e:
-            logger.warning(f"Protocol not found: {protocol_id}")
-            logger.debug(f"Error details: {e}:{e.__context__}")
-            return jsonify({'error': 'Protocol not found'}), 404
-
-    @app.route("/experiments")
-    def experiments():
-        """Experiment builder page."""
-        protocols = get_qibocal_protocols()
-        qpus = get_qpu_list()
-        version_data = get_qibo_versions(request=request)
-        
-        qibolab_version = version_data['versions'].get('qibolab', '0.0.0')
-        is_new_qibolab = parse_version(qibolab_version) > parse_version('0.2.0')
-
-        # Get protocol attributes for each protocol
-        protocols_with_attributes = {}
-        for category, protocol_list in protocols.items():
-            protocols_with_attributes[category] = []
-            for protocol in protocol_list:
-                protocol_attrs = get_protocol_attributes(protocol)
-                protocol_with_attrs = protocol.copy()
-                protocol_with_attrs['attributes'] = protocol_attrs
-                protocols_with_attributes[category].append(protocol_with_attrs)
-
-        logger.info("Experiment builder page loaded")
-        
-        response = make_response(render_template('experiments.html', 
-                               protocols=protocols_with_attributes, 
-                               qpus=qpus, 
-                               qibo_versions=version_data['versions'],
-                               is_new_qibolab=is_new_qibolab))
-        
-        # Set cookie if we have fresh data
-        if not version_data.get('from_cache', False):
-            response.set_cookie('qibo_versions', 
-                              version_data['cookie_data'],
-                              max_age=24*60*60,
-                              httponly=True,
-                              secure=False)
-        
-        return response
-
-    @app.route("/api/qpu_parameters/<platform>")
-    def qpu_parameters_api(platform):
-        """API endpoint to get parameters for a specific QPU."""
-        platform_params = qpu_parameters(platform)
-        logger.info(f"QPU parameters retrieved for platform: {platform}")
-        return jsonify(platform_params)
-
-    @app.route("/api/qpu_topology/<platform>")
-    def qpu_topology_visualization_api(platform):
-        """API endpoint to generate topology visualization for a specific QPU."""
-        config = current_app.config['QDASHBOARD_CONFIG']
-        qrc_path = get_platforms_path(config['root'])
-        
-        if not qrc_path:
-            logger.warning("QPU platforms directory not available")
-            return jsonify({'error': 'QPU platforms directory not available'}), 404
-            
-        qpu_path = os.path.join(qrc_path, platform)
-        
-        if not os.path.exists(qpu_path):
-            logger.warning(f"QPU not found: {platform}")
-            return jsonify({'error': 'QPU not found'}), 404
-        
-        # Get connectivity data and topology type
-        connectivity_data = qpu_connectivity(platform)  
-        if not connectivity_data:
-            logger.warning("No connectivity data found for this QPU")
-            return jsonify({'error': 'No connectivity data found for this QPU'}), 404
-        
-        topology_type = infer_topology_from_connectivity(connectivity_data)
-        if topology_type == 'N/A' or topology_type == 'unknown':
-            logger.warning("Could not determine topology type")
-            return jsonify({'error': 'Could not determine topology type'}), 404
-        
-        # Generate visualization
-        try:
-            img_base64 = generate_topology_visualization(connectivity_data, topology_type)
-        except Exception as e:
-            logger.error(f"Error generating topology visualization: {str(e)}")
-            return jsonify({'error': 'Failed to generate topology visualization'}), 500
-
-        
-        logger.info(f"Topology visualization generated for {platform}")
-        return jsonify({
-            'topology_type': topology_type,
-            'num_qubits': len(set([q for conn in connectivity_data for q in conn[:2]])),
-            'num_connections': len(connectivity_data),
-            'image': img_base64
-        })
-
-    @app.route("/api/qpu_qubits/<platform>")
-    def qpu_qubits_api(platform):
-        """API endpoint to get the list of available qubits for a specific QPU."""
-        config = current_app.config['QDASHBOARD_CONFIG']
-        qrc_path = get_platforms_path(config['root'])
-        
-        if not qrc_path:
-            logger.warning("QPU platforms directory not available")
-            return jsonify({'error': 'QPU platforms directory not available'}), 404
-            
-        qpu_path = os.path.join(qrc_path, platform)
-        
-        if not os.path.exists(qpu_path):
-            logger.warning(f"QPU not found: {platform}")
-            return jsonify({'error': 'QPU not found'}), 404
-        
-        # Sort qubits properly handling both strings and numbers
-        def qubit_sort_key(qubit):
-            """Sort qubits: numbers first (by value), then strings (alphabetically)"""
-            if isinstance(qubit, (int, float)):
-                return (0, qubit)
-            else:
-                try:
-                    return (0, int(qubit))
-                except (ValueError, TypeError):
-                    return (1, str(qubit))
-
-        # Get connectivity data to extract qubits
-        connectivity_data = qpu_connectivity(platform)
-        if connectivity_data:
-            raw_qubits = list(set([q for conn in connectivity_data for q in conn[:2]]))
-            qubits = sorted(raw_qubits, key=qubit_sort_key)
-        else:
-            # Fall back to single_qubit_gates from qpu_parameters (platforms with no 2Q connectivity)
-            params = qpu_parameters(platform)
-            sq_gates = params.get('single_qubit_gates', {}) if params else {}
-            all_qubits = set()
-            for gate_qubits in sq_gates.values():
-                all_qubits.update(gate_qubits)
-            if not all_qubits:
-                logger.warning("No qubit data found for this QPU")
-                return jsonify({'error': 'No qubit data found for this QPU'}), 404
-            qubits = sorted(all_qubits, key=qubit_sort_key)
-        
-        logger.info(f"Available qubits retrieved for {platform}: {qubits}")
-        return jsonify({
-            'qubits': qubits,
-            'num_qubits': len(qubits)
-        })
-
-    @app.route("/api/qpu_calibration/<platform>")
-    def qpu_calibration_api(platform):
-        """API endpoint to get calibration data for a specific QPU."""
-        # For now, we'll just read a dummy file.
-        # In the future, this should read the calibration.json from the platform directory.
-        config = current_app.config['QDASHBOARD_CONFIG']
-        platforms_path = get_platforms_path(config['root'])
-        calibration_path = os.path.join(platforms_path, platform, 'calibration.json')
-
-        if os.path.exists(calibration_path):
-            with open(calibration_path, 'r') as f:
-                calibration_data = json.load(f)
-            logger.info(f"QPU calibration data retrieved for platform: {platform}")
-            return jsonify(calibration_data)
-        else:
-            logger.warning(f"Calibration data not found for platform: {platform}")
-            return jsonify({'error': 'Calibration data not found'}), 404
-
-    # Qibocal CLI routes
-    @app.route("/qibocal/<action>", methods=['POST'])
-    def qibocal_cli_action(action):
-        """Execute qibocal CLI commands."""
-        config = current_app.config['QDASHBOARD_CONFIG']
-        
-        # Get the report path from form data
-        report_path = request.form.get('report_path')
-        if not report_path:
-            return jsonify({'success': False, 'message': 'No report path provided'}), 400
-        
-        # Convert relative path to absolute path
-        full_report_path = os.path.join(config['root'], report_path)
-        
-        # Validate that the path exists and is a qibocal report
-        if not os.path.exists(full_report_path):
-            return jsonify({'success': False, 'message': f'Report path does not exist: {report_path}'}), 404
-        
-        # Check if this is actually a qibocal report (has meta.json and runcard.yml)
-        if not (os.path.exists(os.path.join(full_report_path, 'meta.json')) and 
-                os.path.exists(os.path.join(full_report_path, 'runcard.yml'))):
-            return jsonify({'success': False, 'message': f'Path is not a valid qibocal report (missing meta.json or runcard.yml): {report_path}'}), 400
-        
-        # Validate action
-        valid_actions = ['fit', 'report', 'update']
-        if action not in valid_actions:
-            return jsonify({'success': False, 'message': f'Invalid action: {action}'}), 400
-        
-        try:
-            # Check if qibocal is available
-            from ..web.reports import check_qibocal_availability
-            if not check_qibocal_availability():
-                return jsonify({'success': False, 'message': 'Qibocal CLI (qq) is not available. Please install qibocal.'}), 503
-            
-            # Construct the command
-            cmd = ['qq', action, full_report_path]
-            if action == 'fit':
-                cmd.append('-f')
-            logger.info(f"Executing qibocal command: {' '.join(cmd)}")
-            
-            # Execute the command
-            result = subprocess.run(cmd, 
-                                  capture_output=True, 
-                                  text=True, 
-                                  timeout=300,  # 5 minute timeout
-                                  cwd=full_report_path)
-            
-            if result.returncode == 0:
-                success_messages = {
-                    'fit': 'Fit operation completed successfully.',
-                    'report': 'Report regeneration completed successfully.',
-                    'update': 'Platform update completed successfully.'
-                }
-                logger.info(f"Qibocal {action} completed successfully for {report_path}")
-                return jsonify({
-                    'success': True, 
-                    'message': success_messages[action],
-                    'stdout': result.stdout,
-                    'stderr': result.stderr
-                })
-            else:
-                error_msg = f"Qibocal {action} failed with exit code {result.returncode}"
-                if result.stderr:
-                    error_msg += f": {result.stderr}"
-                logger.error(f"Qibocal {action} failed for {report_path}: {error_msg}")
-                return jsonify({
-                    'success': False, 
-                    'message': error_msg,
-                    'stdout': result.stdout,
-                    'stderr': result.stderr
-                }), 500
-                
-        except subprocess.TimeoutExpired:
-            logger.error(f"Qibocal {action} timed out for {report_path}")
-            return jsonify({'success': False, 'message': f'Qibocal {action} operation timed out (5 minutes)'}), 408
-            
-        except Exception as e:
-            logger.error(f"Error executing qibocal {action} for {report_path}: {str(e)}")
-            return jsonify({'success': False, 'message': f'Error executing qibocal {action}: {str(e)}'}), 500
-
-    @app.route("/repeat_experiment", methods=['POST'])
-    def repeat_experiment_route():
-        """Repeat an experiment by submitting it to SLURM."""
-        try:
-            config = current_app.config['QDASHBOARD_CONFIG']
-            report_path = request.form.get('report_path')
-            
-            if not report_path:
-                return jsonify({'success': False, 'message': 'Report path is required'}), 400
-            
-            # Use the modular repeat_experiment function
-            result = repeat_experiment(report_path, config)
-            
-            if result['success']:
-                logger.info(f"Experiment repeat submitted: {result['experiment_id']}")
-                return jsonify(result)
-            else:
-                logger.error(f"Failed to repeat experiment: {result['message']}")
-                return jsonify(result), 400
-                
-        except Exception as e:
-            logger.error(f"Error in repeat_experiment route: {str(e)}")
-            return jsonify({'success': False, 'message': f'Error repeating experiment: {str(e)}'}), 500
-
-    @app.route("/submit_experiment", methods=['POST'])
-    def submit_experiment_route():
-        """Submit a new experiment to SLURM."""
-        try:
-            config = current_app.config['QDASHBOARD_CONFIG']
-            
-            # Check if runcard file was uploaded
-            if 'runcard' not in request.files:
-                return jsonify({'success': False, 'message': 'No runcard file provided'}), 400
-            
-            runcard_file = request.files['runcard']
-            if runcard_file.filename == '':
-                return jsonify({'success': False, 'message': 'No runcard file selected'}), 400
-            
-            # Get optional environment parameter
-            environment = request.form.get('environment')
-            
-            # Save uploaded file temporarily
-            import tempfile
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.yml', delete=False) as tmp_file:
-                runcard_content = runcard_file.read().decode('utf-8')
-                tmp_file.write(runcard_content)
-                tmp_runcard_path = tmp_file.name
-            
-            try:
-                # Use the modular submit_experiment function
-                result = submit_experiment(tmp_runcard_path, config, environment)
-                
-                if result['success']:
-                    logger.info(f"New experiment submitted: {result['experiment_id']}")
-                    return jsonify(result)
-                else:
-                    logger.error(f"Failed to submit experiment: {result['message']}")
-                    return jsonify(result), 400
-            finally:
-                # Clean up temporary file
-                os.unlink(tmp_runcard_path)
-                
-        except Exception as e:
-            logger.error(f"Error in submit_experiment route: {str(e)}")
-            return jsonify({'success': False, 'message': f'Error submitting experiment: {str(e)}'}), 500
-
-    @app.route("/api/submit_experiment_data", methods=['POST'])
-    def submit_experiment_data_route():
-        """Submit a new experiment to SLURM using runcard data."""
-        try:
-            config = current_app.config['QDASHBOARD_CONFIG']
-            
-            # Get JSON data from request
-            if not request.is_json:
-                return jsonify({'success': False, 'message': 'Request must be JSON'}), 400
-            
-            data = request.get_json()
-            if not data:
-                return jsonify({'success': False, 'message': 'No data provided'}), 400
-            
-            # Extract runcard data and optional environment
-            runcard_data = data.get('runcard_data')
-            environment = data.get('environment')
-            
-            if not runcard_data:
-                return jsonify({'success': False, 'message': 'No runcard_data provided'}), 400
-            
-            # Validate required fields
-            if 'platform' not in runcard_data:
-                return jsonify({'success': False, 'message': 'Missing required field: platform'}), 400
-            
-            # Use the enhanced submit_experiment function with runcard_data
-            result = submit_experiment(runcard_data=runcard_data, config=config, environment=environment)
-            
-            if result['success']:
-                logger.info(f"New experiment submitted with data: {result['experiment_id']}")
-                return jsonify(result)
-            else:
-                logger.error(f"Failed to submit experiment with data: {result['message']}")
-                return jsonify(result), 400
-                
-        except Exception as e:
-            logger.error(f"Error in submit_experiment_data route: {str(e)}")
-            return jsonify({'success': False, 'message': f'Error submitting experiment: {str(e)}'}), 500
-
-    @app.route("/api/experiments", methods=['GET'])
-    def api_list_experiments():
-        """API endpoint to list user experiments."""
-        try:
-            config = current_app.config['QDASHBOARD_CONFIG']
-            experiments = list_user_experiments(config)
-            return jsonify({
-                'success': True,
-                'experiments': experiments,
-                'count': len(experiments)
-            })
-        except Exception as e:
-            logger.error(f"Error listing experiments: {str(e)}")
-            return jsonify({'success': False, 'message': f'Error listing experiments: {str(e)}'}), 500
-
-    @app.route("/api/experiments/<experiment_id>", methods=['GET'])
-    def api_experiment_status(experiment_id):
-        """API endpoint to get experiment status."""
-        try:
-            config = current_app.config['QDASHBOARD_CONFIG']
-            status = get_experiment_status(experiment_id, config)
-            if status:
-                return jsonify({
-                    'success': True,
-                    'experiment': status
-                })
-            else:
-                return jsonify({'success': False, 'message': 'Experiment not found'}), 404
-        except Exception as e:
-            logger.error(f"Error getting experiment status: {str(e)}")
-            return jsonify({'success': False, 'message': f'Error getting experiment status: {str(e)}'}), 500
-
+    """Register the APIRouter on the FastAPI app."""
+    app.include_router(router)
     logger.debug("Routes module initialized")
     return app
+
+
+@router.get("/", name="dashboard", include_in_schema=False)
+async def dashboard(request: Request):
+    """Main dashboard route with QPU health and SLURM status."""
+    from ..core.app import templates
+
+    qpu_health = get_qpu_health()
+    available_qpus = get_available_qpus()
+    version_data = get_qibo_versions(request=request)
+    slurm_queue_status = get_slurm_status()
+    last_slurm_log = get_slurm_output()
+
+    logger.info("Dashboard loaded with QPU health and SLURM status")
+
+    html = templates.get_template('dashboard.html').render(
+        request=request,
+        qpu_health=qpu_health,
+        available_qpus=available_qpus,
+        qibo_versions=version_data['versions'],
+        slurm_queue_status=slurm_queue_status,
+        last_slurm_log=last_slurm_log,
+    )
+    response = HTMLResponse(content=html, headers=_no_cache_headers())
+    if not version_data.get('from_cache', False):
+        response.set_cookie('qibo_versions', version_data['cookie_data'],
+                            max_age=24 * 60 * 60, httponly=True, secure=False)
+    return response
+
+
+_QPU_NAME_RE = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
+
+
+@router.get("/qqsubmit", name="qqsubmit", include_in_schema=False)
+async def qqsubmit(request: Request, qpu: Optional[str] = Query(None)):
+    """Submit a job to the SLURM queue."""
+    from ..core.app import templates
+
+    if not qpu or not _QPU_NAME_RE.match(qpu):
+        logger.warning(f"Invalid QPU name rejected: {qpu!r}")
+        return Response(content='Invalid QPU name', status_code=400)
+
+    config = _get_config(request)
+    script_path = os.path.realpath(os.path.join(config['root'], "work/qqsubmit.sh"))
+    resolved_root = os.path.realpath(config['root'])
+    if not script_path.startswith(resolved_root + os.sep) and script_path != resolved_root:
+        logger.error(f"Script path escapes root: {script_path}")
+        return Response(content='Forbidden', status_code=403)
+
+    os_process = subprocess.Popen(
+        ["bash", script_path, config['home_path'], qpu],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    try:
+        stdout, stderr = os_process.communicate(timeout=60)
+    except subprocess.TimeoutExpired:
+        os_process.kill()
+        os_process.communicate()
+        logger.error(f"qqsubmit timed out for QPU: {qpu}")
+        return Response(content='Job submission timed out', status_code=504)
+    out_string = stdout.decode('utf-8', errors='replace').replace('\n', '<br>')
+    logger.info(f"Job submitted to SLURM queue for QPU: {qpu}")
+    html = templates.get_template('job_submission.html').render(
+        request=request, output_content=out_string)
+    return HTMLResponse(content=html)
+
+
+@router.get("/latest", name="latest", include_in_schema=False)
+async def latest(request: Request):
+    """View the latest report."""
+    from ..core.app import templates
+
+    config = _get_config(request)
+    last_path = get_latest_report_path()
+    version_data = get_qibo_versions(request=request)
+
+    def _not_found_response(last_path):
+        slurm_queue_status = get_slurm_status()
+        last_slurm_log = get_slurm_output()
+        has_error, error_message = parse_slurm_log_for_errors()
+        html = templates.get_template('latest_not_found.html').render(
+            request=request,
+            has_error=has_error,
+            error_message=error_message,
+            last_path=last_path,
+            slurm_queue_status=slurm_queue_status,
+            last_slurm_log=last_slurm_log,
+            qibo_versions=version_data['versions'],
+        )
+        response = HTMLResponse(content=html)
+        if not version_data.get('from_cache', False):
+            response.set_cookie('qibo_versions', version_data['cookie_data'],
+                                max_age=24 * 60 * 60, httponly=True, secure=False)
+        return response
+
+    if not last_path:
+        last_path = config.get('home_path', os.path.expanduser('~'))
+        logger.warning(f"Last report not found, using default path: {last_path}")
+        return _not_found_response(last_path)
+
+    try:
+        res = report_viewer(last_path, config['root'], request, version_data['versions'], access_mode="latest")
+        logger.info(f"Latest report viewed: {last_path}")
+        return res
+    except FileNotFoundError:
+        data_dir = config.get('data_dir', os.path.join(config['root'], 'data'))
+        last_path = "/" + last_path.replace(data_dir, "").lstrip("/")
+        logger.warning(f"Report not found: {last_path}")
+        return _not_found_response(last_path)
+    except Exception as e:
+        return _html_error_response(request, e)
+
+
+@router.get("/report_assets/{filename:path}", name="report_assets", include_in_schema=False)
+async def report_assets(request: Request, filename: str):
+    """Serve assets from the latest report directory."""
+    config = _get_config(request)
+    try:
+        latest_path = get_latest_report_path()
+        if latest_path:
+            latest_path = os.path.realpath(latest_path)
+            asset_path = os.path.realpath(os.path.join(latest_path, filename))
+
+            if os.path.commonpath([latest_path, asset_path]) != latest_path:
+                logger.warning(f"Attempted path traversal for asset: {filename}")
+                return Response(content='Asset not found', status_code=404)
+
+            if os.path.exists(asset_path):
+                logger.info(f"Serving asset: {asset_path}")
+                return FileResponse(asset_path)
+        logger.warning(f"Asset not found: {filename}")
+        return Response(content='Asset not found', status_code=404)
+    except Exception as e:
+        return _html_error_response(request, e)
+
+
+@router.post("/cancel_job", name="cancel_job", tags=["SLURM"],
+             summary="Cancel a SLURM job")
+async def cancel_job(request: Request):
+    """Cancel a SLURM job."""
+    try:
+        data = await request.json()
+        job_id = data.get('job_id')
+        if job_id:
+            result = subprocess.run(['scancel', str(job_id)],
+                                    capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                logger.info(f"Job {job_id} cancelled successfully")
+                return {'status': 'success', 'message': f'Job {job_id} cancelled'}
+            else:
+                logger.error(f"Failed to cancel job {job_id}: {result.stderr}")
+                return {'status': 'error', 'message': f'Failed to cancel job: {result.stderr}'}
+        logger.warning("No job ID provided for cancellation")
+        return {'status': 'error', 'message': 'No job ID provided'}
+    except subprocess.TimeoutExpired:
+        return _error_response(request, TimeoutError('Cancel command timed out'),
+                               {'status': 'error', 'message': 'Cancel command timed out'})
+    except Exception as e:
+        return _error_response(request, e, {'status': 'error', 'message': str(e)})
+
+
+@router.get("/api/slurm_status", name="api_slurm_status", tags=["SLURM"],
+            summary="Snapshot of the current SLURM queue and last log")
+async def api_slurm_status(request: Request):
+    """API endpoint to get fresh SLURM status data."""
+    try:
+        slurm_queue_status = get_slurm_status()
+        last_slurm_log = get_slurm_output()
+        logger.info("Fresh SLURM status data retrieved via API")
+        data = {
+            'status': 'success',
+            'queue_status': [
+                {
+                    'job_id': job.job_id, 'name': job.name, 'user': job.user,
+                    'state': job.state, 'time': job.time, 'time_limit': job.time_limit,
+                    'nodes': job.nodes, 'nodelist': job.nodelist,
+                    'is_current_user': job.is_current_user
+                } for job in slurm_queue_status
+            ],
+            'last_log': last_slurm_log,
+        }
+        return Response(content=json.dumps(data), media_type='application/json',
+                        headers=_no_cache_headers())
+    except Exception as e:
+        return _error_response(request, e, {'status': 'error', 'message': str(e)})
+
+
+@router.get("/api/slurm_stream", name="api_slurm_stream", tags=["SLURM"],
+            summary="Server-Sent Events stream of live SLURM queue updates")
+async def api_slurm_stream(request: Request):
+    """Server-Sent Events endpoint for streaming SLURM status updates."""
+    async def slurm_event_stream():
+        last_data = None
+        last_log = None
+        try:
+            while True:
+                try:
+                    slurm_queue_status = get_slurm_status()
+                    current_log = get_slurm_output()
+                    queue_status = [
+                        {
+                            'job_id': job.job_id, 'name': job.name, 'user': job.user,
+                            'state': job.state, 'time': job.time, 'time_limit': job.time_limit,
+                            'nodes': job.nodes, 'nodelist': job.nodelist,
+                            'is_current_user': job.is_current_user
+                        } for job in slurm_queue_status
+                    ]
+                    current_data = json.dumps(queue_status, sort_keys=True)
+                    if current_data != last_data or current_log != last_log:
+                        last_data = current_data
+                        last_log = current_log
+                        event_data = {
+                            'queue_status': queue_status,
+                            'last_log': current_log,
+                            'timestamp': time.time(),
+                        }
+                        yield f"data: {json.dumps(event_data)}\n\n"
+                except Exception as e:
+                    trace = _tb.format_exc() if request.app.state.config.get('debug') else None
+                    payload = {'error': str(e), 'timestamp': time.time()}
+                    if trace:
+                        payload['traceback'] = trace
+                    logger.warning(f"Error in SLURM stream: {str(e)}")
+                    yield f"data: {json.dumps(payload)}\n\n"
+                await asyncio.sleep(2)
+        except asyncio.CancelledError:
+            logger.info("Client disconnected from SLURM stream")
+
+    logger.info("SLURM stream connection established")
+    return StreamingResponse(
+        slurm_event_stream(),
+        media_type='text/event-stream',
+        headers={**_no_cache_headers(), 'X-Accel-Buffering': 'no'},
+    )
+
+
+@router.get("/qpus", name="qpus", include_in_schema=False)
+async def qpus(request: Request):
+    """QPU status and monitoring page."""
+    from ..core.app import templates
+
+    config = _get_config(request)
+    qpu_details = get_qpu_details()
+    version_data = get_qibo_versions(request=request)
+    platforms_path = get_platforms_path(config['root'])
+    git_branches_info = list_repository_branches(platforms_path) if platforms_path else None
+    git_current_branch_info = get_current_branch_info(platforms_path) if platforms_path else None
+
+    logger.info("QPU status page loaded")
+    html = templates.get_template('qpus.html').render(
+        request=request,
+        qpus=qpu_details,
+        git_branch=git_current_branch_info['branch'] if git_current_branch_info else None,
+        git_commit=git_current_branch_info['commit'] if git_current_branch_info else None,
+        platforms_path=platforms_path,
+        branches_info=git_branches_info,
+        current_branch_info=git_current_branch_info,
+        qibo_versions=version_data['versions'],
+    )
+    response = HTMLResponse(content=html)
+    if not version_data.get('from_cache', False):
+        response.set_cookie('qibo_versions', version_data['cookie_data'],
+                            max_age=24 * 60 * 60, httponly=True, secure=False)
+    return response
+
+
+@router.get("/api/platforms/branches", name="api_platforms_branches", tags=["Platforms"],
+            summary="List all branches in the platforms repository")
+async def api_platforms_branches(request: Request):
+    """API endpoint to get available branches."""
+    try:
+        config = _get_config(request)
+        platforms_path = get_platforms_path(config['root'])
+        if not platforms_path:
+            return Response(content=json.dumps({'error': 'Platforms directory not available'}),
+                            status_code=404, media_type='application/json')
+        branches_info = list_repository_branches(platforms_path)
+        if not branches_info:
+            return Response(content=json.dumps({'error': 'Failed to retrieve branch information'}),
+                            status_code=500, media_type='application/json')
+        return branches_info
+    except Exception as e:
+        return _error_response(request, e)
+
+
+@router.post("/api/platforms/switch", name="api_platforms_switch", tags=["Platforms"],
+             summary="Switch the platforms repository to a different branch")
+async def api_platforms_switch(request: Request):
+    """API endpoint to switch platform branch."""
+    try:
+        config = _get_config(request)
+        data = await request.json()
+        if not data or 'branch' not in data:
+            return Response(content=json.dumps({'error': 'Branch name is required'}),
+                            status_code=400, media_type='application/json')
+        branch_name = data['branch']
+        create_if_not_exists = data.get('create', False)
+        handle_changes = data.get('handle_changes', 'fail')
+        platforms_path = get_platforms_path(config['root'])
+        if not platforms_path:
+            return Response(content=json.dumps({'error': 'Platforms directory not available'}),
+                            status_code=404, media_type='application/json')
+        switch_result = switch_repository_branch(platforms_path, branch_name, create_if_not_exists, handle_changes)
+        if not switch_result['success']:
+            return Response(
+                content=json.dumps({
+                    'error': switch_result.get('error', f'Failed to switch to branch: {branch_name}'),
+                    'has_changes': switch_result.get('has_changes', False),
+                }),
+                status_code=400, media_type='application/json')
+        current_branch_info = get_current_branch_info(platforms_path)
+        qpu_details = get_qpu_details()
+        response_data = {
+            'success': True, 'branch': branch_name,
+            'branch_info': current_branch_info, 'qpus': qpu_details,
+            'platforms_path': platforms_path,
+        }
+        if switch_result.get('changes_handled') == 'stashed':
+            response_data['stash_created'] = switch_result.get('stash_created')
+            response_data['changes_handled'] = 'stashed'
+        if switch_result.get('stash_restored'):
+            response_data['stash_applied'] = switch_result.get('stash_applied')
+            response_data['stash_restored'] = True
+        logger.info(f"Switched to branch: {branch_name}")
+        return response_data
+    except Exception as e:
+        return _error_response(request, e)
+
+
+@router.get("/api/platforms/current", name="api_platforms_current", tags=["Platforms"],
+            summary="Get the currently checked-out branch and its metadata")
+async def api_platforms_current(request: Request):
+    """API endpoint to get current branch information."""
+    try:
+        config = _get_config(request)
+        platforms_path = get_platforms_path(config['root'])
+        if not platforms_path:
+            return Response(content=json.dumps({'error': 'Platforms directory not available'}),
+                            status_code=404, media_type='application/json')
+        current_branch_info = get_current_branch_info(platforms_path)
+        if not current_branch_info:
+            return Response(content=json.dumps({'error': 'Failed to get current branch information'}),
+                            status_code=500, media_type='application/json')
+        return current_branch_info
+    except Exception as e:
+        return _error_response(request, e)
+
+
+@router.post("/api/platforms/commit", name="api_platforms_commit", tags=["Platforms"],
+             summary="Commit pending changes in the platforms repository")
+async def api_platforms_commit(request: Request):
+    """API endpoint to commit changes to the platforms repository."""
+    try:
+        config = _get_config(request)
+        platforms_path = get_platforms_path(config['root'])
+        if not platforms_path:
+            return Response(content=json.dumps({'error': 'Platforms directory not available'}),
+                            status_code=404, media_type='application/json')
+        data = await request.json() if request.headers.get('content-type', '').startswith('application/json') else {}
+        commit_message = data.get('message', 'Update platform configurations (qibolab version detection)')
+        result = commit_changes(platforms_path, commit_message)
+        if not result['success']:
+            return Response(content=json.dumps({'error': result.get('error', 'Commit failed')}),
+                            status_code=400, media_type='application/json')
+        return result
+    except Exception as e:
+        return _error_response(request, e)
+
+
+@router.post("/api/platforms/stash", name="api_platforms_stash", tags=["Platforms"],
+             summary="Stash uncommitted changes in the platforms repository")
+async def api_platforms_stash(request: Request):
+    """API endpoint to stash changes in the platforms repository."""
+    try:
+        config = _get_config(request)
+        platforms_path = get_platforms_path(config['root'])
+        if not platforms_path:
+            return Response(content=json.dumps({'error': 'Platforms directory not available'}),
+                            status_code=404, media_type='application/json')
+        data = await request.json() if request.headers.get('content-type', '').startswith('application/json') else {}
+        stash_message = data.get('message', 'WIP: Stashed via QDashboard')
+        result = stash_changes(platforms_path, stash_message)
+        if not result['success']:
+            return Response(content=json.dumps({'error': result.get('error', 'Stash failed')}),
+                            status_code=400, media_type='application/json')
+        return result
+    except Exception as e:
+        return _error_response(request, e)
+
+
+@router.post("/api/platforms/discard", name="api_platforms_discard", tags=["Platforms"],
+             summary="Discard all uncommitted changes in the platforms repository")
+async def api_platforms_discard(request: Request):
+    """API endpoint to discard all uncommitted changes."""
+    try:
+        config = _get_config(request)
+        platforms_path = get_platforms_path(config['root'])
+        if not platforms_path:
+            return Response(content=json.dumps({'error': 'Platforms directory not available'}),
+                            status_code=404, media_type='application/json')
+        result = discard_changes(platforms_path)
+        if not result['success']:
+            return Response(content=json.dumps({'error': result.get('error', 'Discard failed')}),
+                            status_code=400, media_type='application/json')
+        return result
+    except Exception as e:
+        return _error_response(request, e)
+
+
+@router.get("/api/platforms/stashes", name="api_platforms_list_stashes", tags=["Platforms"],
+            summary="List all stash entries in the platforms repository")
+async def api_platforms_list_stashes(request: Request):
+    """API endpoint to list all stashes."""
+    try:
+        config = _get_config(request)
+        platforms_path = get_platforms_path(config['root'])
+        if not platforms_path:
+            return Response(content=json.dumps({'error': 'Platforms directory not available'}),
+                            status_code=404, media_type='application/json')
+        result = list_stashes(platforms_path)
+        if not result['success']:
+            return Response(content=json.dumps({'error': result.get('error', 'Failed to list stashes')}),
+                            status_code=400, media_type='application/json')
+        return result
+    except Exception as e:
+        return _error_response(request, e)
+
+
+@router.post("/api/platforms/push", name="api_platforms_push", tags=["Platforms"],
+             summary="Push the current branch to the remote platforms repository")
+async def api_platforms_push(request: Request):
+    """API endpoint to push changes to the remote repository."""
+    try:
+        config = _get_config(request)
+        platforms_path = get_platforms_path(config['root'])
+        if not platforms_path:
+            return Response(content=json.dumps({'error': 'Platforms directory not available'}),
+                            status_code=404, media_type='application/json')
+        result = push_changes(platforms_path)
+        if not result['success']:
+            return Response(content=json.dumps({'error': result.get('error', 'Push failed')}),
+                            status_code=400, media_type='application/json')
+        return result
+    except Exception as e:
+        return _error_response(request, e)
+
+
+@router.get("/api/protocols", name="api_protocols", tags=["Protocols"],
+            summary="List all available qibocal calibration protocols grouped by category")
+async def api_protocols():
+    """API endpoint to get all available protocols."""
+    protocols = get_qibocal_protocols()
+    jsonifiable_protocols = {}
+    for category in protocols:
+        jsonifiable_protocols[category] = {
+            item['name']: {
+                'id': item['id'], 'class_name': item['class_name'],
+                'module_name': item['module_name'], 'module_path': item['module_path'],
+            } for item in protocols[category]
+        }
+    logger.info(f"Protocols retrieved successfully: {jsonifiable_protocols}")
+    return jsonifiable_protocols
+
+
+@router.get("/api/protocols/{protocol_id}", name="api_protocol_details", tags=["Protocols"],
+            summary="Get the parameter schema for a single qibocal protocol")
+async def api_protocol_details(protocol_id: str):
+    """API endpoint to get details of a specific protocol."""
+    try:
+        attributes = get_protocol_attributes(protocol_id)
+        return attributes
+    except Exception as e:
+        logger.warning(f"Protocol not found: {protocol_id}")
+        return Response(content=json.dumps({'error': 'Protocol not found'}),
+                        status_code=404, media_type='application/json')
+
+
+@router.get("/experiments", name="experiments", include_in_schema=False)
+async def experiments(request: Request):
+    """Experiment builder page."""
+    from ..core.app import templates
+
+    protocols = get_qibocal_protocols()
+    qpus_list = get_qpu_list()
+    version_data = get_qibo_versions(request=request)
+    qibolab_version = version_data['versions'].get('qibolab', '0.0.0')
+    is_new_qibolab = parse_version(qibolab_version) > parse_version('0.2.0')
+
+    protocols_with_attributes = {}
+    for category, protocol_list in protocols.items():
+        protocols_with_attributes[category] = []
+        for protocol in protocol_list:
+            protocol_attrs = get_protocol_attributes(protocol)
+            protocol_with_attrs = protocol.copy()
+            protocol_with_attrs['attributes'] = protocol_attrs
+            protocols_with_attributes[category].append(protocol_with_attrs)
+
+    logger.info("Experiment builder page loaded")
+    html = templates.get_template('experiments.html').render(
+        request=request,
+        protocols=protocols_with_attributes,
+        qpus=qpus_list,
+        qibo_versions=version_data['versions'],
+        is_new_qibolab=is_new_qibolab,
+    )
+    response = HTMLResponse(content=html)
+    if not version_data.get('from_cache', False):
+        response.set_cookie('qibo_versions', version_data['cookie_data'],
+                            max_age=24 * 60 * 60, httponly=True, secure=False)
+    return response
+
+
+@router.get("/api/qpu_parameters/{platform}", name="qpu_parameters_api", tags=["QPU"],
+            summary="Retrieve gate parameters for a specific QPU platform")
+async def qpu_parameters_api(platform: str):
+    """API endpoint to get parameters for a specific QPU."""
+    platform_params = qpu_parameters(platform)
+    logger.info(f"QPU parameters retrieved for platform: {platform}")
+    return platform_params
+
+
+@router.get("/api/qpu_topology/{platform}", name="qpu_topology_visualization_api", tags=["QPU"],
+            summary="Generate a base-64 topology graph image for a QPU platform")
+async def qpu_topology_visualization_api(request: Request, platform: str):
+    """API endpoint to generate topology visualization for a specific QPU."""
+    config = _get_config(request)
+    qrc_path = get_platforms_path(config['root'])
+    if not qrc_path:
+        return Response(content=json.dumps({'error': 'QPU platforms directory not available'}),
+                        status_code=404, media_type='application/json')
+    qpu_path = _safe_path_join(qrc_path, platform)
+    if qpu_path is None or not os.path.exists(qpu_path):
+        return Response(content=json.dumps({'error': 'QPU not found'}),
+                        status_code=404, media_type='application/json')
+    connectivity_data = qpu_connectivity(platform)
+    if not connectivity_data:
+        return Response(content=json.dumps({'error': 'No connectivity data found for this QPU'}),
+                        status_code=404, media_type='application/json')
+    topology_type = infer_topology_from_connectivity(connectivity_data)
+    if topology_type in ('N/A', 'unknown'):
+        return Response(content=json.dumps({'error': 'Could not determine topology type'}),
+                        status_code=404, media_type='application/json')
+    try:
+        img_base64 = generate_topology_visualization(connectivity_data, topology_type)
+    except Exception as e:
+        return _error_response(request, e,
+                               {'error': 'Failed to generate topology visualization'})
+    return {
+        'topology_type': topology_type,
+        'num_qubits': len(set([q for conn in connectivity_data for q in conn[:2]])),
+        'num_connections': len(connectivity_data),
+        'image': img_base64,
+    }
+
+
+@router.get("/api/qpu_qubits/{platform}", name="qpu_qubits_api", tags=["QPU"],
+            summary="List the qubits available on a QPU platform")
+async def qpu_qubits_api(request: Request, platform: str):
+    """API endpoint to get the list of available qubits for a specific QPU."""
+    config = _get_config(request)
+    qrc_path = get_platforms_path(config['root'])
+    if not qrc_path:
+        return Response(content=json.dumps({'error': 'QPU platforms directory not available'}),
+                        status_code=404, media_type='application/json')
+    qpu_path = _safe_path_join(qrc_path, platform)
+    if qpu_path is None or not os.path.exists(qpu_path):
+        return Response(content=json.dumps({'error': 'QPU not found'}),
+                        status_code=404, media_type='application/json')
+
+    def qubit_sort_key(qubit):
+        if isinstance(qubit, (int, float)):
+            return (0, qubit)
+        try:
+            return (0, int(qubit))
+        except (ValueError, TypeError):
+            return (1, str(qubit))
+
+    connectivity_data = qpu_connectivity(platform)
+    if connectivity_data:
+        raw_qubits = list(set([q for conn in connectivity_data for q in conn[:2]]))
+        qubits = sorted(raw_qubits, key=qubit_sort_key)
+    else:
+        params = qpu_parameters(platform)
+        sq_gates = params.get('single_qubit_gates', {}) if params else {}
+        all_qubits = set()
+        for gate_qubits in sq_gates.values():
+            all_qubits.update(gate_qubits)
+        if not all_qubits:
+            return Response(content=json.dumps({'error': 'No qubit data found for this QPU'}),
+                            status_code=404, media_type='application/json')
+        qubits = sorted(all_qubits, key=qubit_sort_key)
+
+    return {'qubits': qubits, 'num_qubits': len(qubits)}
+
+
+@router.get("/api/qpu_calibration/{platform}", name="qpu_calibration_api", tags=["QPU"],
+            summary="Return the calibration.json data for a QPU platform")
+async def qpu_calibration_api(request: Request, platform: str):
+    """API endpoint to get calibration data for a specific QPU."""
+    config = _get_config(request)
+    platforms_path = get_platforms_path(config['root'])
+    if not platforms_path:
+        return Response(content=json.dumps({'error': 'QPU platforms directory not available'}),
+                        status_code=404, media_type='application/json')
+    calibration_path = _safe_path_join(platforms_path, os.path.join(platform, 'calibration.json'))
+    if calibration_path and os.path.exists(calibration_path):
+        with open(calibration_path, 'r') as f:
+            calibration_data = json.load(f)
+        return calibration_data
+    return Response(content=json.dumps({'error': 'Calibration data not found'}),
+                    status_code=404, media_type='application/json')
+
+
+@router.post("/qibocal/{action}", name="qibocal_cli_action", tags=["Experiments"],
+             summary="Run a qibocal CLI action (fit / report / update) on an existing report")
+async def qibocal_cli_action(request: Request, action: str,
+                              report_path: str = Form(...)):
+    """Execute qibocal CLI commands."""
+    config = _get_config(request)
+    full_report_path = _safe_path_join(config['root'], report_path)
+    if full_report_path is None:
+        logger.warning(f"Path traversal attempt in qibocal_cli_action: {report_path!r}")
+        return Response(content=json.dumps({'success': False,
+                        'message': 'Invalid report path'}),
+                        status_code=400, media_type='application/json')
+    if not os.path.exists(full_report_path):
+        return Response(content=json.dumps({'success': False,
+                        'message': f'Report path does not exist: {report_path}'}),
+                        status_code=404, media_type='application/json')
+    if not (os.path.exists(os.path.join(full_report_path, 'meta.json')) and
+            os.path.exists(os.path.join(full_report_path, 'runcard.yml'))):
+        return Response(content=json.dumps({'success': False,
+                        'message': f'Path is not a valid qibocal report: {report_path}'}),
+                        status_code=400, media_type='application/json')
+    valid_actions = ['fit', 'report', 'update']
+    if action not in valid_actions:
+        return Response(content=json.dumps({'success': False,
+                        'message': f'Invalid action: {action}'}),
+                        status_code=400, media_type='application/json')
+    try:
+        from ..web.reports import check_qibocal_availability
+        if not check_qibocal_availability():
+            return Response(content=json.dumps({'success': False,
+                            'message': 'Qibocal CLI (qq) is not available.'}),
+                            status_code=503, media_type='application/json')
+        cmd = ['qq', action, full_report_path]
+        if action == 'fit':
+            cmd.append('-f')
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300,
+                                cwd=full_report_path)
+        if result.returncode == 0:
+            success_messages = {'fit': 'Fit completed.', 'report': 'Report regenerated.',
+                                'update': 'Platform updated.'}
+            return {'success': True, 'message': success_messages[action],
+                    'stdout': result.stdout, 'stderr': result.stderr}
+        error_msg = f"Qibocal {action} failed (exit {result.returncode}): {result.stderr}"
+        return Response(content=json.dumps({'success': False, 'message': error_msg,
+                        'stdout': result.stdout, 'stderr': result.stderr}),
+                        status_code=500, media_type='application/json')
+    except subprocess.TimeoutExpired:
+        return Response(content=json.dumps({'success': False,
+                        'message': f'Qibocal {action} timed out (5 minutes)'}),
+                        status_code=408, media_type='application/json')
+    except Exception as e:
+        return _error_response(request, e,
+                               {'success': False, 'message': f'Error executing qibocal {action}: {str(e)}'})
+
+
+@router.post("/repeat_experiment", name="repeat_experiment_route", tags=["Experiments"],
+             summary="Re-submit an existing experiment runcard to SLURM")
+async def repeat_experiment_route(request: Request,
+                                   report_path: str = Form(...)):
+    """Repeat an experiment by submitting it to SLURM."""
+    try:
+        config = _get_config(request)
+        safe = _safe_path_join(config['root'], report_path)
+        if safe is None:
+            logger.warning(f"Path traversal attempt in repeat_experiment_route: {report_path!r}")
+            return Response(content=json.dumps({'success': False,
+                            'message': 'Invalid report path'}),
+                            status_code=400, media_type='application/json')
+        result = repeat_experiment(safe, config)
+        if result['success']:
+            logger.info(f"Experiment repeat submitted: {result['experiment_id']}")
+            return result
+        logger.error(f"Failed to repeat experiment: {result['message']}")
+        return Response(content=json.dumps(result), status_code=400,
+                        media_type='application/json')
+    except Exception as e:
+        return _error_response(request, e,
+                               {'success': False, 'message': f'Error repeating experiment: {str(e)}'})
+
+
+@router.post("/submit_experiment", name="submit_experiment_route", tags=["Experiments"],
+             summary="Submit a new experiment to SLURM via an uploaded YAML runcard")
+async def submit_experiment_route(request: Request,
+                                   runcard: UploadFile = File(...),
+                                   environment: Optional[str] = Form(None)):
+    """Submit a new experiment to SLURM via uploaded runcard file."""
+    import tempfile
+    try:
+        config = _get_config(request)
+        if not runcard.filename:
+            return Response(content=json.dumps({'success': False,
+                            'message': 'No runcard file selected'}),
+                            status_code=400, media_type='application/json')
+        runcard_content = (await runcard.read()).decode('utf-8')
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yml', delete=False) as tmp:
+            tmp.write(runcard_content)
+            tmp_path = tmp.name
+        try:
+            result = submit_experiment(tmp_path, config, environment)
+            if result['success']:
+                logger.info(f"New experiment submitted: {result['experiment_id']}")
+                return result
+            return Response(content=json.dumps(result), status_code=400,
+                            media_type='application/json')
+        finally:
+            os.unlink(tmp_path)
+    except Exception as e:
+        return _error_response(request, e,
+                               {'success': False, 'message': f'Error submitting experiment: {str(e)}'})
+
+
+@router.post("/api/submit_experiment_data", name="submit_experiment_data_route", tags=["Experiments"],
+             summary="Submit a new experiment to SLURM using a JSON runcard payload")
+async def submit_experiment_data_route(request: Request):
+    """Submit a new experiment to SLURM using runcard data (JSON body)."""
+    try:
+        config = _get_config(request)
+        if not request.headers.get('content-type', '').startswith('application/json'):
+            return Response(content=json.dumps({'success': False,
+                            'message': 'Request must be JSON'}),
+                            status_code=400, media_type='application/json')
+        data = await request.json()
+        if not data:
+            return Response(content=json.dumps({'success': False, 'message': 'No data provided'}),
+                            status_code=400, media_type='application/json')
+        runcard_data = data.get('runcard_data')
+        environment = data.get('environment')
+        if not runcard_data:
+            return Response(content=json.dumps({'success': False,
+                            'message': 'No runcard_data provided'}),
+                            status_code=400, media_type='application/json')
+        if 'platform' not in runcard_data:
+            return Response(content=json.dumps({'success': False,
+                            'message': 'Missing required field: platform'}),
+                            status_code=400, media_type='application/json')
+        result = submit_experiment(runcard_data=runcard_data, config=config, environment=environment)
+        if result['success']:
+            logger.info(f"New experiment submitted with data: {result['experiment_id']}")
+            return result
+        return Response(content=json.dumps(result), status_code=400,
+                        media_type='application/json')
+    except Exception as e:
+        return _error_response(request, e,
+                               {'success': False, 'message': f'Error submitting experiment: {str(e)}'})
+
+
+@router.get("/api/experiments", name="api_list_experiments", tags=["Experiments"],
+            summary="List all submitted experiments")
+async def api_list_experiments(request: Request):
+    """API endpoint to list user experiments."""
+    try:
+        config = _get_config(request)
+        experiments = list_user_experiments(config)
+        return {'success': True, 'experiments': experiments, 'count': len(experiments)}
+    except Exception as e:
+        return _error_response(request, e,
+                               {'success': False, 'message': f'Error listing experiments: {str(e)}'})
+
+
+@router.get("/api/experiments/{experiment_id}", name="api_experiment_status", tags=["Experiments"],
+            summary="Get the status and metadata of a single experiment")
+async def api_experiment_status(request: Request, experiment_id: str):
+    """API endpoint to get experiment status."""
+    try:
+        config = _get_config(request)
+        status = get_experiment_status(experiment_id, config)
+        if status:
+            return {'success': True, 'experiment': status}
+        return Response(content=json.dumps({'success': False, 'message': 'Experiment not found'}),
+                        status_code=404, media_type='application/json')
+    except Exception as e:
+        return _error_response(request, e,
+                               {'success': False, 'message': f'Error getting experiment status: {str(e)}'})
+
+

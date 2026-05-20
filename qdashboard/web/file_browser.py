@@ -3,13 +3,14 @@ File browser and web interface utilities.
 """
 
 import os
+import pathlib
 import re
-import mimetypes
-from flask import Response, request, make_response, redirect, url_for
-from flask.views import MethodView
-from werkzeug.utils import secure_filename
-from pathlib2 import Path
 import json
+import mimetypes
+from pathlib2 import Path
+from fastapi import APIRouter, Request, UploadFile, File
+from fastapi.responses import FileResponse, Response
+from starlette.responses import HTMLResponse
 
 from ..utils.formatters import get_type
 from ..qpu.monitoring import get_qibo_versions
@@ -19,34 +20,23 @@ from ..web.reports import report_viewer
 def is_qibocal_report(directory_path):
     """
     Check if a directory is a qibocal report by looking for required files.
-    
+
     A qibocal report directory must contain both:
     - meta.json
     - runcard.yml
-    
-    Args:
-        directory_path (str): Path to the directory to check
-        
-    Returns:
-        bool: True if directory contains qibocal report files, False otherwise
     """
     if not os.path.isdir(directory_path):
         return False
-    
     try:
-        meta_json_path = os.path.join(directory_path, "meta.json")
-        runcard_yml_path = os.path.join(directory_path, "runcard.yml")
-        
-        return os.path.isfile(meta_json_path) and os.path.isfile(runcard_yml_path)
+        return (os.path.isfile(os.path.join(directory_path, "meta.json")) and
+                os.path.isfile(os.path.join(directory_path, "runcard.yml")))
     except (PermissionError, OSError):
-        # If we can't access the directory, assume it's not a qibocal report
         return False
 
 
 def partial_response(path, start, end=None):
     """Generate partial HTTP response for file streaming."""
     file_size = os.path.getsize(path)
-
     if end is None:
         end = file_size - 1
     end = min(end, file_size - 1)
@@ -57,256 +47,208 @@ def partial_response(path, start, end=None):
         bytes_data = fd.read(length)
     assert len(bytes_data) == length
 
-    response = Response(
-        bytes_data,
-        206,
-        mimetype=mimetypes.guess_type(path)[0],
-        direct_passthrough=True,
-    )
-    response.headers.add(
-        'Content-Range', 'bytes {0}-{1}/{2}'.format(
-            start, end, file_size,
-        ),
-    )
-    response.headers.add(
-        'Accept-Ranges', 'bytes'
-    )
-    return response
+    headers = {
+        'Content-Range': f'bytes {start}-{end}/{file_size}',
+        'Accept-Ranges': 'bytes',
+        'Content-Type': mimetypes.guess_type(path)[0] or 'application/octet-stream',
+    }
+    return Response(content=bytes_data, status_code=206, headers=headers)
 
 
-def get_range(request):
+def get_range(request: Request):
     """Parse HTTP Range header."""
-    range_header = request.headers.get('Range')
-    m = re.match('bytes=(?P<start>\d+)-(?P<end>\d+)?', range_header)
+    range_header = request.headers.get('Range', '')
+    m = re.match(r'bytes=(?P<start>\d+)-(?P<end>\d+)?', range_header)
     if m:
-        start = m.group('start')
-        end = m.group('end')
-        start = int(start)
-        if end is not None:
-            end = int(end)
+        start = int(m.group('start'))
+        end = int(m.group('end')) if m.group('end') else None
         return start, end
-    else:
-        return 0, None
+    return 0, None
 
 
-class PathView(MethodView):
-    """
-    File browser functionality based on flask-file-server by Wildog
-    https://github.com/Wildog/flask-file-server
-    
-    Enhanced with quantum computing dashboard integration
-    """
-    
-    def __init__(self, root_path, key=""):
-        self.root = root_path
-        self.key = key
-        self.ignored = ['.bzr', '$RECYCLE.BIN', '.DAV', '.DS_Store', '.git', '.hg', 
-                       '.htaccess', '.htpasswd', '.Spotlight-V100', '.svn', '__MACOSX', 
-                       'ehthumbs.db', 'robots.txt', 'Thumbs.db', 'thumbs.tps']
-    
-    def get(self, p=''):
-        from flask import render_template, send_file
-        
-        hide_dotfile = request.args.get('hide-dotfile', request.cookies.get('hide-dotfile', 'no'))
+def make_file_router(root_path: str, key: str = "") -> APIRouter:
+    """Return an APIRouter with all file-browser endpoints configured."""
 
-        path = os.path.join(self.root, p)
+    router = APIRouter()
+    ignored = ['.bzr', '$RECYCLE.BIN', '.DAV', '.DS_Store', '.git', '.hg',
+               '.htaccess', '.htpasswd', '.Spotlight-V100', '.svn', '__MACOSX',
+               'ehthumbs.db', 'robots.txt', 'Thumbs.db', 'thumbs.tps']
+
+    _resolved_root = os.path.realpath(root_path)
+
+    def _safe_join(p: str):
+        """Return the real absolute path for *p* inside root_path, or None if it escapes."""
+        candidate = os.path.realpath(os.path.join(root_path, p))
+        if candidate != _resolved_root and not candidate.startswith(_resolved_root + os.sep):
+            return None
+        return candidate
+
+    async def _handle_get(request: Request, p: str):
+        from ..core.app import templates
+
+        hide_dotfile = request.query_params.get(
+            'hide-dotfile', request.cookies.get('hide-dotfile', 'no'))
+
+        path = _safe_join(p)
+        if path is None:
+            return Response(content='Forbidden', status_code=403)
 
         if os.path.isdir(path):
-            # Check if this directory is a qibocal report
+            # Qibocal report directory — render as report
             if is_qibocal_report(path):
-                # Use report viewer instead of directory listing
                 try:
                     version_data = get_qibo_versions(request=request)
-                    response = report_viewer(path, self.root, version_data['versions'], access_mode="file_browser")
-                    
-                    # Set cookie if we have fresh data
+                    response = report_viewer(path, root_path, request, version_data['versions'],
+                                            access_mode="file_browser")
                     if not version_data.get('from_cache', False):
-                        response.set_cookie('qibo_versions', 
-                                          version_data['cookie_data'],
-                                          max_age=24*60*60,  # 24 hours
-                                          httponly=True,
-                                          secure=False)
-                    
+                        response.set_cookie('qibo_versions', version_data['cookie_data'],
+                                            max_age=24 * 60 * 60, httponly=True, secure=False)
                     return response
-                except Exception as e:
-                    # If report viewer fails, fall back to regular directory listing
-                    # but add a warning message
-                    pass
-            
-            # Regular directory listing
+                except Exception:
+                    pass  # fall through to directory listing
+
             contents = []
             total = {'size': 0, 'dir': 0, 'file': 0}
-
             for filename in os.listdir(path):
-                if filename in self.ignored:
+                if filename in ignored:
                     continue
                 if hide_dotfile == 'yes' and filename[0] == '.':
                     continue
                 filepath = os.path.join(path, filename)
-                
                 try:
                     stat_res = os.stat(filepath)
                 except (PermissionError, OSError):
-                    # Skip files/directories we can't access
                     continue
-                    
-                info = {}
-                info['name'] = filename
-                info['mtime'] = stat_res.st_mtime
-                ft = get_type(stat_res.st_mode)
-                info['type'] = ft
-                
-                # Check if this directory is a qibocal report
+                info = {
+                    'name': filename,
+                    'mtime': stat_res.st_mtime,
+                    'type': get_type(stat_res.st_mode),
+                    'size': stat_res.st_size,
+                    'is_qibocal_report': False,
+                }
+                ft = info['type']
                 if ft == 'dir' and is_qibocal_report(filepath):
                     info['is_qibocal_report'] = True
-                else:
-                    info['is_qibocal_report'] = False
-                
                 total[ft] += 1
-                sz = stat_res.st_size
-                info['size'] = sz
-                total['size'] += sz
+                total['size'] += stat_res.st_size
                 contents.append(info)
-          
-            qibo_versions = get_qibo_versions(request=request)
-            response = make_response(render_template('file_browser.html', 
-                                   path=p, 
-                                   contents=contents, 
-                                   total=total, 
-                                   hide_dotfile=hide_dotfile, 
-                                   qibo_versions=qibo_versions['versions']), 
-                                200)
 
-            response.set_cookie('hide-dotfile', hide_dotfile, max_age=16070400, httponly=True, secure=False)
-            
-            # Set cookie if we have fresh data
+            qibo_versions = get_qibo_versions(request=request)
+            html = templates.get_template('file_browser.html').render(
+                request=request,
+                path=p,
+                contents=contents,
+                total=total,
+                hide_dotfile=hide_dotfile,
+                qibo_versions=qibo_versions['versions'],
+            )
+            response = HTMLResponse(content=html, status_code=200)
+            response.set_cookie('hide-dotfile', hide_dotfile,
+                                max_age=16070400, httponly=True, secure=False)
             if not qibo_versions.get('from_cache', False):
-                response.set_cookie('qibo_versions',
-                                    qibo_versions['cookie_data'], 
-                                    max_age=24*60*60,
-                                    httponly=True,
-                                    secure=False)
+                response.set_cookie('qibo_versions', qibo_versions['cookie_data'],
+                                    max_age=24 * 60 * 60, httponly=True, secure=False)
+            return response
 
         elif os.path.isfile(path):
-            # Check if this is an index.html file in a qibocal report directory
+            # index.html inside a qibocal report → render as report
             if os.path.basename(path).lower() == 'index.html':
                 parent_dir = os.path.dirname(path)
                 if is_qibocal_report(parent_dir):
-                    # Redirect to the report viewer for the parent directory
                     try:
                         version_data = get_qibo_versions(request=request)
-                        response = report_viewer(parent_dir, self.root, version_data['versions'], access_mode="file_browser")
-                        
-                        # Set cookie if we have fresh data
+                        response = report_viewer(parent_dir, root_path, request, version_data['versions'],
+                                                 access_mode="file_browser")
                         if not version_data.get('from_cache', False):
-                            response.set_cookie('qibo_versions', 
-                                              version_data['cookie_data'],
-                                              max_age=24*60*60,  # 24 hours
-                                              httponly=True,
-                                              secure=False)
-                        
+                            response.set_cookie('qibo_versions', version_data['cookie_data'],
+                                                max_age=24 * 60 * 60, httponly=True, secure=False)
                         return response
-                    except Exception as e:
-                        # If report viewer fails, fall back to regular file serving
+                    except Exception:
                         pass
-            
-            # Regular file serving
-            if 'Range' in request.headers:
+
+            # Range request
+            if 'range' in request.headers or 'Range' in request.headers:
                 start, end = get_range(request)
-                response = partial_response(path, start, end)
-            else:
-                filename, file_extension = os.path.splitext(path)
-                if file_extension in ['.html', '.yml', '.json']:
-                    response = send_file(path)
-                else:
-                    response = send_file(path, as_attachment=True, download_name=os.path.basename(path))
-        else:
-            response = make_response('Not found', 404)
-        return response
-    
-    def put(self, p=''):
-        if request.cookies.get('auth_cookie') == self.key:
-            path = os.path.join(self.root, p)
-            dir_path = os.path.dirname(path)
-            Path(dir_path).mkdir(parents=True, exist_ok=True)
+                return partial_response(path, start, end)
 
-            info = {}
-            if os.path.isdir(dir_path):
-                try:
-                    with open(path, 'wb') as f:
-                        f.write(request.stream.read())
-                except Exception as e:
-                    info['status'] = 'error'
-                    info['msg'] = str(e)
-                else:
-                    info['status'] = 'success'
-                    info['msg'] = 'File Saved'
-            else:
-                info['status'] = 'error'
-                info['msg'] = 'Invalid Operation'
-            res = make_response(json.JSONEncoder().encode(info), 201)
-            res.headers.add('Content-type', 'application/json')
+            _, ext = os.path.splitext(path)
+            if ext.lower() in ['.html', '.yml', '.json']:
+                return FileResponse(path)
+            return FileResponse(path, filename=os.path.basename(path))
         else:
-            info = {} 
-            info['status'] = 'error'
-            info['msg'] = 'Authentication failed'
-            res = make_response(json.JSONEncoder().encode(info), 401)
-            res.headers.add('Content-type', 'application/json')
-        return res
+            return Response(content='Not found', status_code=404)
 
-    def post(self, p=''):
-        if request.cookies.get('auth_cookie') == self.key:
-            path = os.path.join(self.root, p)
-            Path(path).mkdir(parents=True, exist_ok=True)
-    
-            info = {}
-            if os.path.isdir(path):
-                files = request.files.getlist('files[]')
-                for file in files:
-                    if file and file.filename:
-                        filename = secure_filename(file.filename)
-                        file.save(os.path.join(path, filename))
-                info['status'] = 'success'
-                info['msg'] = 'Files Saved'
-            else:
-                info['status'] = 'error'
-                info['msg'] = 'Invalid Operation'
-        else:
-            info = {} 
-            info['status'] = 'error'
-            info['msg'] = 'Authentication failed'
-            res = make_response(json.JSONEncoder().encode(info), 200)
-            res.headers.add('Content-type', 'application/json')
-        return res    
-    
-    def delete(self, p=''):
-        if request.cookies.get('auth_cookie') == self.key:
-            path = os.path.join(self.root, p)
-            dir_path = os.path.dirname(path)
-            Path(dir_path).mkdir(parents=True, exist_ok=True)
+    @router.get('/files/', name='files_root')
+    async def files_root(request: Request):
+        return await _handle_get(request, '')
 
-            info = {}
-            if os.path.isdir(dir_path):
-                try:
-                    if os.path.isfile(path):
-                        os.remove(path)
-                    else:
-                        os.rmdir(dir_path)
-                except Exception as e:
-                    info['status'] = 'error'
-                    info['msg'] = str(e)
-                else:
-                    info['status'] = 'success'
-                    info['msg'] = 'File Deleted'
-            else:
-                info['status'] = 'error'
-                info['msg'] = 'Invalid Operation'
-            res = make_response(json.JSONEncoder().encode(info), 204)
-            res.headers.add('Content-type', 'application/json')
-        else:
-            info = {}
-            info['status'] = 'error'
-            info['msg'] = 'Authentication failed'
-            res = make_response(json.JSONEncoder().encode(info), 401)
-            res.headers.add('Content-type', 'application/json')
-        return res
+    @router.get('/files/{p:path}', name='path_view')
+    async def path_view(request: Request, p: str):
+        return await _handle_get(request, p)
+
+    @router.put('/files/{p:path}', name='path_put')
+    async def path_put(request: Request, p: str):
+        if request.cookies.get('auth_cookie') != key:
+            info = {'status': 'error', 'msg': 'Authentication failed'}
+            return Response(content=json.dumps(info), status_code=401,
+                            media_type='application/json')
+        path = _safe_join(p)
+        if path is None:
+            return Response(content=json.dumps({'status': 'error', 'msg': 'Forbidden'}),
+                            status_code=403, media_type='application/json')
+        Path(os.path.dirname(path)).mkdir(parents=True, exist_ok=True)
+        try:
+            body = await request.body()
+            with open(path, 'wb') as f:
+                f.write(body)
+            info = {'status': 'success', 'msg': 'File Saved'}
+        except Exception as e:
+            info = {'status': 'error', 'msg': str(e)}
+        return Response(content=json.dumps(info), status_code=201,
+                        media_type='application/json')
+
+    @router.post('/files/{p:path}', name='path_post')
+    async def path_post(request: Request, p: str, files: list[UploadFile] = File(..., alias='files[]')):
+        if request.cookies.get('auth_cookie') != key:
+            info = {'status': 'error', 'msg': 'Authentication failed'}
+            return Response(content=json.dumps(info), status_code=401,
+                            media_type='application/json')
+        path = _safe_join(p)
+        if path is None:
+            return Response(content=json.dumps({'status': 'error', 'msg': 'Forbidden'}),
+                            status_code=403, media_type='application/json')
+        Path(path).mkdir(parents=True, exist_ok=True)
+        for file in files:
+            if file and file.filename:
+                filename = pathlib.Path(file.filename).name  # secure_filename(file.filename)
+                contents = await file.read()
+                with open(os.path.join(path, filename), 'wb') as f:
+                    f.write(contents)
+        info = {'status': 'success', 'msg': 'Files Saved'}
+        return Response(content=json.dumps(info), status_code=200,
+                        media_type='application/json')
+
+    @router.delete('/files/{p:path}', name='path_delete')
+    async def path_delete(request: Request, p: str):
+        if request.cookies.get('auth_cookie') != key:
+            info = {'status': 'error', 'msg': 'Authentication failed'}
+            return Response(content=json.dumps(info), status_code=401,
+                            media_type='application/json')
+        path = _safe_join(p)
+        if path is None:
+            return Response(content=json.dumps({'status': 'error', 'msg': 'Forbidden'}),
+                            status_code=403, media_type='application/json')
+        dir_path = os.path.dirname(path)
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+            elif os.path.isdir(path):
+                os.rmdir(path)
+            info = {'status': 'success', 'msg': 'File Deleted'}
+        except Exception as e:
+            info = {'status': 'error', 'msg': str(e)}
+        return Response(content=json.dumps(info), status_code=204,
+                        media_type='application/json')
+
+    return router
+

@@ -3,6 +3,7 @@ Experiment job submission and management functionality.
 """
 
 import os
+import glob
 import shutil
 import subprocess
 import tempfile
@@ -22,32 +23,26 @@ logger = get_logger(__name__)
 
 
 def generate_experiment_id(runcard_path: str, platform: str) -> str:
-    """Generate a unique experiment ID based on runcard content and timestamp."""
-    timestamp = int(time.time())
-    
-    # Create hash from runcard content and platform
+    """Generate a unique experiment ID: YYYYmmDD-<6-char hex hash>."""
+    now = datetime.now()
+    date_str = now.strftime('%Y%m%d')
+
     hasher = hashlib.md5()
     hasher.update(platform.encode())
-    hasher.update(str(timestamp).encode())
-    
+    hasher.update(now.isoformat().encode())
     if os.path.exists(runcard_path):
         with open(runcard_path, 'rb') as f:
             hasher.update(f.read())
-    
-    experiment_hash = hasher.hexdigest()[:8]
-    timestamp_hex = format(timestamp, '08x')
-    
-    return f"exp_{timestamp_hex}_{experiment_hash}"
+
+    return f"{date_str}-{hasher.hexdigest()[:6]}"
 
 
-def create_experiment_directory(experiment_id: str, config: Dict[str, Any]) -> str:
-    """Create experiment directory using standardized QDashboard paths."""
+def create_experiment_directory(experiment_id: str, platform: str, config: Dict[str, Any]) -> str:
+    """Create experiment directory: data_dir/<platform>/<YYYYMMDD>/<experiment_id>/"""
     data_dir = config.get('data_dir') or os.path.join(config['qd_root'], 'data')
-    experiment_dir = os.path.join(data_dir, experiment_id)
-    
-    # Create directory structure
+    date_str = experiment_id.split('-')[0]  # YYYYmmDD prefix
+    experiment_dir = os.path.join(data_dir, platform, date_str, experiment_id)
     ensure_directory_exists(experiment_dir)
-    
     return experiment_dir
 
 
@@ -288,10 +283,10 @@ def submit_experiment(runcard_path: str = None, runcard_data: Dict[str, Any] = N
                 temp_files_to_cleanup.append(temp_runcard_path)
             
             platform = runcard_data_parsed['platform']
-            
+
             # Generate experiment ID and create directory
             experiment_id = generate_experiment_id(temp_runcard_path, platform)
-            experiment_dir = create_experiment_directory(experiment_id, config)
+            experiment_dir = create_experiment_directory(experiment_id, platform, config)
             
             # Create final runcard in experiment directory
             if runcard_path:
@@ -443,7 +438,7 @@ def repeat_experiment(report_path: str, config: Dict[str, Any]) -> Dict[str, Any
         
         # Generate experiment ID for repeat experiment
         experiment_id = generate_experiment_id(runcard_path, platform)
-        experiment_dir = create_experiment_directory(experiment_id, config)
+        experiment_dir = create_experiment_directory(experiment_id, platform, config)
         
         # Copy runcard to experiment directory
         final_runcard_path, _ = prepare_runcard_from_path(runcard_path, experiment_dir)
@@ -544,15 +539,15 @@ def get_experiment_status(experiment_id: str, config: Dict[str, Any] = None) -> 
         if config:
             data_dir = config.get('data_dir') or os.path.join(config['qd_root'], 'data')
         else:
-            user_home = os.path.expanduser("~")
-            qd_root = os.path.normpath(os.getenv('QD_PATH', os.path.join(user_home, '.qdashboard')))
+            qd_root = os.path.normpath(os.getenv('QD_ROOT', os.path.expanduser('~/.qdashboard')))
             data_dir = os.path.join(qd_root, 'data')
-            
-        experiment_dir = os.path.join(data_dir, experiment_id)
-        metadata_path = os.path.join(experiment_dir, 'experiment_metadata.json')
-        
-        if not os.path.exists(metadata_path):
+
+        # Search across nested platform/date structure
+        pattern = os.path.join(data_dir, '*', '*', experiment_id, 'experiment_metadata.json')
+        matches = glob.glob(pattern)
+        if not matches:
             return None
+        metadata_path = matches[0]
         
         with open(metadata_path, 'r') as f:
             metadata = json.load(f)
@@ -583,25 +578,29 @@ def get_experiment_status(experiment_id: str, config: Dict[str, Any] = None) -> 
 
 
 def list_user_experiments(config: Dict[str, Any] = None) -> List[Dict[str, Any]]:
-    """List all experiments for the current user."""
+    """List all experiments, walking data_dir/<platform>/<date>/<id> structure."""
     try:
         if config:
             data_dir = config.get('data_dir') or os.path.join(config['qd_root'], 'data')
         else:
-            user_home = os.path.expanduser("~")
-            qd_root = os.path.normpath(os.getenv('QD_PATH', os.path.join(user_home, '.qdashboard')))
+            qd_root = os.path.normpath(os.getenv('QD_ROOT', os.path.expanduser('~/.qdashboard')))
             data_dir = os.path.join(qd_root, 'data')
-        
+
         if not os.path.exists(data_dir):
             return []
-        
+
         experiments = []
-        for experiment_id in os.listdir(data_dir):
-            experiment_path = os.path.join(data_dir, experiment_id)
-            if os.path.isdir(experiment_path):
-                status = get_experiment_status(experiment_id, config)
-                if status:
-                    experiments.append(status)
+        for metadata_path in glob.glob(os.path.join(data_dir, '*', '*', '*', 'experiment_metadata.json')):
+            try:
+                with open(metadata_path) as f:
+                    metadata = json.load(f)
+                experiment_id = metadata.get('experiment_id')
+                if experiment_id:
+                    status = get_experiment_status(experiment_id, config)
+                    if status:
+                        experiments.append(status)
+            except Exception:
+                pass
         
         # Sort by submission time (newest first)
         experiments.sort(key=lambda x: x.get('submitted_at', 0), reverse=True)
