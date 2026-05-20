@@ -8,6 +8,32 @@ QDashboard file browsing uses [flask-file-server](https://github.com/Wildog/flas
 
 ## Version History
 
+### v0.1.0 - ASGI Migration: Flask → FastAPI + Uvicorn (May 2026)
+
+#### Breaking Changes
+- **Python 3.10+ required** (was 3.8+)
+- **Flask and Werkzeug removed** — the WSGI stack is replaced by FastAPI + Uvicorn
+- Static assets now served at `/assets/...` (was `/static/...`)
+
+#### Core Migration
+- **FastAPI + Uvicorn**: Full ASGI rewrite of the web layer (`core/app.py`, `web/routes.py`)
+- **Async routes**: All route handlers converted to `async def`; SSE streaming uses `StreamingResponse` with `asyncio.sleep`
+- **File uploads**: Replaced `request.files` with FastAPI `UploadFile` + `await upload.read()`
+- **Static files**: `StaticFiles` mounted at `/assets`; Jinja2 templates updated from `url_for('static', filename=…)` to `url_for('assets', path=…)`
+- **File browser**: `PathView(MethodView)` replaced by `make_file_router()` factory returning an `APIRouter`
+- **Config**: Module-level `_config` dict with `set_config()` / `get_config()` — no longer requires Flask application context
+
+#### New Dependencies
+- `fastapi >= 0.111.0`
+- `uvicorn[standard] >= 0.29.0`
+- `python-multipart >= 0.0.9`
+- `aiofiles >= 23.0`
+- `jinja2 >= 3.1.0`
+
+#### Removed Dependencies
+- `flask >= 3.0.0`
+- `werkzeug >= 3.0.0`
+
 ### v0.0.3 - Configuration & Mixed Qubit Support (September 2025)
 
 #### Major Features

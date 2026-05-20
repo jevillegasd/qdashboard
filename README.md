@@ -10,7 +10,7 @@ A quantum computing dashboard with file browsing, experiment monitoring, QPU sta
 
 QDashboard is a web-based dashboard for quantum computing workflows. It provides an interface for file management, quantum experiment building, SLURM job monitoring, and quantum hardware platform management. Built on a file server foundation, QDashboard extends file browsing with quantum-specific functionalities. 
 
-The file server functionality is based on the [flask-file-server](https://github.com/Wildog/flask-file-server) project by Wildog.
+The file server functionality is based on the [flask-file-server](https://github.com/Wildog/flask-file-server) project by Wildog, rewritten for ASGI with FastAPI.
 
 ## Features
 
@@ -48,7 +48,7 @@ The file server functionality is based on the [flask-file-server](https://github
 ## Installation
 
 ### Prerequisites
-- Python >= 3.8
+- Python >= 3.10
 - Optional: qibo, qibolab, qibocal packages for full quantum functionality
 
 ### For Production
@@ -220,16 +220,21 @@ docker run -p 8000:8000 -e QD_BIND=0.0.0.0 -e QD_PORT=8000 -e QD_PATH=/data -e Q
 
 ## Dependencies
 
-- Flask >= 3.0.0
+- fastapi >= 0.111.0
+- uvicorn[standard] >= 0.29.0
+- python-multipart >= 0.0.9
+- aiofiles >= 23.0
+- jinja2 >= 3.1.0
 - humanize >= 4.0.0
 - pathlib2 >= 2.3.0
-- werkzeug >= 3.0.0
 - PyYAML >= 6.0.0
 
 ## Architecture
 
 QDashboard extends the file server capabilities with quantum computing specific features:
 
+- **ASGI Server**: FastAPI + Uvicorn replace the former Flask/Werkzeug WSGI stack
+- **Async-first**: SSE streaming and file uploads use native async handlers
 - **Quantum Package Integration**: Detection and monitoring of qibo ecosystem packages
 - **SLURM Integration**: Queue monitoring and job submission capabilities
 - **Report Rendering**: HTML report rendering with Plotly support and dark theme compatibility
@@ -320,15 +325,18 @@ The package provides two equivalent commands:
 - `--host HOST`: Host address to bind the server (default: 127.0.0.1)
 - `--root ROOT`: Root directory for file serving (default: user home)
 - `--auth-key KEY`: Authentication key for dashboard access
-- `--debug`: Enable Flask debug mode
+- `--debug`: Enable Uvicorn reload mode
 - `--version`: Show version information
 
 ## Requirements
 
 ### Core Dependencies
-- Python 3.8+
-- Flask 3.0+
-- Werkzeug 3.0+
+- Python 3.10+
+- FastAPI 0.111+
+- Uvicorn 0.29+
+- python-multipart 0.0.9+
+- aiofiles 23.0+
+- Jinja2 3.1+
 - PyYAML 6.0+
 - humanize 4.0+
 
@@ -339,6 +347,6 @@ The package provides two equivalent commands:
 
 ## Acknowledgments
 
-- File server functionality based on [flask-file-server](https://github.com/Wildog/flask-file-server) by [Wildog](https://github.com/Wildog).
+- File server functionality based on [flask-file-server](https://github.com/Wildog/flask-file-server) by [Wildog](https://github.com/Wildog), rewritten for ASGI.
 - Dark theme inspired by IBM Quantum Computing platform.
 - Built for quantum computing workflows using the qibo ecosystem.

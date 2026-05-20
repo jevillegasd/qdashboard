@@ -44,7 +44,7 @@ qdashboard/
 ## Module Descriptions
 
 ### Core (`qdashboard/core/`)
-- **app.py**: Flask application factory, template filter registration, configuration management
+- **app.py**: FastAPI application factory, static file mounting, Jinja2 template setup, filter registration
 - **config.py**: Centralized configuration management, environment variable handling, validation utilities
 
 ### Command Line Interface (`qdashboard/`)
@@ -67,8 +67,8 @@ qdashboard/
 - **job_submission.py**: SLURM job submission, experiment management, metadata handling
 
 ### Web Interface (`qdashboard/web/`)
-- **routes.py**: Flask route definitions, API endpoints
-- **file_browser.py**: File browser functionality (PathView class)
+- **routes.py**: FastAPI `APIRouter` route definitions, async API endpoints, SSE streaming
+- **file_browser.py**: File browser via `make_file_router()` factory returning an `APIRouter`
 - **reports.py**: Report viewing and asset handling
 
 ## Benefits of Modular Architecture
@@ -93,11 +93,16 @@ QDashboard uses a centralized configuration system:
 
 ### Configuration Access
 ```python
-# Recommended approach
-from qdashboard.core.config import get_app_config, get_temp_dir
+# Recommended approach — works outside request context
+from qdashboard.core.config import get_config, get_temp_dir
 
-config = get_app_config()
+config = get_config()
 temp_dir = get_temp_dir()
+
+# Inside a route handler
+def _get_config(request):
+    return request.app.state.config
+```
 ```
 
 ### Key Configuration Functions
@@ -107,7 +112,12 @@ temp_dir = get_temp_dir()
 - `get_logs_dir()`: Get logs directory
 - `ensure_directory_exists()`: Create directories safely
 
-## Migration from Monolithic Structure
+## Tech Stack
+
+- **ASGI server**: FastAPI ≥ 0.111, Uvicorn ≥ 0.29 (replaces Flask/Werkzeug WSGI)
+- **Templates**: Jinja2 ≥ 3.1 (server-side rendering, unchanged)
+- **File uploads**: python-multipart ≥ 0.0.9, aiofiles ≥ 23.0
+- **Python**: 3.10+
 
 The original `quantum_dashboard.py` (1,500+ lines) has been broken down into:
 - **Core app setup**: ~40 lines (+ 100 lines configuration management)

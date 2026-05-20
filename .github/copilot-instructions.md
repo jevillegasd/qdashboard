@@ -1,39 +1,41 @@
 # QDashboard — Copilot Instructions
 
-QDashboard is a **Flask-based web dashboard** for quantum computing workflows built around the [Qibo](https://github.com/qiboteam/qibo) stack. It is used by quantum researchers and engineers at TII to browse experiment files, monitor QPU/SLURM status, submit calibration jobs, and view qibocal reports.
+QDashboard is a **FastAPI/Uvicorn-based web dashboard** for quantum computing workflows built around the [Qibo](https://github.com/qiboteam/qibo) stack. It is used by quantum researchers and engineers at TII to browse experiment files, monitor QPU/SLURM status, submit calibration jobs, and view qibocal reports.
 
 ## Architecture
 
 ```
 qdashboard/
-├── core/           # Flask app factory (app.py) + centralized config (config.py)
-├── web/            # All routes (~20 endpoints in routes.py), file browser, report viewer
+├── core/           # FastAPI app factory (app.py) + centralized config (config.py)
+├── web/            # All routes (~25 endpoints in routes.py), file browser, report viewer
 ├── qpu/            # QPU health/monitoring, SLURM queue, platform git ops, topology
 ├── experiments/    # Qibocal protocol discovery, job submission, runcard generation
 ├── utils/          # Formatters (size, time, icons), logger
 ├── templates/      # Jinja2 HTML templates (Bootstrap 4 dark theme)
-└── assets/         # Static CSS/JS (Bootstrap, jQuery, custom)
+└── assets/         # Static CSS/JS served at /assets/ (Bootstrap, jQuery, custom)
 ```
 
 Key files to read before touching anything:
 - [qdashboard/web/routes.py](../qdashboard/web/routes.py) — all HTTP endpoints
-- [qdashboard/core/app.py](../qdashboard/core/app.py) — Flask factory and template filters
+- [qdashboard/core/app.py](../qdashboard/core/app.py) — FastAPI factory, static files, Jinja2 setup
 - [qdashboard/core/config.py](../qdashboard/core/config.py) — config constants and helpers
 - [ARCHITECTURE.md](../ARCHITECTURE.md) — high-level design overview
 
 ## Tech Stack
 
-- **Backend**: Python 3.10+, Flask ≥3.0, Werkzeug ≥3.0, PyYAML ≥6.0
-- **Frontend**: Jinja2 templates, Bootstrap 4.5, jQuery 3.5, Font Awesome 5
+- **Backend**: Python 3.10+, FastAPI ≥0.111, Uvicorn ≥0.29, python-multipart ≥0.0.9, aiofiles ≥23.0, PyYAML ≥6.0
+- **Frontend**: Jinja2 ≥3.1 templates (SSR), Bootstrap 4.5, jQuery 3.5, Font Awesome 5
 - **Quantum**: qibo ≥0.2, qibolab ==0.2.8, qibocal ≥0.2.3
 - **HPC**: SLURM integration (`squeue`, `sinfo`, `sbatch` shell calls)
 - **Dev tools**: black, flake8, mypy, pytest, pre-commit
 
 ## Code Conventions
 
-- **Config access**: always via `current_app.config['QDASHBOARD_CONFIG']` inside request context; outside, use `qdashboard.core.config` helpers.
+- **Config access**: in routes use `request.app.state.config` (via `_get_config(request)` helper in `routes.py`); outside request context use `qdashboard.core.config.get_config()`.
 - **Logging**: use the centralized logger from `qdashboard.utils.logger`; never use bare `print()`.
-- **Template filters**: `size_fmt`, `time_fmt`, `data_fmt`, `icon_fmt`, `humanize` are registered globally in `core/app.py` — use them in templates.
+- **Template rendering**: all routes use `templates.get_template('name.html').render(request=request, **ctx)` returning `HTMLResponse(content=html)`. The `request` kwarg is required for Starlette's Jinja2 `url_for` injection.
+- **Template filters**: `size_fmt`, `time_fmt`, `data_fmt`, `icon_fmt`, `humanize` are registered on `templates.env.filters` in `core/app.py` — use them in templates.
+- **Static assets**: always reference via `url_for('assets', path='css/x.css')` in templates (not `'static'`).
 - **Quantum optional deps**: guard imports with try/except and degrade gracefully when qibo/qibolab/qibocal are not installed.
 - **SLURM calls**: always use `subprocess.run` with a timeout; parse stdout text, never assume specific column order.
 - **Runcard format**: YAML files following the qibocal schema. Experiment IDs are `exp_<timestamp_hex>_<md5_hash>`.
@@ -44,8 +46,11 @@ Key files to read before touching anything:
 ## Routing Patterns
 
 New routes go in `qdashboard/web/routes.py`. Follow existing patterns:
-- JSON API responses: `flask.jsonify(...)` with a `success` boolean key.
-- SSE streaming: use `flask.Response` with `mimetype='text/event-stream'` and a generator.
+- All handlers are `async def` functions decorated with `@router.get/post(...)`.
+- JSON API responses: return a plain dict (FastAPI serializes it) or `Response(content=json.dumps(...), media_type='application/json')`.
+- HTML page responses: `HTMLResponse(content=templates.get_template('x.html').render(request=request, **ctx))`.
+- SSE streaming: return `StreamingResponse(async_generator(), media_type='text/event-stream')` with `await asyncio.sleep(N)` inside.
+- File uploads: use `runcard: UploadFile = File(...)` parameter + `await runcard.read()`.
 - Auth: check `request.headers.get('X-Auth-Key')` against config when auth key is set.
 
 ## Build & Test

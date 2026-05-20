@@ -9,6 +9,7 @@ import asyncio
 import time
 import shutil
 import yaml
+import traceback as _tb
 from typing import Optional
 from fastapi import APIRouter, Request, Form, File, UploadFile, Query
 from fastapi.responses import FileResponse, Response, StreamingResponse
@@ -41,6 +42,75 @@ def _no_cache_headers() -> dict:
         'Pragma': 'no-cache',
         'Expires': '0',
     }
+
+
+def _error_response(
+    request: Request,
+    exc: Exception,
+    body: dict = None,
+    status_code: int = 500,
+) -> Response:
+    """Build a JSON error response.
+
+    In debug mode the full traceback, exception type, and request context are
+    included so problems can be diagnosed directly in the browser / API client.
+    In production only the safe error message is returned.
+    """
+    debug = request.app.state.config.get('debug', False)
+    trace = _tb.format_exc()
+    logger.error("[%s %s] %s: %s\n%s",
+                 request.method, request.url.path,
+                 type(exc).__name__, exc, trace)
+    if body is None:
+        body = {'error': str(exc)}
+    if debug:
+        body['exception_type'] = type(exc).__name__
+        body['traceback'] = trace
+        body['request'] = f"{request.method} {request.url}"
+    return Response(
+        content=json.dumps(body),
+        status_code=status_code,
+        media_type='application/json',
+    )
+
+
+def _html_error_response(
+    request: Request,
+    exc: Exception,
+    status_code: int = 500,
+) -> HTMLResponse:
+    """Return an HTML error page.
+
+    In debug mode a styled traceback page is rendered so developers can see
+    the full stack without leaving the browser.
+    """
+    debug = request.app.state.config.get('debug', False)
+    trace = _tb.format_exc()
+    logger.error("[%s %s] %s: %s\n%s",
+                 request.method, request.url.path,
+                 type(exc).__name__, exc, trace)
+    if debug:
+        import html as _html
+        safe_trace = _html.escape(trace)
+        safe_msg   = _html.escape(str(exc))
+        safe_type  = _html.escape(type(exc).__name__)
+        content = (
+            '<html><head><title>QDashboard Error</title>'
+            '<style>body{background:#1a1a2e;color:#e0e0e0;font-family:monospace;padding:2rem}'
+            'h2{color:#ff6b6b}pre{background:#0d0d1a;padding:1.2rem;overflow:auto;'
+            'border-left:3px solid #ff6b6b;white-space:pre-wrap}'
+            '.ctx{color:#888;font-size:.85em;margin-bottom:1rem}</style></head><body>'
+            f'<h2>&#9888; {safe_type}</h2>'
+            f'<p class="ctx">{request.method} {request.url}</p>'
+            f'<pre>{safe_trace}</pre>'
+            '</body></html>'
+        )
+    else:
+        content = (
+            f'<html><body><h2>Internal Server Error</h2>'
+            f'<p>{status_code}: {type(exc).__name__}</p></body></html>'
+        )
+    return HTMLResponse(content=content, status_code=status_code)
 
 
 def register_routes(app, config):
@@ -138,8 +208,7 @@ async def latest(request: Request):
         logger.warning(f"Report not found: {last_path}")
         return _not_found_response(last_path)
     except Exception as e:
-        logger.error(f"Error loading report: {str(e)}")
-        return Response(content=f'Error loading report: {str(e)}', status_code=500)
+        return _html_error_response(request, e)
 
 
 @router.get("/report_assets/{filename:path}", name="report_assets")
@@ -156,8 +225,7 @@ async def report_assets(request: Request, filename: str):
         logger.warning(f"Asset not found: {filename}")
         return Response(content='Asset not found', status_code=404)
     except Exception as e:
-        logger.error(f'Error serving asset: {str(e)}')
-        return Response(content=f'Error serving asset: {str(e)}', status_code=500)
+        return _html_error_response(request, e)
 
 
 @router.post("/cancel_job", name="cancel_job")
@@ -178,13 +246,10 @@ async def cancel_job(request: Request):
         logger.warning("No job ID provided for cancellation")
         return {'status': 'error', 'message': 'No job ID provided'}
     except subprocess.TimeoutExpired:
-        logger.error("Cancel command timed out")
-        return Response(content=json.dumps({'status': 'error', 'message': 'Cancel command timed out'}),
-                        status_code=500, media_type='application/json')
+        return _error_response(request, TimeoutError('Cancel command timed out'),
+                               {'status': 'error', 'message': 'Cancel command timed out'})
     except Exception as e:
-        logger.error(f"Error cancelling job: {str(e)}")
-        return Response(content=json.dumps({'status': 'error', 'message': str(e)}),
-                        status_code=500, media_type='application/json')
+        return _error_response(request, e, {'status': 'error', 'message': str(e)})
 
 
 @router.get("/api/slurm_status", name="api_slurm_status")
@@ -209,9 +274,7 @@ async def api_slurm_status(request: Request):
         return Response(content=json.dumps(data), media_type='application/json',
                         headers=_no_cache_headers())
     except Exception as e:
-        logger.error(f"Error fetching SLURM status: {str(e)}")
-        return Response(content=json.dumps({'status': 'error', 'message': str(e)}),
-                        status_code=500, media_type='application/json')
+        return _error_response(request, e, {'status': 'error', 'message': str(e)})
 
 
 @router.get("/api/slurm_stream", name="api_slurm_stream")
@@ -244,8 +307,12 @@ async def api_slurm_stream(request: Request):
                         }
                         yield f"data: {json.dumps(event_data)}\n\n"
                 except Exception as e:
+                    trace = _tb.format_exc() if request.app.state.config.get('debug') else None
+                    payload = {'error': str(e), 'timestamp': time.time()}
+                    if trace:
+                        payload['traceback'] = trace
                     logger.warning(f"Error in SLURM stream: {str(e)}")
-                    yield f"data: {json.dumps({'error': str(e), 'timestamp': time.time()})}\n\n"
+                    yield f"data: {json.dumps(payload)}\n\n"
                 await asyncio.sleep(2)
         except asyncio.CancelledError:
             logger.info("Client disconnected from SLURM stream")
@@ -303,9 +370,7 @@ async def api_platforms_branches(request: Request):
                             status_code=500, media_type='application/json')
         return branches_info
     except Exception as e:
-        logger.error(f"Error retrieving branches: {str(e)}")
-        return Response(content=json.dumps({'error': str(e)}), status_code=500,
-                        media_type='application/json')
+        return _error_response(request, e)
 
 
 @router.post("/api/platforms/switch", name="api_platforms_switch")
@@ -348,9 +413,7 @@ async def api_platforms_switch(request: Request):
         logger.info(f"Switched to branch: {branch_name}")
         return response_data
     except Exception as e:
-        logger.error(f"Error switching branch: {str(e)}")
-        return Response(content=json.dumps({'error': str(e)}), status_code=500,
-                        media_type='application/json')
+        return _error_response(request, e)
 
 
 @router.get("/api/platforms/current", name="api_platforms_current")
@@ -368,9 +431,7 @@ async def api_platforms_current(request: Request):
                             status_code=500, media_type='application/json')
         return current_branch_info
     except Exception as e:
-        logger.error(f"Error retrieving current branch information: {str(e)}")
-        return Response(content=json.dumps({'error': str(e)}), status_code=500,
-                        media_type='application/json')
+        return _error_response(request, e)
 
 
 @router.post("/api/platforms/commit", name="api_platforms_commit")
@@ -390,9 +451,7 @@ async def api_platforms_commit(request: Request):
                             status_code=400, media_type='application/json')
         return result
     except Exception as e:
-        logger.error(f"Error committing changes: {str(e)}")
-        return Response(content=json.dumps({'error': str(e)}), status_code=500,
-                        media_type='application/json')
+        return _error_response(request, e)
 
 
 @router.post("/api/platforms/stash", name="api_platforms_stash")
@@ -412,9 +471,7 @@ async def api_platforms_stash(request: Request):
                             status_code=400, media_type='application/json')
         return result
     except Exception as e:
-        logger.error(f"Error stashing changes: {str(e)}")
-        return Response(content=json.dumps({'error': str(e)}), status_code=500,
-                        media_type='application/json')
+        return _error_response(request, e)
 
 
 @router.post("/api/platforms/discard", name="api_platforms_discard")
@@ -432,9 +489,7 @@ async def api_platforms_discard(request: Request):
                             status_code=400, media_type='application/json')
         return result
     except Exception as e:
-        logger.error(f"Error discarding changes: {str(e)}")
-        return Response(content=json.dumps({'error': str(e)}), status_code=500,
-                        media_type='application/json')
+        return _error_response(request, e)
 
 
 @router.get("/api/platforms/stashes", name="api_platforms_list_stashes")
@@ -452,9 +507,7 @@ async def api_platforms_list_stashes(request: Request):
                             status_code=400, media_type='application/json')
         return result
     except Exception as e:
-        logger.error(f"Error listing stashes: {str(e)}")
-        return Response(content=json.dumps({'error': str(e)}), status_code=500,
-                        media_type='application/json')
+        return _error_response(request, e)
 
 
 @router.post("/api/platforms/push", name="api_platforms_push")
@@ -472,9 +525,7 @@ async def api_platforms_push(request: Request):
                             status_code=400, media_type='application/json')
         return result
     except Exception as e:
-        logger.error(f"Error pushing changes: {str(e)}")
-        return Response(content=json.dumps({'error': str(e)}), status_code=500,
-                        media_type='application/json')
+        return _error_response(request, e)
 
 
 @router.get("/api/protocols", name="api_protocols")
@@ -571,9 +622,8 @@ async def qpu_topology_visualization_api(request: Request, platform: str):
     try:
         img_base64 = generate_topology_visualization(connectivity_data, topology_type)
     except Exception as e:
-        logger.error(f"Error generating topology visualization: {str(e)}")
-        return Response(content=json.dumps({'error': 'Failed to generate topology visualization'}),
-                        status_code=500, media_type='application/json')
+        return _error_response(request, e,
+                               {'error': 'Failed to generate topology visualization'})
     return {
         'topology_type': topology_type,
         'num_qubits': len(set([q for conn in connectivity_data for q in conn[:2]])),
@@ -680,9 +730,8 @@ async def qibocal_cli_action(request: Request, action: str,
                         'message': f'Qibocal {action} timed out (5 minutes)'}),
                         status_code=408, media_type='application/json')
     except Exception as e:
-        return Response(content=json.dumps({'success': False,
-                        'message': f'Error executing qibocal {action}: {str(e)}'}),
-                        status_code=500, media_type='application/json')
+        return _error_response(request, e,
+                               {'success': False, 'message': f'Error executing qibocal {action}: {str(e)}'})
 
 
 @router.post("/repeat_experiment", name="repeat_experiment_route")
@@ -699,10 +748,8 @@ async def repeat_experiment_route(request: Request,
         return Response(content=json.dumps(result), status_code=400,
                         media_type='application/json')
     except Exception as e:
-        logger.error(f"Error in repeat_experiment route: {str(e)}")
-        return Response(content=json.dumps({'success': False,
-                        'message': f'Error repeating experiment: {str(e)}'}),
-                        status_code=500, media_type='application/json')
+        return _error_response(request, e,
+                               {'success': False, 'message': f'Error repeating experiment: {str(e)}'})
 
 
 @router.post("/submit_experiment", name="submit_experiment_route")
@@ -731,10 +778,8 @@ async def submit_experiment_route(request: Request,
         finally:
             os.unlink(tmp_path)
     except Exception as e:
-        logger.error(f"Error in submit_experiment route: {str(e)}")
-        return Response(content=json.dumps({'success': False,
-                        'message': f'Error submitting experiment: {str(e)}'}),
-                        status_code=500, media_type='application/json')
+        return _error_response(request, e,
+                               {'success': False, 'message': f'Error submitting experiment: {str(e)}'})
 
 
 @router.post("/api/submit_experiment_data", name="submit_experiment_data_route")
@@ -767,10 +812,8 @@ async def submit_experiment_data_route(request: Request):
         return Response(content=json.dumps(result), status_code=400,
                         media_type='application/json')
     except Exception as e:
-        logger.error(f"Error in submit_experiment_data route: {str(e)}")
-        return Response(content=json.dumps({'success': False,
-                        'message': f'Error submitting experiment: {str(e)}'}),
-                        status_code=500, media_type='application/json')
+        return _error_response(request, e,
+                               {'success': False, 'message': f'Error submitting experiment: {str(e)}'})
 
 
 @router.get("/api/experiments", name="api_list_experiments")
@@ -781,10 +824,8 @@ async def api_list_experiments(request: Request):
         experiments = list_user_experiments(config)
         return {'success': True, 'experiments': experiments, 'count': len(experiments)}
     except Exception as e:
-        logger.error(f"Error listing experiments: {str(e)}")
-        return Response(content=json.dumps({'success': False,
-                        'message': f'Error listing experiments: {str(e)}'}),
-                        status_code=500, media_type='application/json')
+        return _error_response(request, e,
+                               {'success': False, 'message': f'Error listing experiments: {str(e)}'})
 
 
 @router.get("/api/experiments/{experiment_id}", name="api_experiment_status")
@@ -798,9 +839,7 @@ async def api_experiment_status(request: Request, experiment_id: str):
         return Response(content=json.dumps({'success': False, 'message': 'Experiment not found'}),
                         status_code=404, media_type='application/json')
     except Exception as e:
-        logger.error(f"Error getting experiment status: {str(e)}")
-        return Response(content=json.dumps({'success': False,
-                        'message': f'Error getting experiment status: {str(e)}'}),
-                        status_code=500, media_type='application/json')
+        return _error_response(request, e,
+                               {'success': False, 'message': f'Error getting experiment status: {str(e)}'})
 
 
