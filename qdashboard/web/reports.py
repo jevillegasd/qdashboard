@@ -98,9 +98,15 @@ def report_viewer(report_path, root_path, request, qibo_versions=None, access_mo
 
 def get_latest_report_path():
     """Get the path to the latest report from .last_report_path file."""
-    config = get_config()
-    logs_dir = config.get('logs_dir', os.path.join(config['root'], 'logs'))
-    last_report_path = config.get('last_report_path', os.path.join(logs_dir, 'last_report_path'))
+    from ..core.config import ConfigError, DEFAULT_QD_ROOT
+    try:
+        config = get_config()
+        logs_dir = config.get('logs_dir', os.path.join(config['root'], 'logs'))
+        last_report_path = config.get('last_report_path', os.path.join(logs_dir, 'last_report_path'))
+    except ConfigError:
+        root = os.path.expanduser(os.environ.get('QD_ROOT', DEFAULT_QD_ROOT))
+        logs_dir = os.path.expanduser(os.environ.get('QD_LOGS_DIR', os.path.join(root, 'logs')))
+        last_report_path = os.path.join(logs_dir, 'last_report_path')
 
     try:
         with open(last_report_path, 'r') as file:

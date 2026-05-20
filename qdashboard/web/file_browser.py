@@ -74,13 +74,24 @@ def make_file_router(root_path: str, key: str = "") -> APIRouter:
                '.htaccess', '.htpasswd', '.Spotlight-V100', '.svn', '__MACOSX',
                'ehthumbs.db', 'robots.txt', 'Thumbs.db', 'thumbs.tps']
 
+    _resolved_root = os.path.realpath(root_path)
+
+    def _safe_join(p: str):
+        """Return the real absolute path for *p* inside root_path, or None if it escapes."""
+        candidate = os.path.realpath(os.path.join(root_path, p))
+        if candidate != _resolved_root and not candidate.startswith(_resolved_root + os.sep):
+            return None
+        return candidate
+
     async def _handle_get(request: Request, p: str):
         from ..core.app import templates
 
         hide_dotfile = request.query_params.get(
             'hide-dotfile', request.cookies.get('hide-dotfile', 'no'))
 
-        path = os.path.join(root_path, p)
+        path = _safe_join(p)
+        if path is None:
+            return Response(content='Forbidden', status_code=403)
 
         if os.path.isdir(path):
             # Qibocal report directory — render as report
@@ -181,7 +192,10 @@ def make_file_router(root_path: str, key: str = "") -> APIRouter:
             info = {'status': 'error', 'msg': 'Authentication failed'}
             return Response(content=json.dumps(info), status_code=401,
                             media_type='application/json')
-        path = os.path.join(root_path, p)
+        path = _safe_join(p)
+        if path is None:
+            return Response(content=json.dumps({'status': 'error', 'msg': 'Forbidden'}),
+                            status_code=403, media_type='application/json')
         Path(os.path.dirname(path)).mkdir(parents=True, exist_ok=True)
         try:
             body = await request.body()
@@ -199,7 +213,10 @@ def make_file_router(root_path: str, key: str = "") -> APIRouter:
             info = {'status': 'error', 'msg': 'Authentication failed'}
             return Response(content=json.dumps(info), status_code=401,
                             media_type='application/json')
-        path = os.path.join(root_path, p)
+        path = _safe_join(p)
+        if path is None:
+            return Response(content=json.dumps({'status': 'error', 'msg': 'Forbidden'}),
+                            status_code=403, media_type='application/json')
         Path(path).mkdir(parents=True, exist_ok=True)
         for file in files:
             if file and file.filename:
@@ -217,7 +234,10 @@ def make_file_router(root_path: str, key: str = "") -> APIRouter:
             info = {'status': 'error', 'msg': 'Authentication failed'}
             return Response(content=json.dumps(info), status_code=401,
                             media_type='application/json')
-        path = os.path.join(root_path, p)
+        path = _safe_join(p)
+        if path is None:
+            return Response(content=json.dumps({'status': 'error', 'msg': 'Forbidden'}),
+                            status_code=403, media_type='application/json')
         dir_path = os.path.dirname(path)
         try:
             if os.path.isfile(path):
@@ -231,79 +251,4 @@ def make_file_router(root_path: str, key: str = "") -> APIRouter:
                         media_type='application/json')
 
     return router
-
-
-
-def is_qibocal_report(directory_path):
-    """
-    Check if a directory is a qibocal report by looking for required files.
-    
-    A qibocal report directory must contain both:
-    - meta.json
-    - runcard.yml
-    
-    Args:
-        directory_path (str): Path to the directory to check
-        
-    Returns:
-        bool: True if directory contains qibocal report files, False otherwise
-    """
-    if not os.path.isdir(directory_path):
-        return False
-    
-    try:
-        meta_json_path = os.path.join(directory_path, "meta.json")
-        runcard_yml_path = os.path.join(directory_path, "runcard.yml")
-        
-        return os.path.isfile(meta_json_path) and os.path.isfile(runcard_yml_path)
-    except (PermissionError, OSError):
-        # If we can't access the directory, assume it's not a qibocal report
-        return False
-
-
-def partial_response(path, start, end=None):
-    """Generate partial HTTP response for file streaming."""
-    file_size = os.path.getsize(path)
-
-    if end is None:
-        end = file_size - 1
-    end = min(end, file_size - 1)
-    length = end - start + 1
-
-    with open(path, 'rb') as fd:
-        fd.seek(start)
-        bytes_data = fd.read(length)
-    assert len(bytes_data) == length
-
-    response = Response(
-        bytes_data,
-        206,
-        mimetype=mimetypes.guess_type(path)[0],
-        direct_passthrough=True,
-    )
-    response.headers.add(
-        'Content-Range', 'bytes {0}-{1}/{2}'.format(
-            start, end, file_size,
-        ),
-    )
-    response.headers.add(
-        'Accept-Ranges', 'bytes'
-    )
-    return response
-
-
-def get_range(request):
-    """Parse HTTP Range header."""
-    range_header = request.headers.get('Range')
-    m = re.match('bytes=(?P<start>\d+)-(?P<end>\d+)?', range_header)
-    if m:
-        start = m.group('start')
-        end = m.group('end')
-        start = int(start)
-        if end is not None:
-            end = int(end)
-        return start, end
-    else:
-        return 0, None
-
 

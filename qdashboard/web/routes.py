@@ -3,6 +3,7 @@ Main application routes and endpoints.
 """
 
 import os
+import re
 import subprocess
 import json
 import asyncio
@@ -113,6 +114,15 @@ def _html_error_response(
     return HTMLResponse(content=content, status_code=status_code)
 
 
+def _safe_path_join(base: str, user_path: str) -> str | None:
+    """Return realpath of user_path relative to base, or None if it escapes base."""
+    resolved_base = os.path.realpath(base)
+    candidate = os.path.realpath(os.path.join(base, user_path))
+    if candidate != resolved_base and not candidate.startswith(resolved_base + os.sep):
+        return None
+    return candidate
+
+
 def register_routes(app, config):
     """Register the APIRouter on the FastAPI app."""
     app.include_router(router)
@@ -148,18 +158,37 @@ async def dashboard(request: Request):
     return response
 
 
+_QPU_NAME_RE = re.compile(r'^[A-Za-z0-9_-]{1,64}$')
+
+
 @router.get("/qqsubmit", name="qqsubmit", include_in_schema=False)
 async def qqsubmit(request: Request, qpu: Optional[str] = Query(None)):
     """Submit a job to the SLURM queue."""
     from ..core.app import templates
 
+    if not qpu or not _QPU_NAME_RE.match(qpu):
+        logger.warning(f"Invalid QPU name rejected: {qpu!r}")
+        return Response(content='Invalid QPU name', status_code=400)
+
     config = _get_config(request)
+    script_path = os.path.realpath(os.path.join(config['root'], "work/qqsubmit.sh"))
+    resolved_root = os.path.realpath(config['root'])
+    if not script_path.startswith(resolved_root + os.sep) and script_path != resolved_root:
+        logger.error(f"Script path escapes root: {script_path}")
+        return Response(content='Forbidden', status_code=403)
+
     os_process = subprocess.Popen(
-        ["bash", os.path.join(config['root'], "work/qqsubmit.sh"), config['home_path'], qpu],
+        ["bash", script_path, config['home_path'], qpu],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )
-    stdout, stderr = os_process.communicate()
-    out_string = stdout.decode('utf-8').replace('\n', '<br>')
+    try:
+        stdout, stderr = os_process.communicate(timeout=60)
+    except subprocess.TimeoutExpired:
+        os_process.kill()
+        os_process.communicate()
+        logger.error(f"qqsubmit timed out for QPU: {qpu}")
+        return Response(content='Job submission timed out', status_code=504)
+    out_string = stdout.decode('utf-8', errors='replace').replace('\n', '<br>')
     logger.info(f"Job submitted to SLURM queue for QPU: {qpu}")
     html = templates.get_template('job_submission.html').render(
         request=request, output_content=out_string)
@@ -629,8 +658,8 @@ async def qpu_topology_visualization_api(request: Request, platform: str):
     if not qrc_path:
         return Response(content=json.dumps({'error': 'QPU platforms directory not available'}),
                         status_code=404, media_type='application/json')
-    qpu_path = os.path.join(qrc_path, platform)
-    if not os.path.exists(qpu_path):
+    qpu_path = _safe_path_join(qrc_path, platform)
+    if qpu_path is None or not os.path.exists(qpu_path):
         return Response(content=json.dumps({'error': 'QPU not found'}),
                         status_code=404, media_type='application/json')
     connectivity_data = qpu_connectivity(platform)
@@ -663,8 +692,8 @@ async def qpu_qubits_api(request: Request, platform: str):
     if not qrc_path:
         return Response(content=json.dumps({'error': 'QPU platforms directory not available'}),
                         status_code=404, media_type='application/json')
-    qpu_path = os.path.join(qrc_path, platform)
-    if not os.path.exists(qpu_path):
+    qpu_path = _safe_path_join(qrc_path, platform)
+    if qpu_path is None or not os.path.exists(qpu_path):
         return Response(content=json.dumps({'error': 'QPU not found'}),
                         status_code=404, media_type='application/json')
 
@@ -703,8 +732,8 @@ async def qpu_calibration_api(request: Request, platform: str):
     if not platforms_path:
         return Response(content=json.dumps({'error': 'QPU platforms directory not available'}),
                         status_code=404, media_type='application/json')
-    calibration_path = os.path.join(platforms_path, platform, 'calibration.json')
-    if os.path.exists(calibration_path):
+    calibration_path = _safe_path_join(platforms_path, os.path.join(platform, 'calibration.json'))
+    if calibration_path and os.path.exists(calibration_path):
         with open(calibration_path, 'r') as f:
             calibration_data = json.load(f)
         return calibration_data
@@ -718,7 +747,12 @@ async def qibocal_cli_action(request: Request, action: str,
                               report_path: str = Form(...)):
     """Execute qibocal CLI commands."""
     config = _get_config(request)
-    full_report_path = os.path.join(config['root'], report_path)
+    full_report_path = _safe_path_join(config['root'], report_path)
+    if full_report_path is None:
+        logger.warning(f"Path traversal attempt in qibocal_cli_action: {report_path!r}")
+        return Response(content=json.dumps({'success': False,
+                        'message': 'Invalid report path'}),
+                        status_code=400, media_type='application/json')
     if not os.path.exists(full_report_path):
         return Response(content=json.dumps({'success': False,
                         'message': f'Report path does not exist: {report_path}'}),
@@ -769,7 +803,13 @@ async def repeat_experiment_route(request: Request,
     """Repeat an experiment by submitting it to SLURM."""
     try:
         config = _get_config(request)
-        result = repeat_experiment(report_path, config)
+        safe = _safe_path_join(config['root'], report_path)
+        if safe is None:
+            logger.warning(f"Path traversal attempt in repeat_experiment_route: {report_path!r}")
+            return Response(content=json.dumps({'success': False,
+                            'message': 'Invalid report path'}),
+                            status_code=400, media_type='application/json')
+        result = repeat_experiment(safe, config)
         if result['success']:
             logger.info(f"Experiment repeat submitted: {result['experiment_id']}")
             return result
