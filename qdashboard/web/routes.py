@@ -204,7 +204,8 @@ async def latest(request: Request):
         logger.info(f"Latest report viewed: {last_path}")
         return res
     except FileNotFoundError:
-        last_path = "/" + last_path.replace(config['home_path'], "").lstrip("/")
+        data_dir = config.get('data_dir', os.path.join(config['root'], 'data'))
+        last_path = "/" + last_path.replace(data_dir, "").lstrip("/")
         logger.warning(f"Report not found: {last_path}")
         return _not_found_response(last_path)
     except Exception as e:
