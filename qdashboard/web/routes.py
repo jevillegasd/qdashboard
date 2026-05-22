@@ -22,7 +22,8 @@ from ..qpu.slurm import get_slurm_status, get_slurm_output, parse_slurm_log_for_
 from ..qpu.topology import qpu_connectivity, infer_topology_from_connectivity, generate_topology_visualization
 from ..experiments.protocols import get_qibocal_protocols, get_protocol_attributes
 from ..experiments import submit_experiment, repeat_experiment, get_experiment_status, list_user_experiments
-from ..web.reports import report_viewer, get_latest_report_path
+from ..experiments.job_submission import find_latest_experiment
+from ..web.reports import report_viewer, get_latest_report_path, get_report_fragment
 from ..utils.formatters import yaml_response, json_response
 from qdashboard.utils.logger import get_logger
 from packaging.version import parse as parse_version
@@ -900,6 +901,31 @@ async def api_list_experiments(request: Request):
                                {'success': False, 'message': f'Error listing experiments: {str(e)}'})
 
 
+# ------------------------------------------------------------------ #
+# Latest experiment for a given protocol/platform/qubits              #
+# ------------------------------------------------------------------ #
+
+@router.get("/api/experiments/latest", name="api_experiments_latest", tags=["Experiments"],
+            summary="Find the most recent completed experiment for a protocol on a platform/qubits")
+async def api_experiments_latest(
+    request: Request,
+    platform: str = Query(...),
+    protocol: str = Query(...),
+    qubits: str = Query(""),
+):
+    """Return metadata for the latest completed experiment matching the filters."""
+    try:
+        config = _get_config(request)
+        qubit_list = [q.strip() for q in qubits.split(',') if q.strip()] if qubits else []
+        result = find_latest_experiment(platform, protocol, qubit_list, config)
+        if result is None:
+            return Response(content=json.dumps({'found': False}),
+                            status_code=404, media_type='application/json')
+        return {'found': True, **result}
+    except Exception as e:
+        return _error_response(request, e, {'found': False, 'error': str(e)})
+
+
 @router.get("/api/experiments/{experiment_id}", name="api_experiment_status", tags=["Experiments"],
             summary="Get the status and metadata of a single experiment")
 async def api_experiment_status(request: Request, experiment_id: str):
@@ -916,3 +942,222 @@ async def api_experiment_status(request: Request, experiment_id: str):
                                {'success': False, 'message': f'Error getting experiment status: {str(e)}'})
 
 
+# ------------------------------------------------------------------ #
+# QPU raw parameters file (JSONEditor)                                #
+# ------------------------------------------------------------------ #
+
+@router.get("/api/qpu_parameters_file/{platform}", name="qpu_parameters_file_get", tags=["QPU"],
+            summary="Read raw parameters.json for a platform")
+async def qpu_parameters_file_get(request: Request, platform: str):
+    """Return the raw contents of the platform's parameters.json."""
+    try:
+        config = _get_config(request)
+        platforms_path = get_platforms_path(config.get('root', ''))
+        if not platforms_path:
+            return Response(content=json.dumps({'error': 'Platforms directory not configured'}),
+                            status_code=503, media_type='application/json')
+        params_file = _safe_path_join(platforms_path, os.path.join(platform, 'parameters.json'))
+        if params_file is None:
+            return Response(content=json.dumps({'error': 'Invalid platform path'}),
+                            status_code=400, media_type='application/json')
+        if not os.path.exists(params_file):
+            return Response(content=json.dumps({'error': f'parameters.json not found for {platform}'}),
+                            status_code=404, media_type='application/json')
+        with open(params_file) as f:
+            data = json.load(f)
+        return Response(content=json.dumps(data), media_type='application/json')
+    except Exception as e:
+        return _error_response(request, e, {'error': str(e)})
+
+
+@router.put("/api/qpu_parameters_file/{platform}", name="qpu_parameters_file_put", tags=["QPU"],
+            summary="Write raw parameters.json for a platform")
+async def qpu_parameters_file_put(request: Request, platform: str):
+    """Overwrite the platform's parameters.json with the request body JSON."""
+    try:
+        config = _get_config(request)
+        platforms_path = get_platforms_path(config.get('root', ''))
+        if not platforms_path:
+            return Response(content=json.dumps({'success': False,
+                            'message': 'Platforms directory not configured'}),
+                            status_code=503, media_type='application/json')
+        params_file = _safe_path_join(platforms_path, os.path.join(platform, 'parameters.json'))
+        if params_file is None:
+            return Response(content=json.dumps({'success': False, 'message': 'Invalid platform path'}),
+                            status_code=400, media_type='application/json')
+        if not os.path.exists(params_file):
+            return Response(content=json.dumps({'success': False,
+                            'message': f'parameters.json not found for {platform}'}),
+                            status_code=404, media_type='application/json')
+        try:
+            new_data = await request.json()
+        except Exception:
+            return Response(content=json.dumps({'success': False, 'message': 'Invalid JSON body'}),
+                            status_code=400, media_type='application/json')
+        # Atomic write via temp file
+        tmp_path = params_file + '.tmp'
+        with open(tmp_path, 'w') as f:
+            json.dump(new_data, f, indent=2)
+        os.replace(tmp_path, params_file)
+        logger.info(f"Updated parameters.json for platform '{platform}'")
+        return {'success': True, 'message': 'Parameters saved successfully'}
+    except Exception as e:
+        return _error_response(request, e, {'success': False, 'message': str(e)})
+
+
+# ------------------------------------------------------------------ #
+# Report fragment (inline embedding)                                  #
+# ------------------------------------------------------------------ #
+
+@router.get("/api/experiment_report/{experiment_id}", name="api_experiment_report", tags=["Experiments"],
+            summary="Return extracted head CSS and body HTML for a qibocal report")
+async def api_experiment_report(request: Request, experiment_id: str):
+    """Return head_css and body_html for embedding a report inline."""
+    try:
+        config = _get_config(request)
+        data_dir = config.get('data_dir') or os.path.join(config.get('root', ''), 'data')
+        import glob as _glob
+        matches = _glob.glob(os.path.join(data_dir, '*', '*', experiment_id, 'output'))
+        if not matches:
+            return Response(content=json.dumps({'error': 'Experiment not found'}),
+                            status_code=404, media_type='application/json')
+        output_dir = matches[0]
+        if not os.path.exists(os.path.join(output_dir, 'index.html')):
+            return Response(content=json.dumps({'error': 'Report not ready'}),
+                            status_code=404, media_type='application/json')
+        fragment = get_report_fragment(experiment_id, output_dir)
+        return Response(content=json.dumps(fragment), media_type='application/json')
+    except Exception as e:
+        return _error_response(request, e, {'error': str(e)})
+
+
+# ------------------------------------------------------------------ #
+# Experiment output asset serving                                     #
+# ------------------------------------------------------------------ #
+
+@router.get("/api/experiment_assets/{experiment_id}/{filename:path}",
+            name="api_experiment_assets", include_in_schema=False)
+async def api_experiment_assets(request: Request, experiment_id: str, filename: str):
+    """Serve static assets from an experiment's output directory."""
+    try:
+        config = _get_config(request)
+        data_dir = config.get('data_dir') or os.path.join(config.get('root', ''), 'data')
+        import glob as _glob
+        matches = _glob.glob(os.path.join(data_dir, '*', '*', experiment_id, 'output'))
+        if not matches:
+            return Response(status_code=404)
+        output_dir = matches[0]
+        asset_path = _safe_path_join(output_dir, filename)
+        if asset_path is None or not os.path.isfile(asset_path):
+            return Response(status_code=404)
+        return FileResponse(asset_path)
+    except Exception:
+        return Response(status_code=404)
+
+
+# ------------------------------------------------------------------ #
+# Experiment history UI + API                                         #
+# ------------------------------------------------------------------ #
+
+@router.get("/history", name="history", include_in_schema=False)
+async def history_page(request: Request):
+    """Experiment history browser page."""
+    from ..core.app import templates
+    try:
+        config = _get_config(request)
+        qibo_versions = get_qibo_versions()
+        qpus = get_qpu_list()
+        # Fetch distinct protocols from DB for filter dropdowns
+        protocols_list = []
+        try:
+            from ..db.database import get_db_connection, get_distinct_protocols, get_distinct_qpus
+            with get_db_connection(config) as conn:
+                protocols_list = get_distinct_protocols(conn)
+                qpus = get_distinct_qpus(conn) or qpus
+        except Exception:
+            pass
+        html = templates.get_template('history.html').render(
+            request=request,
+            qibo_versions=qibo_versions,
+            qpus=qpus,
+            protocols=protocols_list,
+        )
+        return HTMLResponse(content=html)
+    except Exception as e:
+        return _html_error_response(request, e)
+
+
+@router.get("/api/history", name="api_history_list", tags=["Experiments"],
+            summary="Paginated experiment history")
+async def api_history_list(
+    request: Request,
+    platform: str = Query(""),
+    protocol: str = Query(""),
+    status: str = Query(""),
+    fit: str = Query(""),
+    date_from: str = Query(""),
+    date_to: str = Query(""),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(25, ge=1, le=100),
+):
+    """Return paginated experiment history rows from the DB."""
+    try:
+        config = _get_config(request)
+        from ..db.database import get_db_connection, query_runs, count_runs
+        offset = (page - 1) * per_page
+        with get_db_connection(config) as conn:
+            rows = query_runs(conn, platform=platform, protocol=protocol,
+                              status=status, fit=fit, date_from=date_from,
+                              date_to=date_to, limit=per_page, offset=offset)
+            total = count_runs(conn, platform=platform, protocol=protocol,
+                               status=status, fit=fit, date_from=date_from, date_to=date_to)
+        return {
+            'runs': rows,
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'pages': max(1, (total + per_page - 1) // per_page),
+        }
+    except Exception as e:
+        return _error_response(request, e, {'error': str(e)})
+
+
+@router.get("/api/history/{experiment_id}", name="api_history_detail", tags=["Experiments"],
+            summary="Get a single experiment history record")
+async def api_history_detail(request: Request, experiment_id: str):
+    """Return a single experiment run record from the history DB."""
+    try:
+        config = _get_config(request)
+        from ..db.database import get_db_connection, get_run
+        with get_db_connection(config) as conn:
+            run = get_run(conn, experiment_id)
+        if run is None:
+            return Response(content=json.dumps({'error': 'Not found'}),
+                            status_code=404, media_type='application/json')
+        return run
+    except Exception as e:
+        return _error_response(request, e, {'error': str(e)})
+
+
+@router.post("/api/history/{experiment_id}/refresh", name="api_history_refresh", tags=["Experiments"],
+             summary="Re-scan an experiment directory and update the history DB")
+async def api_history_refresh(request: Request, experiment_id: str):
+    """Re-scan experiment directory and update the DB row."""
+    try:
+        config = _get_config(request)
+        from ..db.database import get_db_connection, refresh_run_status
+        data_dir = config.get('data_dir') or os.path.join(config.get('root', ''), 'data')
+        import glob as _glob
+        matches = _glob.glob(os.path.join(data_dir, '*', '*', experiment_id))
+        if not matches:
+            return Response(content=json.dumps({'success': False, 'error': 'Experiment not found'}),
+                            status_code=404, media_type='application/json')
+        exp_dir = matches[0]
+        with get_db_connection(config) as conn:
+            updated = refresh_run_status(conn, experiment_id, exp_dir)
+        if updated is None:
+            return Response(content=json.dumps({'success': False, 'error': 'Could not scan experiment'}),
+                            status_code=500, media_type='application/json')
+        return {'success': True, 'run': updated}
+    except Exception as e:
+        return _error_response(request, e, {'success': False, 'error': str(e)})

@@ -418,6 +418,15 @@ def get_protocol_attributes(protocol: dict) -> dict:
             for name, field_type in data_class.__annotations__.items():
                 attributes["data"][name] = str(field_type)
 
+        # Extract parameter-class docstring as a human-readable description
+        description = ""
+        try:
+            if parameters_class and parameters_class.__doc__:
+                description = inspect.cleandoc(parameters_class.__doc__)[:500]
+        except Exception:
+            pass
+
+        attributes["description"] = description
         return attributes
 
     except (ImportError, AttributeError, KeyError) as e:
@@ -426,5 +435,6 @@ def get_protocol_attributes(protocol: dict) -> dict:
         return {
             "inputs": {"error": "Could not retrieve attributes."},
             "results": {"error": "Could not retrieve attributes."},
-            "data": {"error": "Could not retrieve attributes."}
+            "data": {"error": "Could not retrieve attributes."},
+            "description": "",
         }

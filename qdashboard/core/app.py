@@ -96,6 +96,19 @@ def create_app(config: dict = None) -> FastAPI:
     # Store config in app state for access via request.app.state.config
     app.state.config = config or {}
 
+    # Startup: initialise experiment history DB in a thread-pool executor
+    # so it does not block the event loop. Errors are non-fatal.
+    @app.on_event("startup")
+    async def _startup_init_db():
+        import asyncio
+        from ..db.database import init_db as _init_db
+        _cfg = config or {}
+        try:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, _init_db, _cfg)
+        except Exception as _exc:
+            logger.warning(f"DB init failed (non-fatal): {_exc}")
+
     # Mount static files at /assets
     app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 

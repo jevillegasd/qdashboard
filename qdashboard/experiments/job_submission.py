@@ -348,7 +348,40 @@ def submit_experiment(runcard_path: str = None, runcard_data: Dict[str, Any] = N
             }
             
             save_experiment_metadata(experiment_dir, metadata)
-            
+
+            # Write to experiment history DB (non-fatal)
+            try:
+                from ..db.database import get_db_connection, get_or_create_qpu, upsert_experiment_run, add_qpu_qubits
+                with get_db_connection(config) as conn:
+                    qpu_id = get_or_create_qpu(conn, platform)
+                    actions = runcard_data_parsed.get('actions') or {}
+                    first_action = next(iter(actions.values()), {})
+                    protocol_id = first_action.get('id', 'unknown')
+                    all_qubits: set = set()
+                    for action in actions.values():
+                        targets = action.get('targets') or action.get('qubits') or []
+                        if isinstance(targets, (list, tuple)):
+                            all_qubits.update(str(q) for q in targets)
+                        elif targets:
+                            all_qubits.add(str(targets))
+                    qubit_list = sorted(all_qubits)
+                    if qubit_list:
+                        add_qpu_qubits(conn, qpu_id, qubit_list)
+                    upsert_experiment_run(conn, {
+                        'experiment_id': experiment_id,
+                        'qpu_id': qpu_id,
+                        'protocol_id': protocol_id,
+                        'protocol_name': protocol_id.replace('_', ' ').title(),
+                        'target_qubits': qubit_list,
+                        'submitted_at': metadata['submitted_at'],
+                        'slurm_job_id': job_id,
+                        'status': 'pending',
+                        'runcard_path': final_runcard_path,
+                        'output_dir': metadata['output_dir'],
+                    })
+            except Exception as _db_exc:
+                logger.warning(f"DB write failed (non-fatal): {_db_exc}")
+
             # Update last report path using config
             last_report_path_file = config.get('last_report_path') or os.path.join(config['logs_dir'], 'last_report_path')
             ensure_directory_exists(os.path.dirname(last_report_path_file))
@@ -610,3 +643,98 @@ def list_user_experiments(config: Dict[str, Any] = None) -> List[Dict[str, Any]]
     except Exception as e:
         logger.error(f"Error listing user experiments: {str(e)}")
         return []
+
+
+def find_latest_experiment(
+    platform: str,
+    protocol_id: str,
+    qubits: List[str],
+    config: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """
+    Find the most recent completed experiment for a given platform, protocol, and qubit set.
+
+    Walks data_dir/<platform>/<date>/<experiment_id>/ in reverse-chronological order,
+    reads each runcard.yml, and returns metadata for the first match where:
+      - runcard platform matches *platform*
+      - any action has id == *protocol_id*
+      - qubit set is a subset of that action's targets
+      - output/index.html exists (report is available)
+
+    Returns None if no matching experiment is found.
+    """
+    data_dir = config.get("data_dir") or os.path.join(
+        config.get("root", os.path.expanduser("~/.qdashboard")), "data"
+    )
+    platform_dir = os.path.join(data_dir, platform)
+    if not os.path.isdir(platform_dir):
+        return None
+
+    qubit_set = set(qubits)
+
+    # Collect all experiment dirs, sort newest-first
+    date_dirs = sorted(
+        [d for d in os.listdir(platform_dir) if os.path.isdir(os.path.join(platform_dir, d))],
+        reverse=True,
+    )
+
+    scanned = 0
+    for date_dir in date_dirs:
+        full_date_dir = os.path.join(platform_dir, date_dir)
+        exp_ids = sorted(os.listdir(full_date_dir), reverse=True)
+        for exp_id in exp_ids:
+            exp_dir = os.path.join(full_date_dir, exp_id)
+            if not os.path.isdir(exp_dir):
+                continue
+            scanned += 1
+            if scanned > 200:
+                return None
+
+            # Must have a completed report
+            if not os.path.exists(os.path.join(exp_dir, "output", "index.html")):
+                continue
+
+            # Read runcard
+            runcard_path = os.path.join(exp_dir, "runcard.yml")
+            if not os.path.exists(runcard_path):
+                continue
+            try:
+                with open(runcard_path) as f:
+                    rc = yaml.safe_load(f)
+                if not rc or rc.get("platform") != platform:
+                    continue
+                actions = rc.get("actions") or {}
+                match = False
+                for action in actions.values():
+                    if action.get("id") != protocol_id:
+                        continue
+                    targets = action.get("targets") or action.get("qubits") or []
+                    if qubit_set and not qubit_set.issubset(set(str(q) for q in targets)):
+                        continue
+                    match = True
+                    break
+                if not match:
+                    continue
+            except Exception:
+                continue
+
+            # Read metadata
+            meta_path = os.path.join(exp_dir, "experiment_metadata.json")
+            try:
+                with open(meta_path) as f:
+                    metadata = json.load(f)
+            except Exception:
+                metadata = {}
+
+            return {
+                "experiment_id": exp_id,
+                "experiment_dir": exp_dir,
+                "output_dir": os.path.join(exp_dir, "output"),
+                "platform": platform,
+                "protocol_id": protocol_id,
+                "submitted_at": metadata.get("submitted_at"),
+                "job_id": metadata.get("job_id"),
+            }
+
+    return None
+

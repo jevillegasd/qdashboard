@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QDashboard - Experiment History</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="{{url_for('assets', path='css/dashboard.css')}}">
+    <link rel="stylesheet" href="{{url_for('assets', path='css/menu.css')}}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        .history-filter-bar { background: #2c2c2c; border-bottom: 1px solid #444; padding: .75rem 1rem; position: sticky; top: 0; z-index: 100; }
+        .history-filter-bar .form-control, .history-filter-bar .btn { font-size: .8rem; }
+        .history-table th { font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: #aaa; border-bottom: 1px solid #444; }
+        .history-table td { font-size: .82rem; vertical-align: middle; border-color: #2a2a2a; }
+        .history-table tr:hover { background: #252525; }
+        .badge-pending   { background: #6c757d; }
+        .badge-running   { background: #fd7e14; }
+        .badge-completed { background: #198754; }
+        .badge-failed    { background: #dc3545; }
+        .badge-fit-pass  { background: #198754; }
+        .badge-fit-partial { background: #ffc107; color: #111; }
+        .badge-fit-fail  { background: #dc3545; }
+        .badge-fit-unknown { background: #6c757d; }
+        .exec-time { font-family: monospace; }
+        .pagination .page-item.active .page-link { background: #0f62fe; border-color: #0f62fe; }
+        .pagination .page-link { background: #2c2c2c; border-color: #444; color: #ccc; }
+        .pagination .page-link:hover { background: #3a3a3a; color: #fff; }
+        #report-modal .modal-dialog { max-width: 90vw; }
+        #report-modal .modal-content { background: #1a1a1a; max-height: 90vh; overflow-y: auto; }
+        #report-modal .modal-header { background: #2c2c2c; border-bottom: 1px solid #444; }
+        #report-modal .modal-body { padding: 0; overflow: auto; }
+        .report-embed-container { padding: 1rem; background: #fff; min-height: 400px; }
+    </style>
+</head>
+<body>
+    <div class="d-flex" id="wrapper">
+        <!-- Sidebar -->
+        <div id="sidebar-wrapper">
+            <div class="sidebar-heading">QDashboard</div>
+            <div class="sidebar-nav">
+                <div class="list-group list-group-flush">
+                    <a href="/" class="list-group-item list-group-item-action" id="nav-dashboard"><i class="fas fa-tachometer-alt"></i><span class="menu-text"> Dashboard</span></a>
+                    <a href="/files" class="list-group-item list-group-item-action" id="nav-files"><i class="fas fa-folder"></i><span class="menu-text"> File Browser</span></a>
+                    <a href="/latest" class="list-group-item list-group-item-action" id="nav-latest"><i class="fas fa-file-alt"></i><span class="menu-text"> Report Viewer</span></a>
+                    <a href="/qpus" class="list-group-item list-group-item-action" id="nav-qpus"><i class="fas fa-microchip"></i><span class="menu-text"> QPU Status</span></a>
+                    <a href="/experiments" class="list-group-item list-group-item-action" id="nav-experiments"><i class="fas fa-flask"></i><span class="menu-text"> Experiments</span></a>
+                    <a href="/history" class="list-group-item list-group-item-action active" id="nav-history"><i class="fas fa-history"></i><span class="menu-text"> History</span></a>
+                </div>
+            </div>
+            <!-- Package Versions Footer -->
+            <div class="sidebar-footer-versions">
+                <div class="version-title"><i class="fas fa-code"></i> Package Versions</div>
+                {% for package, version in qibo_versions.items() %}
+                    <div class="version-item">
+                        <span class="version-name">{{ package.title() }}:</span>
+                        {% if version == "Error" %}
+                            <span class="version-error">Error</span>
+                        {% elif version == "Not installed" %}
+                            <span class="version-not-installed">Not installed</span>
+                        {% else %}
+                            <span class="version-number">{{ version }}</span>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+        <!-- /#sidebar-wrapper -->
+
+        <!-- Page Content -->
+        <div id="page-content-wrapper">
+            <div class="container-fluid p-0">
+
+                <!-- Sticky filter bar -->
+                <div class="history-filter-bar d-flex flex-wrap align-items-center gap-2">
+                    <select id="filter-platform" class="form-control" style="width:160px">
+                        <option value="">All QPUs</option>
+                        {% for qpu in qpus %}
+                        <option value="{{ qpu }}">{{ qpu }}</option>
+                        {% endfor %}
+                    </select>
+                    <select id="filter-protocol" class="form-control" style="width:220px">
+                        <option value="">All Protocols</option>
+                        {% for p in protocols %}
+                        <option value="{{ p.id }}">{{ p.name or p.id }}</option>
+                        {% endfor %}
+                    </select>
+                    <select id="filter-status" class="form-control" style="width:130px">
+                        <option value="">All Statuses</option>
+                        <option value="pending">Pending</option>
+                        <option value="running">Running</option>
+                        <option value="completed">Completed</option>
+                        <option value="failed">Failed</option>
+                    </select>
+                    <select id="filter-fit" class="form-control" style="width:120px">
+                        <option value="">All Fits</option>
+                        <option value="pass">Pass</option>
+                        <option value="partial">Partial</option>
+                        <option value="fail">Fail</option>
+                    </select>
+                    <input type="date" id="filter-date-from" class="form-control" style="width:140px" placeholder="From">
+                    <input type="date" id="filter-date-to" class="form-control" style="width:140px" placeholder="To">
+                    <button class="btn btn-outline-secondary btn-sm" id="btn-reset-filters">
+                        <i class="fas fa-times"></i> Reset
+                    </button>
+                    <span class="ml-auto text-muted small" id="history-count-label"></span>
+                </div>
+
+                <!-- Table -->
+                <div class="px-3 pt-3">
+                    <div class="table-responsive">
+                        <table class="table table-dark table-sm table-hover history-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Experiment ID</th>
+                                    <th>QPU</th>
+                                    <th>Protocol</th>
+                                    <th>Qubits</th>
+                                    <th>Date</th>
+                                    <th>Exec Time</th>
+                                    <th>Status</th>
+                                    <th>Fit</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-tbody">
+                                <tr><td colspan="9" class="text-center text-muted py-4">
+                                    <i class="fas fa-spinner fa-spin"></i> Loading…
+                                </td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pagination -->
+                    <nav class="mt-2">
+                        <ul class="pagination pagination-sm justify-content-center" id="history-pagination"></ul>
+                    </nav>
+                </div>
+
+            </div>
+        </div>
+        <!-- /#page-content-wrapper -->
+    </div>
+
+    <!-- Report Modal -->
+    <div class="modal fade" id="report-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-chart-bar mr-2"></i><span id="report-modal-title">Report</span></h5>
+                    <button type="button" class="close text-light" data-dismiss="modal"><span>&times;</span></button>
+                </div>
+                <div class="modal-body">
+                    <div id="report-modal-loading" class="text-center p-4">
+                        <i class="fas fa-spinner fa-spin fa-2x"></i><br><small class="text-muted mt-2 d-block">Loading report…</small>
+                    </div>
+                    <div id="report-embed-area" class="report-embed-container" style="display:none;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script>
+    (function () {
+        'use strict';
+
+        var currentPage = 1;
+        var perPage = 25;
+        var debounceTimer;
+
+        // ---- Helpers ----
+
+        function fmtDate(ts) {
+            if (!ts) return '—';
+            var d = new Date(ts * 1000);
+            return d.toISOString().slice(0, 16).replace('T', ' ');
+        }
+
+        function fmtExec(secs) {
+            if (secs == null) return '—';
+            if (secs < 60) return secs.toFixed(1) + ' s';
+            return (secs / 60).toFixed(1) + ' min';
+        }
+
+        function statusBadge(s) {
+            var cls = { pending: 'badge-pending', running: 'badge-running',
+                        completed: 'badge-completed', failed: 'badge-failed' }[s] || 'badge-secondary';
+            return '<span class="badge ' + cls + '">' + (s || '—') + '</span>';
+        }
+
+        function fitBadge(overall) {
+            if (overall === 1) return '<span class="badge badge-fit-pass"><i class="fas fa-check"></i> Pass</span>';
+            if (overall === 0) return '<span class="badge badge-fit-fail"><i class="fas fa-times"></i> Fail</span>';
+            return '<span class="badge badge-fit-unknown">—</span>';
+        }
+
+        function qubitsHtml(qubits) {
+            if (!qubits || !qubits.length) return '—';
+            return qubits.map(function (q) {
+                return '<span class="badge badge-secondary mr-1">' + q + '</span>';
+            }).join('');
+        }
+
+        // ---- Load history ----
+
+        function loadHistory(page) {
+            currentPage = page || 1;
+            var params = {
+                platform:  $('#filter-platform').val(),
+                protocol:  $('#filter-protocol').val(),
+                status:    $('#filter-status').val(),
+                fit:       $('#filter-fit').val(),
+                date_from: $('#filter-date-from').val(),
+                date_to:   $('#filter-date-to').val(),
+                page:      currentPage,
+                per_page:  perPage
+            };
+            $.getJSON('/api/history', params)
+                .done(function (data) {
+                    renderRows(data.runs);
+                    renderPagination(data.total, data.pages);
+                    $('#history-count-label').text(data.total + ' experiment(s)');
+                })
+                .fail(function () {
+                    $('#history-tbody').html(
+                        '<tr><td colspan="9" class="text-center text-danger">Failed to load history.</td></tr>'
+                    );
+                });
+        }
+
+        function renderRows(runs) {
+            if (!runs || !runs.length) {
+                $('#history-tbody').html(
+                    '<tr><td colspan="9" class="text-center text-muted py-4">No experiments found.</td></tr>'
+                );
+                return;
+            }
+            var html = '';
+            runs.forEach(function (r) {
+                var reportBtn = r.report_available
+                    ? '<button class="btn btn-xs btn-outline-info mr-1" onclick="openReportModal(\'' + r.experiment_id + '\')">'
+                      + '<i class="fas fa-chart-bar"></i></button>'
+                    : '';
+                var refreshBtn = '<button class="btn btn-xs btn-outline-secondary" title="Refresh" onclick="refreshRun(\'' + r.experiment_id + '\')">'
+                    + '<i class="fas fa-sync-alt"></i></button>';
+                html += '<tr>'
+                    + '<td><code class="small">' + r.experiment_id + '</code></td>'
+                    + '<td>' + (r.qpu_name || '—') + '</td>'
+                    + '<td>' + (r.protocol_name || r.protocol_id || '—') + '</td>'
+                    + '<td>' + qubitsHtml(r.target_qubits) + '</td>'
+                    + '<td class="text-muted small">' + fmtDate(r.submitted_at) + '</td>'
+                    + '<td class="exec-time">' + fmtExec(r.execution_time_seconds) + '</td>'
+                    + '<td>' + statusBadge(r.status) + '</td>'
+                    + '<td>' + fitBadge(r.overall_fit_success) + '</td>'
+                    + '<td class="text-nowrap">' + reportBtn + refreshBtn + '</td>'
+                    + '</tr>';
+            });
+            $('#history-tbody').html(html);
+        }
+
+        function renderPagination(total, pages) {
+            var html = '';
+            if (pages <= 1) { $('#history-pagination').html(''); return; }
+            if (currentPage > 1) {
+                html += '<li class="page-item"><a class="page-link" href="#" data-page="' + (currentPage - 1) + '">&laquo;</a></li>';
+            }
+            var start = Math.max(1, currentPage - 2);
+            var end = Math.min(pages, currentPage + 2);
+            for (var p = start; p <= end; p++) {
+                html += '<li class="page-item' + (p === currentPage ? ' active' : '') + '">'
+                    + '<a class="page-link" href="#" data-page="' + p + '">' + p + '</a></li>';
+            }
+            if (currentPage < pages) {
+                html += '<li class="page-item"><a class="page-link" href="#" data-page="' + (currentPage + 1) + '">&raquo;</a></li>';
+            }
+            $('#history-pagination').html(html);
+        }
+
+        // ---- Report modal ----
+
+        window.openReportModal = function (experimentId) {
+            $('#report-modal-title').text('Report — ' + experimentId);
+            $('#report-modal-loading').show();
+            $('#report-embed-area').hide().html('');
+            $('#report-modal').modal('show');
+            $.getJSON('/api/experiment_report/' + experimentId)
+                .done(function (fragment) {
+                    var css = fragment.head_css || '';
+                    var body = fragment.body_html || '';
+                    $('#report-embed-area')
+                        .html('<style>' + css + '</style>' + body)
+                        .show();
+                    $('#report-modal-loading').hide();
+                })
+                .fail(function () {
+                    $('#report-embed-area').html('<p class="text-danger p-3">Could not load report.</p>').show();
+                    $('#report-modal-loading').hide();
+                });
+        };
+
+        // ---- Refresh a single run ----
+
+        window.refreshRun = function (experimentId) {
+            $.post('/api/history/' + experimentId + '/refresh')
+                .done(function () { loadHistory(currentPage); })
+                .fail(function () { alert('Failed to refresh run ' + experimentId); });
+        };
+
+        // ---- Events ----
+
+        function debounceLoad() {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(function () { loadHistory(1); }, 350);
+        }
+
+        $('#filter-platform, #filter-protocol, #filter-status, #filter-fit').on('change', debounceLoad);
+        $('#filter-date-from, #filter-date-to').on('change', debounceLoad);
+
+        $('#btn-reset-filters').on('click', function () {
+            $('#filter-platform, #filter-protocol, #filter-status, #filter-fit').val('');
+            $('#filter-date-from, #filter-date-to').val('');
+            loadHistory(1);
+        });
+
+        $(document).on('click', '#history-pagination .page-link', function (e) {
+            e.preventDefault();
+            var page = parseInt($(this).data('page'), 10);
+            if (!isNaN(page)) loadHistory(page);
+        });
+
+        // Initial load
+        loadHistory(1);
+    })();
+    </script>
+</body>
+</html>

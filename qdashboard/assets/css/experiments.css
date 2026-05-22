@@ -380,3 +380,55 @@
                 height: 36px !important;
             }
         }
+/* ——— 3-panel workspace layout ——— */
+.experiment-workspace {
+    height: calc(100vh - 120px);
+    overflow: hidden;
+    margin: 0;
+}
+
+.panel-library,
+.panel-builder,
+.panel-results {
+    height: 100%;
+    overflow-y: auto;
+}
+
+.panel-library,
+.panel-builder {
+    border-right: 1px solid #333;
+}
+
+/* Results panel */
+.panel-results-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #2c2c2c;
+}
+
+#results-report-container {
+    font-size: 0.85rem;
+}
+
+/* Doc info & result buttons in library */
+.btn-doc-info,
+.btn-result-load {
+    background: transparent;
+    border: none;
+    color: #666;
+    padding: 2px 4px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.btn-doc-info:hover { color: #0f62fe; }
+.btn-result-load:hover { color: #28a745; }
+
+/* JSONEditor dark overrides */
+.jsoneditor { border: 1px solid #444 !important; }
+.jsoneditor-menu { background: #2c2c2c !important; border-bottom: 1px solid #444 !important; }
+.jsoneditor-tree { background: #1e1e1e !important; color: #ddd !important; }
+.jsoneditor-field { color: #9cdcfe !important; }
+.jsoneditor-value.jsoneditor-string { color: #ce9178 !important; }
+.jsoneditor-value.jsoneditor-number { color: #b5cea8 !important; }

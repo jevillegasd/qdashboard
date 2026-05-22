@@ -29,11 +29,12 @@ Extended with quantum computing specific features:
             <div class="sidebar-heading">QDashboard</div>
             <div class="sidebar-nav">
                 <div class="list-group list-group-flush">
-                    <a href="/" class="list-group-item list-group-item-action active" id="nav-dashboard"><i class="fas fa-tachometer-alt"></i><span class="menu-text"> Dashboard</span></a>
+                    <a href="/" class="list-group-item list-group-item-action" id="nav-dashboard"><i class="fas fa-tachometer-alt"></i><span class="menu-text"> Dashboard</span></a>
                     <a href="/files" class="list-group-item list-group-item-action" id="nav-files"><i class="fas fa-folder"></i><span class="menu-text"> File Browser</span></a>
                     <a href="/latest" class="list-group-item list-group-item-action" id="nav-latest"><i class="fas fa-file-alt"></i><span class="menu-text"> Report Viewer</span></a>
                     <a href="/qpus" class="list-group-item list-group-item-action" id="nav-qpus"><i class="fas fa-microchip"></i><span class="menu-text"> QPU Status</span></a>
-                    <a href="/experiments" class="list-group-item list-group-item-action" id="nav-experiments"><i class="fas fa-flask"></i><span class="menu-text"> Experiments</span></a>
+                    <a href="/experiments" class="list-group-item list-group-item-action active" id="nav-experiments"><i class="fas fa-flask"></i><span class="menu-text"> Experiments</span></a>
+                    <a href="/history" class="list-group-item list-group-item-action" id="nav-history"><i class="fas fa-history"></i><span class="menu-text"> History</span></a>
                 </div>
             </div>
             
@@ -75,9 +76,9 @@ Extended with quantum computing specific features:
                     </button>
                 </div>
 
-    <div class="row">
+    <div class="row experiment-workspace">
         <!-- Left Panel: Experiment Library -->
-        <div class="col-md-3">
+        <div class="col-lg-3 col-md-3 panel-library p-0">
             <div class="card">
                 <div class="card-header">
                     <i class="fas fa-book"></i> Experiment Library
@@ -113,10 +114,29 @@ Extended with quantum computing specific features:
                                              aria-expanded="false"
                                              style="cursor: pointer;">
                                             <div class="d-flex justify-content-between align-items-center">
-                                                <div>
+                                                <div class="d-flex align-items-center flex-grow-1">
                                                     <i class="fas fa-flask mr-2"></i>{{ experiment.name }}
                                                 </div>
-                                                <i class="fas fa-chevron-down"></i>
+                                                <div class="d-flex align-items-center">
+                                                    {% if experiment.attributes and experiment.attributes.description %}
+                                                    <button class="btn-doc-info mr-1"
+                                                            data-toggle="popover"
+                                                            data-trigger="hover focus"
+                                                            data-placement="right"
+                                                            data-html="true"
+                                                            title="<strong>{{ experiment.name }}</strong>"
+                                                            data-content="{{ experiment.attributes.description | e }}"
+                                                            onclick="event.stopPropagation();">
+                                                        <i class="fas fa-info-circle"></i>
+                                                    </button>
+                                                    {% endif %}
+                                                    <button class="btn-result-load mr-1"
+                                                            title="View last result"
+                                                            onclick="event.stopPropagation(); loadExperimentResults('{{ experiment.id }}', '{{ experiment.name }}');">
+                                                        <i class="fas fa-chart-bar"></i>
+                                                    </button>
+                                                    <i class="fas fa-chevron-down"></i>
+                                                </div>
                                             </div>
                                         </div>
                                         
@@ -235,8 +255,8 @@ Extended with quantum computing specific features:
             </div>
         </div>
 
-        <!-- Center Panel: Main Content with Tabs -->
-        <div class="col-md-9">
+        <!-- Center Panel: Builder + Config -->
+        <div class="col-lg-4 col-md-4 panel-builder p-0">
             <div class="card">
                 <div class="card-header">
                     <div class="d-flex justify-content-between align-items-center">
@@ -333,7 +353,12 @@ Extended with quantum computing specific features:
 
                         <!-- QPU Configuration Tab -->
                         <div class="tab-pane fade" id="qpu-config" role="tabpanel" aria-labelledby="qpu-config-tab">
-                            <pre id="qpu-config-data" class="mt-3" style="max-height: 600px; overflow-y: auto; background-color: #1a1a1a; padding: 1rem; border-radius: 0.25rem;"></pre>
+                            <div class="d-flex justify-content-end mt-2 mb-1">
+                                <button class="btn btn-sm btn-primary" id="save-parameters-btn">
+                                    <i class="fas fa-save mr-1"></i> Save Parameters
+                                </button>
+                            </div>
+                            <div id="qpu-config-editor" style="height:500px;"></div>
                         </div>
 
                         <!-- QPU Calibration Tab -->
@@ -346,6 +371,37 @@ Extended with quantum computing specific features:
                 </div>
             </div>
         </div>
+        <!-- #center panel -->
+
+        <!-- Right Panel: Results Viewer -->
+        <div class="col-lg-5 col-md-5 panel-results p-0">
+            <div class="panel-results d-flex flex-column h-100">
+                <div class="panel-results-header p-2 border-bottom d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="mb-0"><i class="fas fa-chart-bar mr-1"></i> Results</h6>
+                        <small id="results-experiment-label" class="text-muted">Select an experiment from the library</small>
+                    </div>
+                    <span id="results-experiment-id" class="badge badge-secondary"></span>
+                </div>
+                <div id="results-panel-content" class="flex-grow-1 overflow-auto p-2">
+                    <div id="results-empty-state" class="text-center p-5 text-muted">
+                        <i class="fas fa-chart-line fa-3x mb-3 d-block"></i>
+                        <p>Click an experiment in the library<br>to view its last result</p>
+                    </div>
+                    <div id="results-loading" style="display:none;" class="text-center p-4 text-muted">
+                        <i class="fas fa-spinner fa-spin fa-2x"></i>
+                        <p class="mt-2">Loading report…</p>
+                    </div>
+                    <div id="results-not-found" style="display:none;" class="text-center p-4 text-muted">
+                        <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
+                        <p>No previous results found for this<br>experiment, QPU and qubit selection.</p>
+                    </div>
+                    <div id="results-report-container" style="display:none;"></div>
+                </div>
+            </div>
+        </div>
+        <!-- #results panel -->
+
     </div>
             </div>
         </div>
@@ -754,13 +810,14 @@ Extended with quantum computing specific features:
                     );
                 }
                 ExperimentBuilder.qpu.parameters = data;
-                document.getElementById('qpu-config-data').textContent = JSON.stringify(data, null, 2);
+                if (window._jsonEditor) {
+                    try { window._jsonEditor.set(data); } catch(e) {}
+                }
                 updateQubitDropdown();
                 updateQubitParameters();
             })
             .catch(error => {
                 console.error('Error loading QPU parameters:', error);
-                document.getElementById('qpu-config-data').textContent = 'Error loading QPU parameters.';
             });
 
         // Fetch calibration data
@@ -1574,8 +1631,10 @@ function createCalibrationTable(title, data, qubitKeyName) {
     
     tableHtml += '<table class="table table-sm table-dark calibration-table"><thead><tr>';
     tableHtml += '<th> </th>'; // Qubit identifier header (nada)
+    const headerDisplayNames = { 'readout': 'Readout Fidelity' };
     headers.forEach(header => {
-        tableHtml += `<th>${header.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</th>`;
+        const displayName = headerDisplayNames[header.toLowerCase()] || header.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        tableHtml += `<th>${displayName}</th>`;
     });
     tableHtml += '</tr></thead><tbody>';
     i = 0
@@ -1673,6 +1732,98 @@ function createCalibrationTable(title, data, qubitKeyName) {
     tableHtml += '</tbody></table>';
     tableWrapper.innerHTML = tableHtml;
     return tableWrapper;
+}
+// ——— JSONEditor lazy init ———
+$('#qpu-config-tab').on('shown.bs.tab', function () {
+    const platform = ExperimentBuilder.qpu.selectedName;
+    if (!window._jsonEditor) {
+        // Load JSONEditor CSS
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = 'https://cdn.jsdelivr.net/npm/jsoneditor@9.10.0/dist/jsoneditor.min.css';
+        document.head.appendChild(link);
+        // Load JSONEditor JS
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/jsoneditor@9.10.0/dist/jsoneditor.min.js';
+        script.onload = function () {
+            const container = document.getElementById('qpu-config-editor');
+            window._jsonEditor = new JSONEditor(container, { mode: 'tree', mainMenuBar: true });
+            if (ExperimentBuilder.qpu.parameters) {
+                try { window._jsonEditor.set(ExperimentBuilder.qpu.parameters); } catch(e) {}
+            } else if (platform) {
+                fetch(`/api/qpu_parameters_file/${platform}`)
+                    .then(r => r.json())
+                    .then(d => { try { window._jsonEditor.set(d); } catch(e) {} })
+                    .catch(() => {});
+            }
+        };
+        document.head.appendChild(script);
+    } else if (platform && !ExperimentBuilder.qpu.parameters) {
+        fetch(`/api/qpu_parameters_file/${platform}`)
+            .then(r => r.json())
+            .then(d => { try { window._jsonEditor.set(d); } catch(e) {} })
+            .catch(() => {});
+    }
+});
+
+$('#save-parameters-btn').on('click', function () {
+    if (!window._jsonEditor) return;
+    const platform = ExperimentBuilder.qpu.selectedName;
+    if (!platform) { showNotification('No QPU selected.', 'warning'); return; }
+    let data;
+    try { data = window._jsonEditor.get(); } catch(e) {
+        showNotification('Invalid JSON — please fix errors before saving.', 'danger'); return;
+    }
+    fetch(`/api/qpu_parameters_file/${platform}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    }).then(r => r.json()).then(res => {
+        showNotification(res.success ? 'Parameters saved.' : `Save failed: ${res.message}`, res.success ? 'success' : 'danger');
+    }).catch(err => showNotification(`Error: ${err.message}`, 'danger'));
+});
+
+// ——— Results panel ———
+function loadExperimentResults(protocolId, protocolName) {
+    const platform = ExperimentBuilder.qpu.selectedName;
+    const qubits = Array.from(document.getElementById('qubit-select').selectedOptions).map(o => o.value);
+    document.getElementById('results-experiment-label').textContent = protocolName;
+    document.getElementById('results-experiment-id').textContent = '';
+    document.getElementById('results-empty-state').style.display = 'none';
+    document.getElementById('results-not-found').style.display = 'none';
+    document.getElementById('results-report-container').style.display = 'none';
+    document.getElementById('results-loading').style.display = 'block';
+
+    const params = new URLSearchParams({ platform: platform || '', protocol: protocolId });
+    if (qubits.length) params.set('qubits', qubits.join(','));
+
+    fetch(`/api/experiments/latest?${params}`)
+        .then(r => {
+            if (r.status === 404) throw new Error('not_found');
+            return r.json();
+        })
+        .then(data => {
+            document.getElementById('results-experiment-id').textContent = data.experiment_id || '';
+            return fetch(`/api/experiment_report/${data.experiment_id}`);
+        })
+        .then(r => {
+            if (!r.ok) throw new Error('not_found');
+            return r.json();
+        })
+        .then(fragment => {
+            document.getElementById('results-loading').style.display = 'none';
+            const container = document.getElementById('results-report-container');
+            container.style.display = 'block';
+            container.innerHTML = `<style>${fragment.head_css}</style>${fragment.body_html}`;
+        })
+        .catch(err => {
+            document.getElementById('results-loading').style.display = 'none';
+            if (err.message === 'not_found') {
+                document.getElementById('results-not-found').style.display = 'block';
+            } else {
+                document.getElementById('results-not-found').style.display = 'block';
+            }
+        });
 }
 </script>
 </body>
