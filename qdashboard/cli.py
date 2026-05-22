@@ -248,6 +248,7 @@ def main(argv: Optional[List[str]] = None) -> None:
             port=int(config['port']),
             reload=False,
             log_level='debug' if config['debug'] else 'info',
+            timeout_graceful_shutdown=5,  # force-close SSE/long-poll connections after 5 s
         )
         server = uvicorn.Server(uv_cfg)
 

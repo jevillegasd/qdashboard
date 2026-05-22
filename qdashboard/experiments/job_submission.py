@@ -316,10 +316,11 @@ def submit_experiment(runcard_path: str = None, runcard_data: Dict[str, Any] = N
             if not environment:
                 environment = runcard_data_parsed.get('environment') or config.get('environment')
             
-            # Create SLURM script
+            # Create SLURM script — logs go inside the experiment directory so
+            # the per-experiment log API can find them at <experiment_dir>/logs/
             job_script_path = create_slurm_script(
                 experiment_id, experiment_dir, final_runcard_path,
-                platform, partition, platforms_base, environment, logs_dir=config.get('logs_dir')
+                platform, partition, platforms_base, environment, logs_dir=None
             )
             
             # Submit job
@@ -504,11 +505,11 @@ def repeat_experiment(report_path: str, config: Dict[str, Any]) -> Dict[str, Any
             shutil.copy2(report_parameters_path, backup_parameters_path)
             logger.info(f"Backed up original parameters.json for reference")
         
-        # Create SLURM script
+        # Create SLURM script — logs go inside the experiment directory
         job_script_path = create_slurm_script(
             experiment_id, experiment_dir, final_runcard_path,
             platform, partition, platforms_base, environment, 
-            logs_dir=logs_dir
+            logs_dir=None
         )
         
         # Submit job
