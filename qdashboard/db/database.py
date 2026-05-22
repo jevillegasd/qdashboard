@@ -300,24 +300,40 @@ def _read_json_safe(path: str) -> Optional[Dict]:
         return None
 
 
+def _iter_actions(actions):
+    """Yield individual action dicts regardless of whether *actions* is a
+    list (qibocal standard) or a dict (keyed by action name)."""
+    if isinstance(actions, list):
+        yield from actions
+    elif isinstance(actions, dict):
+        yield from actions.values()
+
+
 def _extract_protocol_info(runcard_data: Dict) -> tuple:
-    """Return (protocol_id, protocol_name, target_qubits) from runcard."""
-    actions = runcard_data.get("actions") or {}
+    """Return (protocol_id, protocol_name, target_qubits) from runcard.
+
+    Works with both qibocal list-style actions and legacy dict-style actions.
+    When multiple actions are present, *protocol_id* is the comma-joined list
+    of all distinct action ids and *target_qubits* is the union of all targets.
+    """
+    actions = runcard_data.get("actions") or []
     if not actions:
         return "unknown", "Unknown", []
 
-    # Use the first action's id as the representative protocol
-    first_action = next(iter(actions.values()), {})
-    protocol_id = first_action.get("id", "unknown")
-    # Collect all qubits from all actions
+    seen_ids: list = []
     all_qubits: set = set()
-    for action in actions.values():
+    for action in _iter_actions(actions):
+        aid = action.get("id", "unknown")
+        if aid not in seen_ids:
+            seen_ids.append(aid)
         targets = action.get("targets") or action.get("qubits") or []
         if isinstance(targets, (list, tuple)):
             all_qubits.update(str(q) for q in targets)
         elif targets:
             all_qubits.add(str(targets))
-    protocol_name = protocol_id.replace("_", " ").title()
+
+    protocol_id = ",".join(seen_ids) if seen_ids else "unknown"
+    protocol_name = " + ".join(pid.replace("_", " ").title() for pid in seen_ids)
     return protocol_id, protocol_name, sorted(all_qubits)
 
 

@@ -405,7 +405,13 @@ Extended with quantum computing specific features:
                         <span class="font-weight-semibold">Results</span>
                         <small id="results-experiment-label" class="text-muted ml-2">Select an experiment</small>
                     </div>
-                    <span id="results-experiment-id" class="badge badge-secondary"></span>
+                    <div class="d-flex align-items-center">
+                        <span id="results-experiment-id" class="badge badge-secondary mr-1"></span>
+                        <a id="results-open-link" href="#" target="_blank" title="Open in file browser"
+                           style="display:none; color:#aaa; font-size:.85rem;">
+                            <i class="fas fa-external-link-alt"></i>
+                        </a>
+                    </div>
                 </div>
                 <div id="results-panel-content" class="card-body p-2 overflow-auto">
                     <div id="results-empty-state" class="text-center p-4 text-muted">
@@ -635,46 +641,32 @@ Extended with quantum computing specific features:
     function generateInputFields(experiment, savedDefaults) {
         let html = '';
         
-        // Generate collapsible section for common parameters
-        const commonId = `common-${Date.now()}`;
+        // Compact always-visible row for common parameters
         html += `
-            <div class="protocol-section">
-                <div class="protocol-section-header" data-toggle="collapse" data-target="#${commonId}" 
-                     aria-expanded="false" aria-controls="${commonId}">
-                    <i class="fas fa-cog mr-2"></i>
-                    <span>Common Parameters</span>
-                    <span class="badge badge-secondary ml-2">3</span>
-                    <i class="fas fa-chevron-down ml-auto"></i>
-                </div>
-                <div class="collapse" id="${commonId}">
-                    <div class="protocol-section-body">
-                        <div class="form-group-compact">
-                            <div class="input-row">
-                                <label class="input-label">Target Qubit:</label>
-                                <select class="form-control protocol-input compact-input target-qubit-select" 
-                                        data-field="targets" title="Target qubit for this action (optional)">
-                                    <option value="">[Use Global Targets]</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="form-group-compact">
-                            <div class="input-row">
-                                <label class="input-label">Shots:</label>
-                                <input type="number" class="form-control protocol-input compact-input" 
-                                       data-field="nshots" value="${savedDefaults.shots || '1024'}" min="1"
-                                       title="Number of measurement repetitions">
-                            </div>
-                        </div>
-                        <div class="form-group-compact">
-                            <div class="input-row">
-                                <label class="input-label">Relaxation Time (μs):</label>
-                                <input type="number" class="form-control protocol-input compact-input" 
-                                       data-field="relaxation_time" value="${savedDefaults.relaxation_time || '[Optional]'}" step="0.001"
-                                       title="Relaxation time in microseconds (optional)"
-                                       placeholder="Optional parameter">
-                            </div>
-                        </div>
+            <div class="action-common-params">
+                <!-- Hidden multi-select carries targets; visible dropdown drives it -->
+                <select multiple class="protocol-input action-target-select" data-field="targets" style="display:none;"></select>
+                <div class="dropdown action-target-dropdown" title="Target qubits — empty = use global selection">
+                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle action-target-btn"
+                            type="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                        <i class="fas fa-crosshairs mr-1"></i><span class="action-target-label">Global</span>
+                    </button>
+                    <div class="dropdown-menu p-2 action-target-menu"
+                         style="min-width:130px; max-height:220px; overflow-y:auto;">
+                        <!-- populated by updateTargetQubitDropdowns() -->
                     </div>
+                </div>
+                <div class="d-flex align-items-center" style="gap:.3rem;">
+                    <label class="mb-0 action-param-label">Shots</label>
+                    <input type="number" class="form-control protocol-input action-param-input"
+                           data-field="nshots" value="${savedDefaults.shots || '1024'}" min="1"
+                           title="Number of measurement repetitions">
+                </div>
+                <div class="d-flex align-items-center" style="gap:.3rem;">
+                    <label class="mb-0 action-param-label">T<sub>relax</sub>&nbsp;(μs)</label>
+                    <input type="number" class="form-control protocol-input action-param-input"
+                           data-field="relaxation_time" value="${savedDefaults.relaxation_time || ''}" step="0.001"
+                           placeholder="–" title="Relaxation time in microseconds (optional)">
                 </div>
             </div>
         `;
@@ -803,17 +795,21 @@ Extended with quantum computing specific features:
             } else if (input.type === 'number') {
                 value = input.value ? parseFloat(input.value) : null;
             } else if (input.tagName === 'SELECT') {
-                value = input.value;
+                if (input.multiple) {
+                    value = Array.from(input.selectedOptions).map(o => o.value).filter(v => v);
+                } else {
+                    value = input.value;
+                }
             } else {
                 value = input.value;
             }
             
             // Handle target qubit selection specially - goes outside parameters
-            if (fieldName === 'targets' && value && value !== '') {
-                // Convert single qubit to list format for qibocal using unified parseQubit function
-                const qubitValue = parseQubit(value);
-                if (qubitValue !== null) {
-                    actionData[fieldName] = [qubitValue];
+            if (fieldName === 'targets') {
+                const arr = Array.isArray(value) ? value : (value && value !== '' ? [value] : []);
+                const parsed = arr.map(v => parseQubit(v)).filter(v => v !== null);
+                if (parsed.length > 0) {
+                    actionData.targets = parsed;
                 }
             } else if (value !== null && value !== '' && value !== '[Optional]') {
                 // Skip empty values and optional parameters with "[Optional]" placeholder
@@ -1012,24 +1008,90 @@ Extended with quantum computing specific features:
 
     // Update target qubit dropdowns in all action cards
     function updateTargetQubitDropdowns() {
-        const targetQubitSelects = document.querySelectorAll('.target-qubit-select');
-        
-        targetQubitSelects.forEach(select => {
-            const currentValue = select.value;
-            select.innerHTML = '<option value="">[Use Global Targets]</option>';
-            
+        document.querySelectorAll('.action-item').forEach(item => {
+            const menu = item.querySelector('.action-target-menu');
+            const hiddenSelect = item.querySelector('.action-target-select');
+            if (!menu || !hiddenSelect) return;
+
+            // Preserve current selections
+            const currentSelected = new Set(
+                Array.from(hiddenSelect.selectedOptions).map(o => o.value)
+            );
+
+            // Rebuild hidden select options
+            hiddenSelect.innerHTML = '';
+            // Rebuild menu
+            menu.innerHTML = '';
+
+            // "Use global" clear-all item
+            const globalItem = document.createElement('div');
+            globalItem.className = 'dropdown-item action-target-item px-1 py-0';
+            globalItem.style.cssText = 'font-size:.74rem; color:#aaa; cursor:pointer;';
+            globalItem.innerHTML = '<em><i class="fas fa-globe-americas mr-1"></i>Use global targets</em>';
+            globalItem.addEventListener('click', e => {
+                e.stopPropagation();
+                Array.from(hiddenSelect.options).forEach(o => o.selected = false);
+                menu.querySelectorAll('.action-qubit-cb').forEach(cb => { cb.checked = false; });
+                _syncActionTargetLabel(item);
+            });
+            menu.appendChild(globalItem);
+
+            const divider = document.createElement('div');
+            divider.className = 'dropdown-divider my-1';
+            menu.appendChild(divider);
+
             if (ExperimentBuilder.availableQubits) {
                 ExperimentBuilder.availableQubits.forEach(qubit => {
-                    const option = document.createElement('option');
-                    option.value = qubit;
-                    option.textContent = `Qubit ${qubit}`;
-                    if (qubit.toString() === currentValue) {
-                        option.selected = true;
-                    }
-                    select.appendChild(option);
+                    const qStr = qubit.toString();
+
+                    // Hidden select option
+                    const opt = document.createElement('option');
+                    opt.value = qStr;
+                    opt.textContent = qStr;
+                    opt.selected = currentSelected.has(qStr);
+                    hiddenSelect.appendChild(opt);
+
+                    // Checkbox row in dropdown
+                    const row = document.createElement('label');
+                    row.className = 'dropdown-item action-target-item px-1 py-0 d-flex align-items-center';
+                    row.style.cssText = 'gap:.4rem; font-size:.78rem; cursor:pointer; margin:0;';
+
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.className = 'action-qubit-cb';
+                    cb.value = qStr;
+                    cb.checked = currentSelected.has(qStr);
+                    cb.addEventListener('change', () => {
+                        const o = Array.from(hiddenSelect.options).find(x => x.value === qStr);
+                        if (o) o.selected = cb.checked;
+                        _syncActionTargetLabel(item);
+                    });
+
+                    row.appendChild(cb);
+                    row.appendChild(document.createTextNode(`Q${qStr}`));
+                    menu.appendChild(row);
                 });
             }
+
+            // Prevent Bootstrap from closing the menu when clicking checkboxes
+            menu.addEventListener('click', e => e.stopPropagation());
+
+            _syncActionTargetLabel(item);
         });
+    }
+
+    function _syncActionTargetLabel(actionItem) {
+        const hiddenSelect = actionItem.querySelector('.action-target-select');
+        const label = actionItem.querySelector('.action-target-label');
+        if (!hiddenSelect || !label) return;
+        const selected = Array.from(hiddenSelect.selectedOptions).map(o => o.value);
+        if (selected.length === 0) {
+            label.textContent = 'Global';
+        } else if (selected.length <= 2) {
+            label.textContent = selected.map(q => `Q${q}`).join(', ');
+        } else {
+            label.textContent = `${selected.length} qubits`;
+        }
     }
 
     // Extract experiment attributes from DOM for drag and drop
@@ -1946,6 +2008,14 @@ function loadExperimentResults(protocolId, protocolName) {
         })
         .then(data => {
             document.getElementById('results-experiment-id').textContent = data.experiment_id || '';
+            // Show open-in-browser link
+            var openLink = document.getElementById('results-open-link');
+            if (data.report_url) {
+                openLink.href = data.report_url;
+                openLink.style.display = '';
+            } else {
+                openLink.style.display = 'none';
+            }
             // Use iframe approach for proper rendering
             _showResultsState('results-report-container');
             const container = document.getElementById('results-report-container');
@@ -1981,6 +2051,7 @@ function showExperimentLog(experimentId) {
     document.getElementById('results-log-content').textContent = 'Waiting for logs\u2026';
     document.getElementById('results-log-status').textContent = 'Running';
     document.getElementById('results-log-status').className = 'badge badge-warning';
+    document.getElementById('results-open-link').style.display = 'none';
 
     function poll() {
         if (_logCurrentId !== experimentId) return;
@@ -2004,8 +2075,17 @@ function showExperimentLog(experimentId) {
                     _logPollTimer = null;
                     document.getElementById('results-log-status').textContent = 'Completed';
                     document.getElementById('results-log-status').className = 'badge badge-success';
-                    // Optionally auto-load report
-                    // loadReportForExperiment(experimentId);
+                    // Auto-load report if available
+                    if (exp.report_available) {
+                        document.getElementById('results-experiment-id').textContent = experimentId;
+                        var openLink = document.getElementById('results-open-link');
+                        if (exp.report_url) { openLink.href = exp.report_url; openLink.style.display = ''; }
+                        _showResultsState('results-report-container');
+                        var container = document.getElementById('results-report-container');
+                        container.innerHTML = '<iframe src="/experiment_report_page/' + experimentId + '"' +
+                            ' style="width:100%;height:100%;min-height:600px;border:none;background:#fff"' +
+                            ' title="Experiment Report"></iframe>';
+                    }
                 } else if (status === 'failed') {
                     clearInterval(_logPollTimer);
                     _logPollTimer = null;

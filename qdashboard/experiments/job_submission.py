@@ -352,27 +352,19 @@ def submit_experiment(runcard_path: str = None, runcard_data: Dict[str, Any] = N
 
             # Write to experiment history DB (non-fatal)
             try:
-                from ..db.database import get_db_connection, get_or_create_qpu, upsert_experiment_run, add_qpu_qubits
+                from ..db.database import (get_db_connection, get_or_create_qpu,
+                                           upsert_experiment_run, add_qpu_qubits,
+                                           _extract_protocol_info)
                 with get_db_connection(config) as conn:
                     qpu_id = get_or_create_qpu(conn, platform)
-                    actions = runcard_data_parsed.get('actions') or {}
-                    first_action = next(iter(actions.values()), {})
-                    protocol_id = first_action.get('id', 'unknown')
-                    all_qubits: set = set()
-                    for action in actions.values():
-                        targets = action.get('targets') or action.get('qubits') or []
-                        if isinstance(targets, (list, tuple)):
-                            all_qubits.update(str(q) for q in targets)
-                        elif targets:
-                            all_qubits.add(str(targets))
-                    qubit_list = sorted(all_qubits)
+                    protocol_id, protocol_name, qubit_list = _extract_protocol_info(runcard_data_parsed)
                     if qubit_list:
                         add_qpu_qubits(conn, qpu_id, qubit_list)
                     upsert_experiment_run(conn, {
                         'experiment_id': experiment_id,
                         'qpu_id': qpu_id,
                         'protocol_id': protocol_id,
-                        'protocol_name': protocol_id.replace('_', ' ').title(),
+                        'protocol_name': protocol_name,
                         'target_qubits': qubit_list,
                         'submitted_at': metadata['submitted_at'],
                         'slurm_job_id': job_id,
@@ -598,17 +590,29 @@ def get_experiment_status(experiment_id: str, config: Dict[str, Any] = None) -> 
         else:
             metadata['has_output'] = False
             metadata['output_files'] = []
-        
+
+        # Compute dynamic status from filesystem
+        report_index = os.path.join(output_dir or '', 'index.html') if output_dir else ''
+        meta_json = os.path.join(output_dir or '', 'meta.json') if output_dir else ''
+        if os.path.exists(report_index) or os.path.exists(meta_json):
+            metadata['status'] = 'completed'
+            metadata['report_available'] = os.path.exists(report_index)
+        elif metadata.get('has_output'):
+            metadata['status'] = 'running'
+            metadata['report_available'] = False
+        else:
+            metadata['status'] = metadata.get('status', 'pending')
+            metadata['report_available'] = False
+
         # Check SLURM log if available
         exp_dir = metadata.get('experiment_dir', '')
         logs_dir = os.path.join(exp_dir, 'logs')
         slurm_log_path = os.path.join(logs_dir, 'slurm_output.log')
         if os.path.exists(slurm_log_path):
             metadata['has_slurm_log'] = True
-            # Could read last few lines of log for status
         else:
             metadata['has_slurm_log'] = False
-        
+
         return metadata
         
     except Exception as e:
@@ -709,9 +713,9 @@ def find_latest_experiment(
                     rc = yaml.safe_load(f)
                 if not rc or rc.get("platform") != platform:
                     continue
-                actions = rc.get("actions") or {}
+                actions = rc.get("actions") or []
                 match = False
-                for action in actions.values():
+                for action in (actions if isinstance(actions, list) else actions.values()):
                     if action.get("id") != protocol_id:
                         continue
                     targets = action.get("targets") or action.get("qubits") or []

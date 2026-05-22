@@ -921,6 +921,12 @@ async def api_experiments_latest(
         if result is None:
             return Response(content=json.dumps({'found': False}),
                             status_code=404, media_type='application/json')
+        # Convert absolute output_dir into a web-relative /files/... URL
+        data_dir = os.path.realpath(
+            config.get('data_dir') or os.path.join(config.get('root', ''), 'data'))
+        abs_output = os.path.realpath(result.get('output_dir', ''))
+        rel = abs_output[len(data_dir):].lstrip('/')
+        result['report_url'] = '/files/' + rel
         return {'found': True, **result}
     except Exception as e:
         return _error_response(request, e, {'found': False, 'error': str(e)})
@@ -934,13 +940,19 @@ async def api_experiment_status(request: Request, experiment_id: str):
         config = _get_config(request)
         status = get_experiment_status(experiment_id, config)
         if status:
+            # Attach a web-accessible report_url derived from output_dir
+            output_dir = status.get('output_dir', '')
+            if output_dir:
+                data_dir = os.path.realpath(
+                    config.get('data_dir') or os.path.join(config.get('root', ''), 'data'))
+                rel = os.path.realpath(output_dir)[len(data_dir):].lstrip('/')
+                status['report_url'] = '/files/' + rel
             return {'success': True, 'experiment': status}
         return Response(content=json.dumps({'success': False, 'message': 'Experiment not found'}),
                         status_code=404, media_type='application/json')
     except Exception as e:
         return _error_response(request, e,
                                {'success': False, 'message': f'Error getting experiment status: {str(e)}'})
-
 
 # ------------------------------------------------------------------ #
 # QPU raw parameters file (JSONEditor)                                #
@@ -1216,5 +1228,18 @@ async def api_history_refresh(request: Request, experiment_id: str):
             return Response(content=json.dumps({'success': False, 'error': 'Could not scan experiment'}),
                             status_code=500, media_type='application/json')
         return {'success': True, 'run': updated}
+    except Exception as e:
+        return _error_response(request, e, {'success': False, 'error': str(e)})
+
+
+@router.post("/api/history/backfill", name="api_history_backfill", tags=["Experiments"],
+             summary="Re-scan all experiment directories and update the history DB")
+async def api_history_backfill(request: Request):
+    """Walk data_dir and upsert any experiment records that are missing or stale."""
+    try:
+        config = _get_config(request)
+        from ..db.database import backfill_from_disk
+        count = backfill_from_disk(config)
+        return {'success': True, 'updated': count}
     except Exception as e:
         return _error_response(request, e, {'success': False, 'error': str(e)})
