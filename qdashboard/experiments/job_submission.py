@@ -575,9 +575,13 @@ def get_experiment_status(experiment_id: str, config: Dict[str, Any] = None) -> 
             qd_root = os.path.normpath(os.getenv('QD_ROOT', os.path.expanduser('~/.qdashboard')))
             data_dir = os.path.join(qd_root, 'data')
 
-        # Search across nested platform/date structure
-        pattern = os.path.join(data_dir, '*', '*', experiment_id, 'experiment_metadata.json')
-        matches = glob.glob(pattern)
+        # Search across nested platform/date structure.
+        # Try two-level (data_dir/<platform>/<date>/<id>) first,
+        # then one-level (data_dir/<date>/<id>) for deployments where
+        # data_dir already embeds the platform name.
+        pattern2 = os.path.join(data_dir, '*', '*', experiment_id, 'experiment_metadata.json')
+        pattern1 = os.path.join(data_dir, '*', experiment_id, 'experiment_metadata.json')
+        matches = glob.glob(pattern2) or glob.glob(pattern1)
         if not matches:
             return None
         metadata_path = matches[0]
@@ -595,7 +599,8 @@ def get_experiment_status(experiment_id: str, config: Dict[str, Any] = None) -> 
             metadata['output_files'] = []
         
         # Check SLURM log if available
-        logs_dir = os.path.join(experiment_dir, 'logs')
+        exp_dir = metadata.get('experiment_dir', '')
+        logs_dir = os.path.join(exp_dir, 'logs')
         slurm_log_path = os.path.join(logs_dir, 'slurm_output.log')
         if os.path.exists(slurm_log_path):
             metadata['has_slurm_log'] = True

@@ -75,7 +75,9 @@ def report_viewer(report_path, root_path, request, qibo_versions=None, access_mo
     report_viewer_body = re.sub(r'''(['"])(?!/|http|https|data:)([^'"]+\.(?:json|csv|data|yml|yaml)[^'"]*)['"]''', r'"/report_assets/\2"', report_viewer_body)
 
     # Prepare the report path for the file browser link (remove root prefix and ensure it starts with /)
-    report_path_for_link = report_path.replace(root_path, "").lstrip("/")
+    # Use realpath on root_path so it matches report_path (which is already realpath-resolved)
+    resolved_root = os.path.realpath(root_path)
+    report_path_for_link = report_path.replace(resolved_root, "").lstrip("/")
 
     # Check qibocal availability
     qibocal_available = check_qibocal_availability()
@@ -178,4 +180,40 @@ def get_report_fragment(experiment_id: str, report_path: str) -> dict:
     )
 
     return {"head_css": head_content, "body_html": body}
+
+
+def get_full_report_html(experiment_id: str, report_path: str) -> str:
+    """
+    Return a complete standalone HTML page for embedding in an iframe.
+    Rewrites all relative asset paths to /api/experiment_assets/{experiment_id}/.
+    """
+    index_path = os.path.join(report_path, "index.html")
+    if not os.path.exists(index_path):
+        raise FileNotFoundError(f"Report index not found: {index_path}")
+
+    with open(index_path, "r", errors="replace") as fh:
+        content = fh.read()
+
+    base = f"/api/experiment_assets/{experiment_id}"
+
+    def _rewrite(html: str) -> str:
+        # CSS href
+        html = re.sub(
+            r'''href=(['"])(?!/|http|https|data:)([^'"]+\.css[^'"]*)['"]''',
+            rf'href="{base}/\2"', html)
+        # JS src
+        html = re.sub(
+            r'''src=(['"])(?!/|http|https|data:)([^'"]+\.js[^'"]*)['"]''',
+            rf'src="{base}/\2"', html)
+        # images
+        html = re.sub(
+            r'''src=(['"])(?!/|http|https|data:)([^'"]+\.(?:png|jpg|jpeg|gif|svg|webp)[^'"]*)['"]''',
+            rf'src="{base}/\2"', html)
+        # data files
+        html = re.sub(
+            r'''(['"])(?!/|http|https|data:)([^'"]+\.(?:json|csv|data)[^'"]*)['"]''',
+            rf'"{base}/\2"', html)
+        return html
+
+    return _rewrite(content)
 

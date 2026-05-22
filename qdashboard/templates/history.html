@@ -143,19 +143,18 @@
         <!-- /#page-content-wrapper -->
     </div>
 
-    <!-- Report Modal -->
+    <!-- Report Modal (iframe-based) -->
     <div class="modal fade" id="report-modal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-xl">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title"><i class="fas fa-chart-bar mr-2"></i><span id="report-modal-title">Report</span></h5>
-                    <button type="button" class="close text-light" data-dismiss="modal"><span>&times;</span></button>
+                    <button type="button" class="close text-light" data-dismiss="modal" onclick="clearReportIframe()"><span>&times;</span></button>
                 </div>
-                <div class="modal-body">
-                    <div id="report-modal-loading" class="text-center p-4">
-                        <i class="fas fa-spinner fa-spin fa-2x"></i><br><small class="text-muted mt-2 d-block">Loading report…</small>
-                    </div>
-                    <div id="report-embed-area" class="report-embed-container" style="display:none;"></div>
+                <div class="modal-body p-0" style="height:82vh;">
+                    <iframe id="report-iframe" src="about:blank"
+                            style="width:100%;height:100%;border:none;"
+                            title="Experiment Report"></iframe>
                 </div>
             </div>
         </div>
@@ -280,26 +279,16 @@
             $('#history-pagination').html(html);
         }
 
-        // ---- Report modal ----
+        // ---- Report modal (iframe) ----
+
+        window.clearReportIframe = function () {
+            document.getElementById('report-iframe').src = 'about:blank';
+        };
 
         window.openReportModal = function (experimentId) {
             $('#report-modal-title').text('Report — ' + experimentId);
-            $('#report-modal-loading').show();
-            $('#report-embed-area').hide().html('');
+            document.getElementById('report-iframe').src = '/experiment_report_page/' + experimentId;
             $('#report-modal').modal('show');
-            $.getJSON('/api/experiment_report/' + experimentId)
-                .done(function (fragment) {
-                    var css = fragment.head_css || '';
-                    var body = fragment.body_html || '';
-                    $('#report-embed-area')
-                        .html('<style>' + css + '</style>' + body)
-                        .show();
-                    $('#report-modal-loading').hide();
-                })
-                .fail(function () {
-                    $('#report-embed-area').html('<p class="text-danger p-3">Could not load report.</p>').show();
-                    $('#report-modal-loading').hide();
-                });
         };
 
         // ---- Refresh a single run ----

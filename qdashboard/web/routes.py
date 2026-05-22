@@ -23,7 +23,7 @@ from ..qpu.topology import qpu_connectivity, infer_topology_from_connectivity, g
 from ..experiments.protocols import get_qibocal_protocols, get_protocol_attributes
 from ..experiments import submit_experiment, repeat_experiment, get_experiment_status, list_user_experiments
 from ..experiments.job_submission import find_latest_experiment
-from ..web.reports import report_viewer, get_latest_report_path, get_report_fragment
+from ..web.reports import report_viewer, get_latest_report_path, get_report_fragment, get_full_report_html
 from ..utils.formatters import yaml_response, json_response
 from qdashboard.utils.logger import get_logger
 from packaging.version import parse as parse_version
@@ -748,7 +748,7 @@ async def qibocal_cli_action(request: Request, action: str,
                               report_path: str = Form(...)):
     """Execute qibocal CLI commands."""
     config = _get_config(request)
-    full_report_path = _safe_path_join(config['root'], report_path)
+    full_report_path = _safe_path_join(config.get('data_dir', config['root']), report_path)
     if full_report_path is None:
         logger.warning(f"Path traversal attempt in qibocal_cli_action: {report_path!r}")
         return Response(content=json.dumps({'success': False,
@@ -804,7 +804,7 @@ async def repeat_experiment_route(request: Request,
     """Repeat an experiment by submitting it to SLURM."""
     try:
         config = _get_config(request)
-        safe = _safe_path_join(config['root'], report_path)
+        safe = _safe_path_join(config.get('data_dir', config['root']), report_path)
         if safe is None:
             logger.warning(f"Path traversal attempt in repeat_experiment_route: {report_path!r}")
             return Response(content=json.dumps({'success': False,
@@ -1056,6 +1056,63 @@ async def api_experiment_assets(request: Request, experiment_id: str, filename: 
 
 
 # ------------------------------------------------------------------ #
+# Full report page (for iframe embedding)                             #
+# ------------------------------------------------------------------ #
+
+@router.get("/experiment_report_page/{experiment_id}", name="experiment_report_page",
+            include_in_schema=False)
+async def experiment_report_page(request: Request, experiment_id: str):
+    """Serve a complete standalone HTML report page suitable for an iframe."""
+    try:
+        config = _get_config(request)
+        data_dir = config.get('data_dir') or os.path.join(config.get('root', ''), 'data')
+        import glob as _glob
+        matches = _glob.glob(os.path.join(data_dir, '*', '*', experiment_id, 'output'))
+        if not matches:
+            return HTMLResponse(content="<html><body><p>Report not found.</p></body></html>",
+                                status_code=404)
+        output_dir = matches[0]
+        html = get_full_report_html(experiment_id, output_dir)
+        return HTMLResponse(content=html)
+    except FileNotFoundError:
+        return HTMLResponse(content="<html><body><p>Report not ready yet.</p></body></html>",
+                            status_code=404)
+    except Exception as e:
+        return HTMLResponse(content=f"<html><body><p>Error: {e}</p></body></html>",
+                            status_code=500)
+
+
+# ------------------------------------------------------------------ #
+# Experiment log streaming                                            #
+# ------------------------------------------------------------------ #
+
+@router.get("/api/experiment_log/{experiment_id}", name="api_experiment_log",
+            tags=["Experiments"], summary="Return the SLURM log for an experiment")
+async def api_experiment_log(request: Request, experiment_id: str):
+    """Return tail of the SLURM output log for a running/completed experiment."""
+    try:
+        config = _get_config(request)
+        data_dir = config.get('data_dir') or os.path.join(config.get('root', ''), 'data')
+        import glob as _glob
+        log_matches = _glob.glob(
+            os.path.join(data_dir, '*', '*', experiment_id, 'logs', 'slurm_output.log'))
+        if not log_matches:
+            return Response(
+                content=json.dumps({'found': False, 'lines': []}),
+                media_type='application/json')
+        log_path = log_matches[0]
+        with open(log_path, 'r', errors='replace') as fh:
+            lines = fh.readlines()
+        return Response(
+            content=json.dumps({'found': True, 'lines': lines[-200:]}),
+            media_type='application/json')
+    except Exception as e:
+        return Response(
+            content=json.dumps({'found': False, 'lines': [], 'error': str(e)}),
+            media_type='application/json')
+
+
+# ------------------------------------------------------------------ #
 # Experiment history UI + API                                         #
 # ------------------------------------------------------------------ #
 
@@ -1065,7 +1122,7 @@ async def history_page(request: Request):
     from ..core.app import templates
     try:
         config = _get_config(request)
-        qibo_versions = get_qibo_versions()
+        version_data = get_qibo_versions(request=request)
         qpus = get_qpu_list()
         # Fetch distinct protocols from DB for filter dropdowns
         protocols_list = []
@@ -1078,7 +1135,7 @@ async def history_page(request: Request):
             pass
         html = templates.get_template('history.html').render(
             request=request,
-            qibo_versions=qibo_versions,
+            qibo_versions=version_data['versions'],
             qpus=qpus,
             protocols=protocols_list,
         )
