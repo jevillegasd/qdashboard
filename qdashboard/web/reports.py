@@ -76,8 +76,11 @@ def report_viewer(report_path, root_path, request, qibo_versions=None, access_mo
 
     # Compute path relative to root_path for display and qibocal actions.
     # Use relpath (not string replace) so symlinks don't cause a mismatch.
+    # Resolve both sides through realpath first so symlink differences
+    # (e.g. /home/... vs /nfs/...) do not produce spurious ../.. sequences.
     try:
-        report_path_for_link = os.path.relpath(report_path, root_path)
+        report_path_for_link = os.path.relpath(os.path.realpath(report_path),
+                                                os.path.realpath(root_path))
     except ValueError:
         # Different drives on Windows — fall back to basename
         report_path_for_link = os.path.basename(report_path)

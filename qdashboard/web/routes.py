@@ -939,7 +939,7 @@ async def api_experiments_latest(
                             status_code=404, media_type='application/json')
         data_dir = config.get('data_dir', os.path.join(config.get('root', ''), 'data'))
         abs_output = result.get('output_dir', '')
-        rel = os.path.relpath(abs_output, data_dir) if abs_output else ''
+        rel = os.path.relpath(os.path.realpath(abs_output), os.path.realpath(data_dir)) if abs_output else ''
         result['report_url'] = '/files/' + rel if rel else ''
         return {'found': True, **_sanitize_exp(result)}
     except Exception as e:
@@ -958,7 +958,7 @@ async def api_experiment_status(request: Request, experiment_id: str):
             output_dir = status.get('output_dir', '')
             if output_dir:
                 data_dir = config.get('data_dir', os.path.join(config.get('root', ''), 'data'))
-                status['report_url'] = '/files/' + os.path.relpath(output_dir, data_dir)
+                status['report_url'] = '/files/' + os.path.relpath(os.path.realpath(output_dir), os.path.realpath(data_dir))
             return {'success': True, 'experiment': _sanitize_exp(status)}
         return Response(content=json.dumps({'success': False, 'message': 'Experiment not found'}),
                         status_code=404, media_type='application/json')
