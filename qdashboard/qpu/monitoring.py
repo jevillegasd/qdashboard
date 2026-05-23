@@ -6,10 +6,10 @@ import os
 import json
 import subprocess
 import traceback
-import signal
 from datetime import datetime
 from packaging import version
 from qdashboard.utils.logger import get_logger
+from qdashboard.utils.signals import SignalDisabler
 from .slurm import check_queue_running_jobs
 from .platforms import get_platforms_path
 from .utils import detect_and_save_qibolab_version, is_qibolab_new_api, get_qibolab_version_from_file
@@ -362,15 +362,6 @@ def __get_parameters_manual(qpu_path: str):
 
 def __get_parameters(platform) -> dict:
     """Get available parameters for a specific qibolab Platform."""
-    class SignalDisabler:
-        def __enter__(self):
-            self.old_signal = signal.signal
-            signal.signal = lambda sig, handler: None
-            return self
-        
-        def __exit__(self, exc_type, exc_val, exc_tb):
-            signal.signal = self.old_signal
-
     parameters = {
                     'name': platform,
                     'nqubits': 'Unknown',

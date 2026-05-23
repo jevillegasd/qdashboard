@@ -89,38 +89,7 @@ def get_type(mode):
         return 'file'
 
 
-def read_yaml_file(file_path):
-    """Read YAML file."""
-    import yaml
-    with open(file_path, 'r') as file:
-        data = yaml.load(file, Loader=yaml.FullLoader)
-    return data
-
-
-def write_yaml_file(file_path, data):
-    """Write YAML file."""
-    import yaml
-    with open(file_path, 'w') as file:
-        yaml.dump(data, file)
-
-
-def read_json_file(file_path):
-    """Read JSON file."""
-    import json
-    with open(file_path, 'r') as file:
-        data = json.load(file)
-    return data
-
-
-def write_json_file(file_path, data):
-    """Write JSON file."""
-    import json
-    with open(file_path, 'w') as file:
-        json.dump(data, file)
-
-
 def yaml_response(data):
-    """Format YAML as HTTP response."""
     from starlette.responses import Response
     return Response(content=yaml.dump(data), status_code=200, media_type='application/x-yaml')
 

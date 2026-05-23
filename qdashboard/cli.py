@@ -142,27 +142,6 @@ def get_default_config(args: argparse.Namespace) -> dict:
     return config
 
 
-def validate_config_legacy(config: dict) -> None:
-    """Legacy validation function - moved to core.config module."""
-    logger.warning("Using legacy validation function. Consider migrating to core.config.validate_config()")
-    try:
-        from qdashboard.core.config import validate_config
-        validate_config(config)
-    except Exception as e:
-        # Fallback to legacy validation
-        if not (1 <= config['port'] <= 65535):
-            logger.warning(f"Error: Port number must be between 1 and 65535, got {config['port']}")
-            sys.exit(1)
-        
-        if not os.path.exists(config['root']):
-            logger.warning(f"Error: Root directory does not exist: {config['root']}")
-            sys.exit(1)
-        
-        if not os.path.isdir(config['root']):
-            logger.warning(f"Error: Root path is not a directory: {config['root']}")
-            sys.exit(1)
-
-
 def main(argv: Optional[List[str]] = None) -> None:
     """
     Main entry point for the QDashboard CLI.

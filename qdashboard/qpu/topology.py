@@ -7,9 +7,9 @@ import json
 import yaml
 import base64
 import io
-import signal
 import traceback
 from qdashboard.utils.logger import get_logger
+from qdashboard.utils.signals import SignalDisabler
 from qdashboard.qpu.platforms import get_platforms_path
 from qdashboard.qpu.utils import detect_and_save_qibolab_version, is_qibolab_new_api, get_qibolab_version_from_file
 
@@ -45,15 +45,6 @@ def qpu_connectivity(qpu_name):
     """
     Extract connectivity data from QPU.
     """
-    class SignalDisabler:
-        def __enter__(self):
-            self.old_signal = signal.signal
-            signal.signal = lambda sig, handler: None
-            return self
-        
-        def __exit__(self, exc_type, exc_val, exc_tb):
-            signal.signal = self.old_signal
-
     # Detect qibolab version for this platform
     platforms_path = get_platforms_path()
     qpu_path = os.path.join(platforms_path, qpu_name)

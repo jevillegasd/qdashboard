@@ -11,68 +11,53 @@ from ..core.config import get_config
 
 
 def check_qibocal_availability():
-    """Check if qibocal CLI is available."""
+    """Return True if the `qq` CLI is available."""
     try:
-        result = subprocess.run(['qq', '--help'], 
-                              capture_output=True, 
-                              text=True, 
-                              timeout=5)
+        result = subprocess.run(['qq', '--help'],
+                               capture_output=True,
+                               text=True,
+                               timeout=5)
         return result.returncode == 0
     except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.SubprocessError):
         return False
+
+
+def _rewrite_asset_paths(html: str, base: str) -> str:
+    """Rewrite relative asset paths in *html* to be rooted at *base*."""
+    html = re.sub(
+        r"""href=(['"])(?!/|http|https|data:)([^'"]+\.css[^'"]*)['"]""",
+        rf'href="{base}/\2"', html)
+    html = re.sub(
+        r"""src=(['"])(?!/|http|https|data:)([^'"]+\.js[^'"]*)['"]""",
+        rf'src="{base}/\2"', html)
+    html = re.sub(
+        r"""src=(['"])(?!/|http|https|data:)([^'"]+\.(?:png|jpg|jpeg|gif|svg|webp)[^'"]*)['"]""",
+        rf'src="{base}/\2"', html)
+    html = re.sub(
+        r"""(['"])(?!/|http|https|data:)([^'"]+\.(?:json|csv|data)[^'"]*)['"]""",
+        rf'"{base}/\2"', html)
+    return html
  
 
 def report_viewer(report_path, root_path, request, qibo_versions=None, access_mode="latest"):
-    """
-    Generate report viewer with proper asset handling.
-    
-    This function processes Qibocal HTML reports by:
-    1. Extracting head content (CSS/JS dependencies)
-    2. Extracting body content (main report)
-    3. Fixing asset paths to work with Flask routing
-    4. Rendering using a single template call with proper variables
-    
-    Args:
-        report_path (str): Path to the report directory
-        root_path (str): Root path for asset resolution
-        qibo_versions (dict): Pre-fetched qibo versions (optional)
-        access_mode (str): How the report was accessed ("latest" or "file_browser")
-        
-    Returns:
-        Flask Response: Rendered report page
-    """
+    """Render a Qibocal HTML report inside the dashboard template."""
     with open(os.path.join(report_path, "index.html"), 'r') as file:
         report_viewer_content = file.read()
-    
-    # Extract the head section to get CSS and JS dependencies
+
     head_content = ""
     if '<head>' in report_viewer_content and '</head>' in report_viewer_content:
         head_content = report_viewer_content.split('<head>')[1].split('</head>')[0]
-    
-    # Extract main content
+
     report_viewer_body = report_viewer_content
     if '<body>' in report_viewer_content and '</body>' in report_viewer_content:
         report_viewer_body = report_viewer_content.split('<body>')[1].split('</body>')[0]
-        
-        # Remove header if present
         if '<header' in report_viewer_body and '</header>' in report_viewer_body:
             report_viewer_body = report_viewer_body.split('</header>')[1]
-    
-    # Remove the original report's sidebar menu if it exists
+
     report_viewer_body = re.sub(r'<nav id="sidebarMenu".*?</nav>', '', report_viewer_body, flags=re.DOTALL)
 
-    # Fix CSS links
-    head_content = re.sub(r'''href=(['"])(?!/|http|https|data:)([^'"]+\.css[^'"]*)['"]''', r'href="/report_assets/\2"', head_content)
-    
-    # Fix JS script sources
-    head_content = re.sub(r'''src=(['"])(?!/|http|https|data:)([^'"]+\.js[^'"]*)['"]''', r'src="/report_assets/\2"', head_content)
-    report_viewer_body = re.sub(r'''src=(['"])(?!/|http|https|data:)([^'"]+\.js[^'"]*)['"]''', r'src="/report_assets/\2"', report_viewer_body)
-    
-    # Fix image sources
-    report_viewer_body = re.sub(r'''src=(['"])(?!/|http|https|data:)([^'"]+\.(?:png|jpg|jpeg|gif|svg)[^'"]*)['"]''', r'src="/report_assets/\2"', report_viewer_body)
-    
-    # Fix any other asset references (like data files for plots)
-    report_viewer_body = re.sub(r'''(['"])(?!/|http|https|data:)([^'"]+\.(?:json|csv|data|yml|yaml)[^'"]*)['"]''', r'"/report_assets/\2"', report_viewer_body)
+    head_content = _rewrite_asset_paths(head_content, '/report_assets')
+    report_viewer_body = _rewrite_asset_paths(report_viewer_body, '/report_assets')
 
     # Compute path relative to root_path for display and qibocal actions.
     # Use relpath (not string replace) so symlinks don't cause a mismatch.
@@ -125,12 +110,11 @@ def get_latest_report_path():
 
 
 def get_report_fragment(experiment_id: str, report_path: str) -> dict:
-    """
-    Extract head CSS and body HTML from a qibocal report output directory,
-    rewriting asset paths to use /api/experiment_assets/{experiment_id}/.
+    """Extract head CSS and body HTML from a qibocal report, rewriting asset
+    paths to use /api/experiment_assets/{experiment_id}/.
 
-    Returns a dict with keys 'head_css' and 'body_html', or raises FileNotFoundError
-    if the report index does not exist.
+    Returns a dict with keys 'head_css' and 'body_html', or raises
+    FileNotFoundError if the report index does not exist.
     """
     index_path = os.path.join(report_path, "index.html")
     if not os.path.exists(index_path):
@@ -139,59 +123,26 @@ def get_report_fragment(experiment_id: str, report_path: str) -> dict:
     with open(index_path, "r", errors="replace") as fh:
         content = fh.read()
 
-    # Extract <head> section
     head_content = ""
     if "<head>" in content and "</head>" in content:
         head_content = content.split("<head>")[1].split("</head>")[0]
 
-    # Extract <body> section
     body = content
     if "<body>" in content and "</body>" in content:
         body = content.split("<body>")[1].split("</body>")[0]
         if "<header" in body and "</header>" in body:
             body = body.split("</header>")[1]
 
-    # Remove original sidebar nav
     body = re.sub(r'<nav id="sidebarMenu".*?</nav>', "", body, flags=re.DOTALL)
 
     base = f"/api/experiment_assets/{experiment_id}"
-
-    # Rewrite relative asset paths in head_content
-    head_content = re.sub(
-        r'''href=(['"])(?!/|http|https|data:)([^'"]+\.css[^'"]*)['"]''',
-        rf'href="{base}/\2"',
-        head_content,
-    )
-    head_content = re.sub(
-        r'''src=(['"])(?!/|http|https|data:)([^'"]+\.js[^'"]*)['"]''',
-        rf'src="{base}/\2"',
-        head_content,
-    )
-
-    # Rewrite relative asset paths in body
-    body = re.sub(
-        r'''src=(['"])(?!/|http|https|data:)([^'"]+\.js[^'"]*)['"]''',
-        rf'src="{base}/\2"',
-        body,
-    )
-    body = re.sub(
-        r'''src=(['"])(?!/|http|https|data:)([^'"]+\.(?:png|jpg|jpeg|gif|svg|webp)[^'"]*)['"]''',
-        rf'src="{base}/\2"',
-        body,
-    )
-    body = re.sub(
-        r'''(['"])(?!/|http|https|data:)([^'"]+\.(?:json|csv|data)[^'"]*)['"]''',
-        rf'"{base}/\2"',
-        body,
-    )
-
-    return {"head_css": head_content, "body_html": body}
+    return {"head_css": _rewrite_asset_paths(head_content, base),
+            "body_html": _rewrite_asset_paths(body, base)}
 
 
 def get_full_report_html(experiment_id: str, report_path: str) -> str:
-    """
-    Return a complete standalone HTML page for embedding in an iframe.
-    Rewrites all relative asset paths to /api/experiment_assets/{experiment_id}/.
+    """Return a complete standalone HTML page for embedding in an iframe,
+    with all relative asset paths rewritten to /api/experiment_assets/{experiment_id}/.
     """
     index_path = os.path.join(report_path, "index.html")
     if not os.path.exists(index_path):
@@ -200,26 +151,5 @@ def get_full_report_html(experiment_id: str, report_path: str) -> str:
     with open(index_path, "r", errors="replace") as fh:
         content = fh.read()
 
-    base = f"/api/experiment_assets/{experiment_id}"
-
-    def _rewrite(html: str) -> str:
-        # CSS href
-        html = re.sub(
-            r'''href=(['"])(?!/|http|https|data:)([^'"]+\.css[^'"]*)['"]''',
-            rf'href="{base}/\2"', html)
-        # JS src
-        html = re.sub(
-            r'''src=(['"])(?!/|http|https|data:)([^'"]+\.js[^'"]*)['"]''',
-            rf'src="{base}/\2"', html)
-        # images
-        html = re.sub(
-            r'''src=(['"])(?!/|http|https|data:)([^'"]+\.(?:png|jpg|jpeg|gif|svg|webp)[^'"]*)['"]''',
-            rf'src="{base}/\2"', html)
-        # data files
-        html = re.sub(
-            r'''(['"])(?!/|http|https|data:)([^'"]+\.(?:json|csv|data)[^'"]*)['"]''',
-            rf'"{base}/\2"', html)
-        return html
-
-    return _rewrite(content)
+    return _rewrite_asset_paths(content, f"/api/experiment_assets/{experiment_id}")
 

@@ -25,15 +25,7 @@ def set_config(config: Dict[str, Any]) -> None:
 
 
 def get_config() -> Dict[str, Any]:
-    """
-    Get the current application configuration.
-
-    Returns:
-        Dict containing the application configuration
-
-    Raises:
-        ConfigError: If configuration has not been set yet
-    """
+    """Return the current application configuration, or raise ConfigError if not set."""
     if not _config:
         raise ConfigError(
             "Application configuration not available. "
@@ -42,22 +34,8 @@ def get_config() -> Dict[str, Any]:
     return _config
 
 
-def get_app_config() -> Dict[str, Any]:
-    """Alias for get_config() — kept for backwards compatibility."""
-    return get_config()
-
-
 def get_config_value(key: str, default: Any = None) -> Any:
-    """
-    Get a specific configuration value.
-
-    Args:
-        key: Configuration key to retrieve
-        default: Default value if key is not found
-
-    Returns:
-        Configuration value or default
-    """
+    """Return config[key], or *default* if the key is absent or config is unset."""
     try:
         return get_config().get(key, default)
     except ConfigError:
@@ -115,55 +93,31 @@ def get_environment() -> Optional[str]:
 
 
 def ensure_directory_exists(directory_path: str) -> str:
-    """
-    Ensure a directory exists, creating it if necessary.
-    
-    Args:
-        directory_path: Path to the directory
-        
-    Returns:
-        The absolute path to the directory
-        
-    Raises:
-        OSError: If directory cannot be created
-    """
+    """Create *directory_path* if it does not exist and return its absolute path."""
     abs_path = os.path.abspath(directory_path)
-    os.makedirs(abs_path, exist_ok=True)  # Core implementation - don't change to avoid recursion
+    os.makedirs(abs_path, exist_ok=True)
     return abs_path
 
 
 def validate_config(config: Dict[str, Any]) -> None:
-    """
-    Validate configuration values and ensure required directories exist.
-    
-    Args:
-        config: Configuration dictionary to validate
-        
-    Raises:
-        ConfigError: If configuration is invalid
-    """
-    # Validate port range
+    """Validate *config* values and create required runtime directories."""
     port = config.get('port', 5005)
     if not isinstance(port, int) or not (1 <= port <= 65535):
         raise ConfigError(f"Port number must be between 1 and 65535, got {port}")
-    
-    # Validate root directory
+
     root = config.get('root')
     if root and not os.path.exists(root):
         raise ConfigError(f"Root directory does not exist: {root}")
-    
-    # Ensure QDashboard directories exist
+
     qd_root = config.get('qd_root')
     if qd_root:
         try:
-            ensure_directory_exists(os.path.join(qd_root, 'logs'))
-            ensure_directory_exists(os.path.join(qd_root, 'data'))
-            ensure_directory_exists(os.path.join(qd_root, 'temp'))
+            for subdir in ('logs', 'data', 'temp'):
+                ensure_directory_exists(os.path.join(qd_root, subdir))
         except OSError as e:
             raise ConfigError(f"Cannot create QDashboard directories: {e}") from e
 
 
-# Constants for default values - centralized in one place
 DEFAULT_PORT = 5005
 DEFAULT_HOST = '127.0.0.1'
 DEFAULT_QD_ROOT = os.path.expanduser('~/.qdashboard')

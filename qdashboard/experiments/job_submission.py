@@ -50,12 +50,10 @@ def prepare_runcard_from_path(runcard_path: str, experiment_dir: str) -> Tuple[s
     """Copy runcard to experiment directory and extract metadata."""
     if not os.path.exists(runcard_path):
         raise FileNotFoundError(f"Runcard not found: {runcard_path}")
-    
-    # Copy runcard to experiment directory
+
     dest_runcard_path = os.path.join(experiment_dir, 'runcard.yml')
     shutil.copy2(runcard_path, dest_runcard_path)
-    
-    # Read and validate runcard
+
     with open(dest_runcard_path, 'r') as f:
         runcard_data = yaml.safe_load(f)
     
@@ -69,42 +67,32 @@ def prepare_runcard_from_path(runcard_path: str, experiment_dir: str) -> Tuple[s
 
 def prepare_runcard_from_data(runcard_data: Dict[str, Any], experiment_dir: str) -> Tuple[str, Dict[str, Any]]:
     """Create runcard file from data in experiment directory."""
-    # Validate runcard data
     required_fields = ['platform']
     for field in required_fields:
         if field not in runcard_data:
             raise ValueError(f"Missing required field in runcard: {field}")
-    
-    # Create runcard file in experiment directory
+
     dest_runcard_path = os.path.join(experiment_dir, 'runcard.yml')
     with open(dest_runcard_path, 'w') as f:
         yaml.dump(runcard_data, f, default_flow_style=False, sort_keys=False)
-    
+
     return dest_runcard_path, runcard_data
 
 
 def create_temp_runcard_from_data(runcard_data: Dict[str, Any], temp_dir: str) -> str:
     """Create temporary runcard file from data."""
-    # Validate runcard data
     required_fields = ['platform']
     for field in required_fields:
         if field not in runcard_data:
             raise ValueError(f"Missing required field in runcard: {field}")
-    
-    # Create temporary runcard file
+
     temp_runcard_path = os.path.join(temp_dir, 'temp_runcard.yml')
     ensure_directory_exists(temp_dir)
-    
+
     with open(temp_runcard_path, 'w') as f:
         yaml.dump(runcard_data, f, default_flow_style=False, sort_keys=False)
-    
+
     return temp_runcard_path
-
-
-# Legacy function for backward compatibility
-def prepare_runcard(runcard_path: str, experiment_dir: str) -> Tuple[str, Dict[str, Any]]:
-    """Copy runcard to experiment directory and extract metadata."""
-    return prepare_runcard_from_path(runcard_path, experiment_dir)
 
 
 def create_slurm_script(experiment_id: str, experiment_dir: str, runcard_path: str, 
@@ -161,10 +149,7 @@ exit 0
     job_script_path = os.path.join(experiment_dir, 'job_script.sh')
     with open(job_script_path, 'w') as f:
         f.write(job_script_content)
-    
-    # Make script executable
     os.chmod(job_script_path, 0o755)
-    
     return job_script_path
 
 

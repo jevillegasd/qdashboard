@@ -5,7 +5,6 @@ Experiment and protocol management utilities.
 import inspect
 import importlib
 import pkgutil
-import signal
 import subprocess
 import sys
 import os
@@ -13,6 +12,7 @@ import json
 import threading
 import traceback
 from functools import lru_cache
+from qdashboard.utils.signals import SignalDisabler
 
 from qibocal.auto.operation import Parameters, Results, Data, Routine
 
@@ -77,16 +77,6 @@ def _get_protocols_direct():
     """
     try:
         import qibocal.protocols as protocols_module
-        
-        # Use a context manager approach to disable signals more safely
-        class SignalDisabler:
-            def __enter__(self):
-                self.old_signal = signal.signal
-                signal.signal = lambda sig, handler: None
-                return self
-            
-            def __exit__(self, exc_type, exc_val, exc_tb):
-                signal.signal = self.old_signal
         
         routine_protocols = []
         
