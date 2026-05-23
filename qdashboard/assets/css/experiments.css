@@ -407,6 +407,13 @@
     background: #2c2c2c;
 }
 
+/* Separator between collapsed log and report iframe */
+.results-report-separator {
+    height: 1px;
+    background: #333;
+    margin: .4rem 0 .5rem;
+}
+
 #results-report-container {
     font-size: 0.85rem;
 }

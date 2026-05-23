@@ -419,11 +419,19 @@ Extended with quantum computing specific features:
                         <p class="mb-0 small">Run an experiment to see live logs<br>or click <i class="fas fa-chart-bar"></i> to load last result</p>
                     </div>
                     <div id="results-log-viewer" style="display:none;">
-                        <div class="d-flex justify-content-between align-items-center mb-1">
+                        <div class="d-flex justify-content-between align-items-center mb-1 results-log-header"
+                             style="cursor:pointer;"
+                             data-toggle="collapse" data-target="#results-log-body"
+                             aria-expanded="true" aria-controls="results-log-body">
                             <small class="text-muted"><i class="fas fa-terminal mr-1"></i> SLURM Log</small>
-                            <span id="results-log-status" class="badge badge-warning">Running</span>
+                            <div class="d-flex align-items-center" style="gap:.4rem;">
+                                <span id="results-log-status" class="badge badge-warning">Running</span>
+                                <i class="fas fa-chevron-down results-log-chevron" style="font-size:.7rem; color:#666; transition:transform .2s;"></i>
+                            </div>
                         </div>
-                        <pre id="results-log-content" class="log-viewer">Waiting for logs…</pre>
+                        <div class="collapse show" id="results-log-body">
+                            <pre id="results-log-content" class="log-viewer mb-1">Waiting for logs…</pre>
+                        </div>
                     </div>
                     <div id="results-loading" style="display:none;" class="text-center p-4 text-muted">
                         <i class="fas fa-spinner fa-spin fa-2x"></i>
@@ -508,6 +516,15 @@ Extended with quantum computing specific features:
         // Keep qubit dropdown open when clicking checkboxes
         $(document).on('click', '#qubit-dropdown-menu', function(e) {
             e.stopPropagation();
+        });
+
+        // Animate log collapse chevron
+        $(document).on('hide.bs.collapse', '#results-log-body', function() {
+            var ic = document.querySelector('.results-log-chevron');
+            if (ic) ic.style.transform = 'rotate(-90deg)';
+        }).on('show.bs.collapse', '#results-log-body', function() {
+            var ic = document.querySelector('.results-log-chevron');
+            if (ic) ic.style.transform = '';
         });
 
         // Load initial data
@@ -2047,6 +2064,11 @@ function showExperimentLog(experimentId) {
 
     document.getElementById('results-experiment-label').textContent = experimentId;
     document.getElementById('results-experiment-id').textContent = '';
+    // Reset report container and re-expand log body for fresh run
+    var container = document.getElementById('results-report-container');
+    container.style.display = 'none';
+    container.innerHTML = '';
+    $('#results-log-body').collapse('show');
     _showResultsState('results-log-viewer');
     document.getElementById('results-log-content').textContent = 'Waiting for logs\u2026';
     document.getElementById('results-log-status').textContent = 'Running';
@@ -2075,14 +2097,22 @@ function showExperimentLog(experimentId) {
                     _logPollTimer = null;
                     document.getElementById('results-log-status').textContent = 'Completed';
                     document.getElementById('results-log-status').className = 'badge badge-success';
-                    // Auto-load report if available
+                    // Auto-load report if available — keep log visible (collapsed) + show report
                     if (exp.report_available) {
                         document.getElementById('results-experiment-id').textContent = experimentId;
                         var openLink = document.getElementById('results-open-link');
                         if (exp.report_url) { openLink.href = exp.report_url; openLink.style.display = ''; }
-                        _showResultsState('results-report-container');
+                        // Collapse the log body; leave log header visible
+                        $('#results-log-body').collapse('hide');
+                        // Hide all other state panels
+                        ['results-empty-state','results-loading','results-not-found'].forEach(function(id) {
+                            var el = document.getElementById(id); if (el) el.style.display = 'none';
+                        });
+                        // Show report below the (now-collapsed) log
                         var container = document.getElementById('results-report-container');
-                        container.innerHTML = '<iframe src="/experiment_report_page/' + experimentId + '"' +
+                        container.style.display = '';
+                        container.innerHTML = '<div class="results-report-separator"></div>' +
+                            '<iframe src="/experiment_report_page/' + experimentId + '"' +
                             ' style="width:100%;height:100%;min-height:600px;border:none;background:#fff"' +
                             ' title="Experiment Report"></iframe>';
                     }
