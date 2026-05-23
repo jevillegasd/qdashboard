@@ -351,7 +351,7 @@ Extended with quantum computing specific features:
                                 </div>
                                 <!-- Qubit parameter overrides (collapsed by default) -->
                                 <div id="qubit-parameters" class="mt-2"></div>
-                                <div class="mt-3 d-flex" style="gap:.5rem;">
+                                <div class="mt-3 d-flex align-items-center flex-wrap" style="gap:.5rem;">
                                     <button class="btn btn-primary btn-sm" id="generate-yaml-btn" disabled>
                                         <i class="fas fa-cogs"></i> YAML
                                     </button>
@@ -361,6 +361,12 @@ Extended with quantum computing specific features:
                                     <button class="btn btn-info btn-sm" id="save-action-node-btn" disabled>
                                         <i class="fas fa-save"></i> Save Node
                                     </button>
+                                    <div class="form-check mb-0 ml-2" style="white-space:nowrap;">
+                                        <input class="form-check-input" type="checkbox" id="update-platform-checkbox" checked>
+                                        <label class="form-check-label text-light small" for="update-platform-checkbox">
+                                            Update platform
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
                             {% else %}
@@ -427,6 +433,23 @@ Extended with quantum computing specific features:
                             <div class="d-flex align-items-center" style="gap:.4rem;">
                                 <span id="results-log-status" class="badge badge-warning">Running</span>
                                 <i class="fas fa-chevron-down results-log-chevron" style="font-size:.7rem; color:#666; transition:transform .2s;"></i>
+                            </div>
+                        </div>
+                        <!-- Error/traceback summary (hidden until an exception is detected) -->
+                        <div id="results-error-summary" style="display:none;" class="results-error-summary mb-1">
+                            <div class="results-error-header d-flex justify-content-between align-items-center px-2 py-1"
+                                 style="cursor:pointer;"
+                                 data-toggle="collapse" data-target="#results-error-body"
+                                 aria-expanded="true" aria-controls="results-error-body">
+                                <small>
+                                    <i class="fas fa-exclamation-triangle mr-1 text-warning"></i>
+                                    <span id="results-error-type" class="text-warning font-weight-bold"></span>
+                                    <span id="results-error-message" class="text-muted ml-1" style="font-size:.7rem;"></span>
+                                </small>
+                                <i class="fas fa-chevron-down results-error-chevron" style="font-size:.65rem; color:#888; transition:transform .2s;"></i>
+                            </div>
+                            <div class="collapse show" id="results-error-body">
+                                <pre id="results-error-traceback" class="error-traceback"></pre>
                             </div>
                         </div>
                         <div class="collapse show" id="results-log-body">
@@ -524,6 +547,15 @@ Extended with quantum computing specific features:
             if (ic) ic.style.transform = 'rotate(-90deg)';
         }).on('show.bs.collapse', '#results-log-body', function() {
             var ic = document.querySelector('.results-log-chevron');
+            if (ic) ic.style.transform = '';
+        });
+
+        // Animate error traceback chevron
+        $(document).on('hide.bs.collapse', '#results-error-body', function() {
+            var ic = document.querySelector('.results-error-chevron');
+            if (ic) ic.style.transform = 'rotate(-90deg)';
+        }).on('show.bs.collapse', '#results-error-body', function() {
+            var ic = document.querySelector('.results-error-chevron');
             if (ic) ic.style.transform = '';
         });
 
@@ -685,6 +717,10 @@ Extended with quantum computing specific features:
                            data-field="relaxation_time" value="${savedDefaults.relaxation_time || ''}" step="0.001"
                            placeholder="–" title="Relaxation time in microseconds (optional)">
                 </div>
+                <div class="form-check mb-0" style="white-space:nowrap;" title="Update platform parameters after this routine completes">
+                    <input type="checkbox" class="form-check-input action-update-checkbox" checked>
+                    <label class="form-check-label action-param-label">Update</label>
+                </div>
             </div>
         `;
 
@@ -836,6 +872,12 @@ Extended with quantum computing specific features:
         });
         
         // Don't add platform to action parameters - it should only be global
+
+        // Read per-action update checkbox
+        const updateCheckbox = actionItem.querySelector('.action-update-checkbox');
+        if (updateCheckbox) {
+            actionData.update = updateCheckbox.checked;
+        }
         
         return { parameters, actionData };
     }
@@ -1481,6 +1523,8 @@ Extended with quantum computing specific features:
         const runButton = document.getElementById('run-experiment-btn');
         const originalText = runButton.innerHTML;
         runButton.disabled = true;
+
+        const autoUpdate = document.getElementById('update-platform-checkbox').checked;
         runButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
 
         try {
@@ -1512,7 +1556,7 @@ Extended with quantum computing specific features:
                     id: experimentName,
                     operation: experimentOperation,
                     parameters: parameters,
-                    update: false  // Always set to false as requested
+                    update: actionData.update !== undefined ? actionData.update : autoUpdate
                 };
 
                 // Add targets if they override the global ones
@@ -1533,7 +1577,8 @@ Extended with quantum computing specific features:
                 },
                 body: JSON.stringify({
                     runcard_data: config,
-                    environment: null  // Could be made configurable later
+                    environment: null,  // Could be made configurable later
+                    auto_update: autoUpdate
                 })
             })
             .then(response => response.json())
@@ -2049,6 +2094,20 @@ function loadExperimentResults(protocolId, protocolName) {
 var _logPollTimer = null;
 var _logCurrentId = null;
 
+function _updateErrorSummary(errorInfo) {
+    var panel = document.getElementById('results-error-summary');
+    if (!errorInfo || !errorInfo.found) {
+        panel.style.display = 'none';
+        return;
+    }
+    document.getElementById('results-error-type').textContent = errorInfo.error_type || 'Error';
+    var msgEl = document.getElementById('results-error-message');
+    var msg = errorInfo.error_message || '';
+    msgEl.textContent = msg.length > 80 ? msg.slice(0, 80) + '…' : msg;
+    document.getElementById('results-error-traceback').textContent = errorInfo.traceback || '';
+    panel.style.display = '';
+}
+
 function _showResultsState(state) {
     ['results-empty-state','results-log-viewer','results-loading',
      'results-not-found','results-report-container'].forEach(function(id) {
@@ -2064,10 +2123,12 @@ function showExperimentLog(experimentId) {
 
     document.getElementById('results-experiment-label').textContent = experimentId;
     document.getElementById('results-experiment-id').textContent = '';
-    // Reset report container and re-expand log body for fresh run
+    // Reset report container, error panel, and re-expand log body for fresh run
     var container = document.getElementById('results-report-container');
     container.style.display = 'none';
     container.innerHTML = '';
+    document.getElementById('results-error-summary').style.display = 'none';
+    document.getElementById('results-error-traceback').textContent = '';
     $('#results-log-body').collapse('show');
     _showResultsState('results-log-viewer');
     document.getElementById('results-log-content').textContent = 'Waiting for logs\u2026';
@@ -2085,6 +2146,7 @@ function showExperimentLog(experimentId) {
                     pre.textContent = data.lines.join('');
                     pre.scrollTop = pre.scrollHeight;
                 }
+                _updateErrorSummary(data.error_info || {});
             }).catch(() => {});
         // Also check experiment status to know when done
         fetch('/api/experiments/' + experimentId)

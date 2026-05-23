@@ -109,7 +109,8 @@ def prepare_runcard(runcard_path: str, experiment_dir: str) -> Tuple[str, Dict[s
 
 def create_slurm_script(experiment_id: str, experiment_dir: str, runcard_path: str, 
                        platform: str, partition: str, platforms_base: str, 
-                       environment: str = None, logs_dir: str = None) -> str:
+                       environment: str = None, logs_dir: str = None,
+                       auto_update: bool = True) -> str:
     """Create SLURM job submission script."""
    
     output_dir = os.path.join(experiment_dir, 'output')
@@ -148,7 +149,7 @@ cd {experiment_dir}
 
 # Run the experiment
 echo "Running experiment..."
-qq run {runcard_path} -o {output_dir} -f --no-update
+qq run {runcard_path} -o {output_dir} -f{'' if auto_update else ' --no-update'}
 
 # Log completion
 echo "End time: $(date)"
@@ -213,7 +214,8 @@ def submit_slurm_job(job_script_path: str) -> Tuple[bool, str, Optional[str]]:
 
 
 def submit_experiment(runcard_path: str = None, runcard_data: Dict[str, Any] = None, 
-                     config: Dict[str, Any] = None, environment: str = None) -> Dict[str, Any]:
+                     config: Dict[str, Any] = None, environment: str = None,
+                     auto_update: bool = True) -> Dict[str, Any]:
     """
     Submit a new experiment to SLURM.
     
@@ -320,7 +322,8 @@ def submit_experiment(runcard_path: str = None, runcard_data: Dict[str, Any] = N
             # the per-experiment log API can find them at <experiment_dir>/logs/
             job_script_path = create_slurm_script(
                 experiment_id, experiment_dir, final_runcard_path,
-                platform, partition, platforms_base, environment, logs_dir=None
+                platform, partition, platforms_base, environment, logs_dir=None,
+                auto_update=auto_update
             )
             
             # Submit job
@@ -591,6 +594,31 @@ def get_experiment_status(experiment_id: str, config: Dict[str, Any] = None) -> 
             metadata['has_output'] = False
             metadata['output_files'] = []
 
+        # --- SLURM-aware status ---
+        # If the experiment was submitted via SLURM, check the live job state
+        # first so we can short-circuit the filesystem poll while the job is
+        # still in the queue.
+        slurm_job_id = metadata.get('job_id')
+        slurm_state = None
+        if slurm_job_id:
+            try:
+                from ..qpu.slurm import check_slurm_job_status, _SLURM_ACTIVE_STATES
+                slurm_state = check_slurm_job_status(slurm_job_id)
+                metadata['slurm_state'] = slurm_state
+                if slurm_state in _SLURM_ACTIVE_STATES:
+                    # Job is still alive — no need to touch the filesystem
+                    metadata['status'] = 'running' if slurm_state == 'RUNNING' else 'pending'
+                    metadata['report_available'] = False
+                    # Still expose the log path so the UI can tail it
+                    exp_dir = metadata.get('experiment_dir', '')
+                    slurm_log = os.path.join(exp_dir, 'logs', 'slurm_output.log')
+                    metadata['has_slurm_log'] = os.path.exists(slurm_log)
+                    return metadata
+                # Job has left the queue (COMPLETED / FAILED / CANCELLED / UNKNOWN)
+                # Fall through to filesystem check; treat missing output as failed.
+            except Exception as _slurm_err:
+                logger.debug("SLURM status check failed for job %s: %s", slurm_job_id, _slurm_err)
+
         # Compute dynamic status from filesystem
         report_index = os.path.join(output_dir or '', 'index.html') if output_dir else ''
         meta_json = os.path.join(output_dir or '', 'meta.json') if output_dir else ''
@@ -598,7 +626,12 @@ def get_experiment_status(experiment_id: str, config: Dict[str, Any] = None) -> 
             metadata['status'] = 'completed'
             metadata['report_available'] = os.path.exists(report_index)
         elif metadata.get('has_output'):
+            # Output dir exists but no report yet — could still be post-processing
             metadata['status'] = 'running'
+            metadata['report_available'] = False
+        elif slurm_state is not None:
+            # Job left the queue but produced no output → it failed
+            metadata['status'] = 'failed'
             metadata['report_available'] = False
         else:
             metadata['status'] = metadata.get('status', 'pending')

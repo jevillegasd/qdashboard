@@ -55,7 +55,6 @@ def create_app(config: dict = None) -> FastAPI:
         },
         license_info={
             "name": "Technology Innovation Institute General License (TII-GL)",
-            "url": "",
         },
         openapi_version="3.1.0",
         docs_url=None,   # served by custom auth-aware route below

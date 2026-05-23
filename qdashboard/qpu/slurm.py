@@ -59,6 +59,32 @@ def get_slurm_status():
         return []
 
 
+# SLURM states that mean the job is still alive in the queue
+_SLURM_ACTIVE_STATES = frozenset({
+    'PENDING', 'RUNNING', 'COMPLETING', 'CONFIGURING', 'RESIZING', 'SUSPENDED',
+})
+
+
+def check_slurm_job_status(job_id) -> str:
+    """Return the SLURM state of *job_id* (e.g. 'RUNNING', 'PENDING').
+
+    Returns the state string if the job is currently in the queue, or
+    ``'UNKNOWN'`` if the job has left the queue (finished / failed / cancelled)
+    or if squeue is unavailable.
+    """
+    try:
+        result = subprocess.run(
+            ['squeue', '-j', str(job_id), '--noheader', '--format=%T'],
+            capture_output=True, text=True, timeout=10
+        )
+        lines = [ln.strip() for ln in result.stdout.splitlines() if ln.strip()]
+        if lines:
+            return lines[0]          # e.g. 'RUNNING', 'PENDING'
+        return 'UNKNOWN'             # not in queue = finished / failed / cancelled
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        return 'UNKNOWN'
+
+
 def check_queue_running_jobs(queue_name):
     """Check if there are running jobs in a specific SLURM queue."""
     try:
@@ -100,6 +126,7 @@ def slurm_log_path():
         home_path = os.environ.get('HOME', '')
         qd_root = os.path.normpath(os.getenv('QD_PATH', os.path.join(home_path, '.qdashboard')))
         return os.path.join(qd_root, 'logs', 'slurm_output.log')
+
 
 def get_slurm_output(slurm_output_path=None):
     """Get SLURM output log content."""

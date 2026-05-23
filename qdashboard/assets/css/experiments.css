@@ -414,6 +414,38 @@
     margin: .4rem 0 .5rem;
 }
 
+/* Error / traceback summary panel */
+.results-error-summary {
+    border: 1px solid #6c3a00;
+    border-radius: .25rem;
+    background: #1e1000;
+    overflow: hidden;
+}
+
+.results-error-header {
+    background: #2a1800;
+    border-bottom: 1px solid #6c3a00;
+    user-select: none;
+}
+
+.results-error-header:hover {
+    background: #341e00;
+}
+
+#results-error-traceback {
+    background: #140d00 !important;
+    color: #ffb74d !important;
+    font-size: .68rem !important;
+    line-height: 1.35;
+    max-height: 180px;
+    overflow-y: auto;
+    padding: .4rem .5rem;
+    margin: 0;
+    border-radius: 0;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
 #results-report-container {
     font-size: 0.85rem;
 }

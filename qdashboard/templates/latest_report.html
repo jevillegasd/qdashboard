@@ -267,9 +267,7 @@ Enhanced with quantum computing dashboard integration, dark theme, and consisten
             success: function(response) {
                 if (response.success) {
                     showQibocalStatus(
-                        'Experiment submitted successfully! Job ID: ' + response.job_id + 
-                        '<br>Output directory: <code>' + response.output_dir + '</code>' +
-                        '<br>Temporary directory: <code>' + response.temp_dir + '</code>',
+                        'Experiment submitted! Job ID: ' + response.job_id,
                         'success'
                     );
                 } else {

@@ -74,10 +74,13 @@ def report_viewer(report_path, root_path, request, qibo_versions=None, access_mo
     # Fix any other asset references (like data files for plots)
     report_viewer_body = re.sub(r'''(['"])(?!/|http|https|data:)([^'"]+\.(?:json|csv|data|yml|yaml)[^'"]*)['"]''', r'"/report_assets/\2"', report_viewer_body)
 
-    # Prepare the report path for the file browser link (remove root prefix and ensure it starts with /)
-    # Use realpath on root_path so it matches report_path (which is already realpath-resolved)
-    resolved_root = os.path.realpath(root_path)
-    report_path_for_link = report_path.replace(resolved_root, "").lstrip("/")
+    # Compute path relative to root_path for display and qibocal actions.
+    # Use relpath (not string replace) so symlinks don't cause a mismatch.
+    try:
+        report_path_for_link = os.path.relpath(report_path, root_path)
+    except ValueError:
+        # Different drives on Windows — fall back to basename
+        report_path_for_link = os.path.basename(report_path)
 
     # Check qibocal availability
     qibocal_available = check_qibocal_availability()

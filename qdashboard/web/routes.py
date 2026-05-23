@@ -23,7 +23,8 @@ from ..qpu.topology import qpu_connectivity, infer_topology_from_connectivity, g
 from ..experiments.protocols import get_qibocal_protocols, get_protocol_attributes
 from ..experiments import submit_experiment, repeat_experiment, get_experiment_status, list_user_experiments
 from ..experiments.job_submission import find_latest_experiment
-from ..web.reports import report_viewer, get_latest_report_path, get_report_fragment, get_full_report_html
+from ..web.reports import (report_viewer, get_latest_report_path, get_report_fragment,
+                            get_full_report_html, check_qibocal_availability)
 from ..utils.formatters import yaml_response, json_response
 from qdashboard.utils.logger import get_logger
 from packaging.version import parse as parse_version
@@ -122,6 +123,19 @@ def _safe_path_join(base: str, user_path: str) -> str | None:
     if candidate != resolved_base and not candidate.startswith(resolved_base + os.sep):
         return None
     return candidate
+
+
+# Keys in experiment metadata dicts that hold absolute filesystem paths.
+# These must never be forwarded to the frontend.
+_FS_PATH_KEYS = frozenset({
+    'output_dir', 'experiment_dir', 'runcard_path', 'job_script_path',
+    'original_report_path', 'metadata', 'output_files', 'temp_dir',
+})
+
+
+def _sanitize_exp(data: dict) -> dict:
+    """Return a copy of *data* with all absolute filesystem path keys removed."""
+    return {k: v for k, v in data.items() if k not in _FS_PATH_KEYS}
 
 
 def register_routes(app, config):
@@ -230,11 +244,11 @@ async def latest(request: Request):
         return _not_found_response(last_path)
 
     try:
-        res = report_viewer(last_path, config['root'], request, version_data['versions'], access_mode="latest")
+        data_dir = config.get('data_dir', os.path.join(config['root'], 'data'))
+        res = report_viewer(last_path, data_dir, request, version_data['versions'], access_mode="latest")
         logger.info(f"Latest report viewed: {last_path}")
         return res
     except FileNotFoundError:
-        data_dir = config.get('data_dir', os.path.join(config['root'], 'data'))
         last_path = "/" + last_path.replace(data_dir, "").lstrip("/")
         logger.warning(f"Report not found: {last_path}")
         return _not_found_response(last_path)
@@ -769,7 +783,6 @@ async def qibocal_cli_action(request: Request, action: str,
                         'message': f'Invalid action: {action}'}),
                         status_code=400, media_type='application/json')
     try:
-        from ..web.reports import check_qibocal_availability
         if not check_qibocal_availability():
             return Response(content=json.dumps({'success': False,
                             'message': 'Qibocal CLI (qq) is not available.'}),
@@ -813,9 +826,9 @@ async def repeat_experiment_route(request: Request,
         result = repeat_experiment(safe, config)
         if result['success']:
             logger.info(f"Experiment repeat submitted: {result['experiment_id']}")
-            return result
+            return _sanitize_exp(result)
         logger.error(f"Failed to repeat experiment: {result['message']}")
-        return Response(content=json.dumps(result), status_code=400,
+        return Response(content=json.dumps(_sanitize_exp(result)), status_code=400,
                         media_type='application/json')
     except Exception as e:
         return _error_response(request, e,
@@ -843,8 +856,8 @@ async def submit_experiment_route(request: Request,
             result = submit_experiment(tmp_path, config, environment)
             if result['success']:
                 logger.info(f"New experiment submitted: {result['experiment_id']}")
-                return result
-            return Response(content=json.dumps(result), status_code=400,
+                return _sanitize_exp(result)
+            return Response(content=json.dumps(_sanitize_exp(result)), status_code=400,
                             media_type='application/json')
         finally:
             os.unlink(tmp_path)
@@ -869,6 +882,7 @@ async def submit_experiment_data_route(request: Request):
                             status_code=400, media_type='application/json')
         runcard_data = data.get('runcard_data')
         environment = data.get('environment')
+        auto_update = data.get('auto_update', True)
         if not runcard_data:
             return Response(content=json.dumps({'success': False,
                             'message': 'No runcard_data provided'}),
@@ -877,11 +891,12 @@ async def submit_experiment_data_route(request: Request):
             return Response(content=json.dumps({'success': False,
                             'message': 'Missing required field: platform'}),
                             status_code=400, media_type='application/json')
-        result = submit_experiment(runcard_data=runcard_data, config=config, environment=environment)
+        result = submit_experiment(runcard_data=runcard_data, config=config, environment=environment,
+                                   auto_update=auto_update)
         if result['success']:
             logger.info(f"New experiment submitted with data: {result['experiment_id']}")
-            return result
-        return Response(content=json.dumps(result), status_code=400,
+            return _sanitize_exp(result)
+        return Response(content=json.dumps(_sanitize_exp(result)), status_code=400,
                         media_type='application/json')
     except Exception as e:
         return _error_response(request, e,
@@ -895,7 +910,8 @@ async def api_list_experiments(request: Request):
     try:
         config = _get_config(request)
         experiments = list_user_experiments(config)
-        return {'success': True, 'experiments': experiments, 'count': len(experiments)}
+        safe = [_sanitize_exp(e) for e in experiments]
+        return {'success': True, 'experiments': safe, 'count': len(safe)}
     except Exception as e:
         return _error_response(request, e,
                                {'success': False, 'message': f'Error listing experiments: {str(e)}'})
@@ -921,13 +937,11 @@ async def api_experiments_latest(
         if result is None:
             return Response(content=json.dumps({'found': False}),
                             status_code=404, media_type='application/json')
-        # Convert absolute output_dir into a web-relative /files/... URL
-        data_dir = os.path.realpath(
-            config.get('data_dir') or os.path.join(config.get('root', ''), 'data'))
-        abs_output = os.path.realpath(result.get('output_dir', ''))
-        rel = abs_output[len(data_dir):].lstrip('/')
-        result['report_url'] = '/files/' + rel
-        return {'found': True, **result}
+        data_dir = config.get('data_dir', os.path.join(config.get('root', ''), 'data'))
+        abs_output = result.get('output_dir', '')
+        rel = os.path.relpath(abs_output, data_dir) if abs_output else ''
+        result['report_url'] = '/files/' + rel if rel else ''
+        return {'found': True, **_sanitize_exp(result)}
     except Exception as e:
         return _error_response(request, e, {'found': False, 'error': str(e)})
 
@@ -943,11 +957,9 @@ async def api_experiment_status(request: Request, experiment_id: str):
             # Attach a web-accessible report_url derived from output_dir
             output_dir = status.get('output_dir', '')
             if output_dir:
-                data_dir = os.path.realpath(
-                    config.get('data_dir') or os.path.join(config.get('root', ''), 'data'))
-                rel = os.path.realpath(output_dir)[len(data_dir):].lstrip('/')
-                status['report_url'] = '/files/' + rel
-            return {'success': True, 'experiment': status}
+                data_dir = config.get('data_dir', os.path.join(config.get('root', ''), 'data'))
+                status['report_url'] = '/files/' + os.path.relpath(output_dir, data_dir)
+            return {'success': True, 'experiment': _sanitize_exp(status)}
         return Response(content=json.dumps({'success': False, 'message': 'Experiment not found'}),
                         status_code=404, media_type='application/json')
     except Exception as e:
@@ -1074,7 +1086,7 @@ async def api_experiment_assets(request: Request, experiment_id: str, filename: 
 @router.get("/experiment_report_page/{experiment_id}", name="experiment_report_page",
             include_in_schema=False)
 async def experiment_report_page(request: Request, experiment_id: str):
-    """Serve a complete standalone HTML report page suitable for an iframe."""
+    """Serve an iframe-friendly report page with qibocal CLI action buttons."""
     try:
         config = _get_config(request)
         data_dir = config.get('data_dir') or os.path.join(config.get('root', ''), 'data')
@@ -1084,12 +1096,28 @@ async def experiment_report_page(request: Request, experiment_id: str):
             return HTMLResponse(content="<html><body><p>Report not found.</p></body></html>",
                                 status_code=404)
         output_dir = matches[0]
-        html = get_full_report_html(experiment_id, output_dir)
+        fragment = get_report_fragment(experiment_id, output_dir)
+        # Compute path relative to data_dir — must match the base used by qibocal_cli_action
+        try:
+            report_path_for_link = os.path.relpath(output_dir, data_dir)
+        except ValueError:
+            report_path_for_link = output_dir
+        qibocal_ok = check_qibocal_availability()
+        from ..core.app import templates
+        html = templates.get_template('report_embed.html').render(
+            request=request,
+            experiment_id=experiment_id,
+            report_path_for_link=report_path_for_link,
+            report_head_content=fragment.get('head_css', ''),
+            report_body_content=fragment.get('body_html', ''),
+            qibocal_available=qibocal_ok,
+        )
         return HTMLResponse(content=html)
     except FileNotFoundError:
         return HTMLResponse(content="<html><body><p>Report not ready yet.</p></body></html>",
                             status_code=404)
     except Exception as e:
+        logger.exception("experiment_report_page error for %s", experiment_id)
         return HTMLResponse(content=f"<html><body><p>Error: {e}</p></body></html>",
                             status_code=500)
 
@@ -1097,6 +1125,50 @@ async def experiment_report_page(request: Request, experiment_id: str):
 # ------------------------------------------------------------------ #
 # Experiment log streaming                                            #
 # ------------------------------------------------------------------ #
+
+def _extract_traceback(text: str, re_mod) -> dict:
+    """Scan log text for the last Python exception traceback.
+
+    Returns a dict with keys: found, error_type, error_message, traceback.
+    Matches (in order of preference):
+      1. Full traceback block ending with 'XxxError: message'
+      2. Bare 'raise SomeError(...)' lines
+      3. Standalone 'XxxError: message' lines
+    """
+    # 1. Full traceback block (greedy-last)
+    tb_re = re_mod.compile(
+        r'(Traceback \(most recent call last\):.*?)'
+        r'^([\w][\w.]*(?:Error|Exception|Warning)[^\n]*)',
+        re_mod.DOTALL | re_mod.MULTILINE)
+    matches = list(tb_re.finditer(text))
+    if matches:
+        m = matches[-1]
+        error_line = m.group(2).strip()
+        error_type = error_line.split(':')[0].strip()
+        error_msg = error_line[len(error_type):].lstrip(': ').strip()
+        return {'found': True, 'error_type': error_type,
+                'error_message': error_msg,
+                'traceback': (m.group(1) + m.group(2)).rstrip()}
+    # 2. 'raise SomeError' / 'raise SomeError(...)' lines
+    raise_re = re_mod.compile(r'^\s*raise\s+([\w.]+)', re_mod.MULTILINE)
+    raise_matches = list(raise_re.finditer(text))
+    if raise_matches:
+        m = raise_matches[-1]
+        ls = text.rfind('\n', 0, m.start()) + 1
+        le = text.find('\n', m.end())
+        error_line = text[ls: le if le >= 0 else len(text)].strip()
+        return {'found': True, 'error_type': m.group(1),
+                'error_message': error_line, 'traceback': error_line}
+    # 3. Standalone 'XxxError: message'
+    err_re = re_mod.compile(r'^([\w][\w.]*(?:Error|Exception)):\s*(.+)$', re_mod.MULTILINE)
+    err_matches = list(err_re.finditer(text))
+    if err_matches:
+        m = err_matches[-1]
+        return {'found': True, 'error_type': m.group(1),
+                'error_message': m.group(2).strip(),
+                'traceback': f'{m.group(1)}: {m.group(2).strip()}'}
+    return {'found': False, 'error_type': '', 'error_message': '', 'traceback': ''}
+
 
 @router.get("/api/experiment_log/{experiment_id}", name="api_experiment_log",
             tags=["Experiments"], summary="Return the SLURM log for an experiment")
@@ -1106,21 +1178,24 @@ async def api_experiment_log(request: Request, experiment_id: str):
         config = _get_config(request)
         data_dir = config.get('data_dir') or os.path.join(config.get('root', ''), 'data')
         import glob as _glob
+        import re as _re
         log_matches = _glob.glob(
             os.path.join(data_dir, '*', '*', experiment_id, 'logs', 'slurm_output.log'))
         if not log_matches:
             return Response(
-                content=json.dumps({'found': False, 'lines': []}),
+                content=json.dumps({'found': False, 'lines': [], 'error_info': {'found': False}}),
                 media_type='application/json')
         log_path = log_matches[0]
         with open(log_path, 'r', errors='replace') as fh:
             lines = fh.readlines()
+        tail = lines[-200:]
+        error_info = _extract_traceback(''.join(lines), _re)
         return Response(
-            content=json.dumps({'found': True, 'lines': lines[-200:]}),
+            content=json.dumps({'found': True, 'lines': tail, 'error_info': error_info}),
             media_type='application/json')
     except Exception as e:
         return Response(
-            content=json.dumps({'found': False, 'lines': [], 'error': str(e)}),
+            content=json.dumps({'found': False, 'lines': [], 'error_info': {'found': False}, 'error': str(e)}),
             media_type='application/json')
 
 
