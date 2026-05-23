@@ -218,7 +218,7 @@
         }
         
         .action-item-body {
-            padding: 1rem;
+            padding: 0.6rem 0.75rem 0.75rem;
         }
         
         .action-item .protocol-input {
@@ -407,6 +407,45 @@
     background: #2c2c2c;
 }
 
+/* Separator between collapsed log and report iframe */
+.results-report-separator {
+    height: 1px;
+    background: #333;
+    margin: .4rem 0 .5rem;
+}
+
+/* Error / traceback summary panel */
+.results-error-summary {
+    border: 1px solid #6c3a00;
+    border-radius: .25rem;
+    background: #1e1000;
+    overflow: hidden;
+}
+
+.results-error-header {
+    background: #2a1800;
+    border-bottom: 1px solid #6c3a00;
+    user-select: none;
+}
+
+.results-error-header:hover {
+    background: #341e00;
+}
+
+#results-error-traceback {
+    background: #140d00 !important;
+    color: #ffb74d !important;
+    font-size: .68rem !important;
+    line-height: 1.35;
+    max-height: 180px;
+    overflow-y: auto;
+    padding: .4rem .5rem;
+    margin: 0;
+    border-radius: 0;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
 #results-report-container {
     font-size: 0.85rem;
 }
@@ -432,3 +471,98 @@
 .jsoneditor-field { color: #9cdcfe !important; }
 .jsoneditor-value.jsoneditor-string { color: #ce9178 !important; }
 .jsoneditor-value.jsoneditor-number { color: #b5cea8 !important; }
+
+/* ——— Unified panel header ——— */
+.panel-header.card-header {
+    padding: .5rem .75rem;
+    min-height: 50px;
+    background: #2c2c2c;
+    border-bottom: 1px solid #3a3a3a;
+    display: flex;
+    align-items: center;
+}
+
+.panel-header .font-weight-semibold { font-weight: 600; font-size: .9rem; }
+
+/* Library search input: compact inline */
+#experiment-search { font-size: 0.8rem; }
+
+/* Qubit multi-select: compact */
+#qubit-select option { padding: 1px 4px; font-size: .78rem; }
+
+/* Card footer for action nodes */
+.panel-builder .card-footer {
+    padding: .35rem .5rem;
+    background: #252525;
+    border-top: 1px solid #333;
+}
+
+/* Log viewer */
+.log-viewer {
+    background: #0d0d0d !important;
+    color: #00e676 !important;
+    font-family: 'Courier New', monospace;
+    font-size: .72rem;
+    line-height: 1.4;
+    max-height: calc(100vh - 220px);
+    overflow-y: auto;
+    padding: .5rem;
+    border-radius: .25rem;
+    border: 1px solid #1a3a1a;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+/* Qubit popup dropdown */
+#qubit-dropdown-btn { border-color: #555; color: #ccc; background: #2a2a2a; }
+#qubit-dropdown-btn:hover, #qubit-dropdown-btn:focus { border-color: #0f62fe; color: #fff; }
+#qubit-dropdown-menu { background: #2c2c2c; border: 1px solid #444; border-radius: .25rem; }
+#qubit-dropdown-menu .dropdown-item { color: #ddd; border-radius: .15rem; }
+#qubit-dropdown-menu .dropdown-item:hover { background: #3a3a3a; }
+#qubit-dropdown-menu .qubit-cb { cursor: pointer; }
+
+/* Per-action compact common params row */
+.action-common-params {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .45rem;
+    padding: .35rem .5rem;
+    background: #1e1e1e;
+    border-radius: .25rem;
+    margin-bottom: .5rem;
+    border: 1px solid #333;
+}
+
+.action-param-label {
+    font-size: .71rem;
+    color: #adb5bd;
+    white-space: nowrap;
+}
+
+.action-param-input {
+    width: 68px !important;
+    height: 26px !important;
+    padding: .1rem .3rem !important;
+    font-size: .75rem !important;
+    background: #2a2a2a !important;
+    border-color: #555 !important;
+    color: #fff !important;
+}
+
+/* Per-action target qubit dropdown — mirrors global qubit dropdown */
+.action-target-btn {
+    height: 26px;
+    padding: .1rem .45rem;
+    font-size: .72rem;
+    white-space: nowrap;
+    border-color: #555;
+    color: #ccc;
+    background: #2a2a2a;
+    line-height: 1;
+}
+.action-target-btn:hover, .action-target-btn:focus { border-color: #0f62fe; color: #fff; }
+.action-target-menu { background: #2c2c2c; border: 1px solid #444; border-radius: .25rem; }
+.action-target-item { color: #ddd; border-radius: .15rem; }
+.action-target-item:hover { background: #3a3a3a; }
+.action-qubit-cb { cursor: pointer; }

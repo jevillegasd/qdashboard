@@ -74,8 +74,16 @@ def report_viewer(report_path, root_path, request, qibo_versions=None, access_mo
     # Fix any other asset references (like data files for plots)
     report_viewer_body = re.sub(r'''(['"])(?!/|http|https|data:)([^'"]+\.(?:json|csv|data|yml|yaml)[^'"]*)['"]''', r'"/report_assets/\2"', report_viewer_body)
 
-    # Prepare the report path for the file browser link (remove root prefix and ensure it starts with /)
-    report_path_for_link = report_path.replace(root_path, "").lstrip("/")
+    # Compute path relative to root_path for display and qibocal actions.
+    # Use relpath (not string replace) so symlinks don't cause a mismatch.
+    # Resolve both sides through realpath first so symlink differences
+    # (e.g. /home/... vs /nfs/...) do not produce spurious ../.. sequences.
+    try:
+        report_path_for_link = os.path.relpath(os.path.realpath(report_path),
+                                                os.path.realpath(root_path))
+    except ValueError:
+        # Different drives on Windows — fall back to basename
+        report_path_for_link = os.path.basename(report_path)
 
     # Check qibocal availability
     qibocal_available = check_qibocal_availability()
@@ -178,4 +186,40 @@ def get_report_fragment(experiment_id: str, report_path: str) -> dict:
     )
 
     return {"head_css": head_content, "body_html": body}
+
+
+def get_full_report_html(experiment_id: str, report_path: str) -> str:
+    """
+    Return a complete standalone HTML page for embedding in an iframe.
+    Rewrites all relative asset paths to /api/experiment_assets/{experiment_id}/.
+    """
+    index_path = os.path.join(report_path, "index.html")
+    if not os.path.exists(index_path):
+        raise FileNotFoundError(f"Report index not found: {index_path}")
+
+    with open(index_path, "r", errors="replace") as fh:
+        content = fh.read()
+
+    base = f"/api/experiment_assets/{experiment_id}"
+
+    def _rewrite(html: str) -> str:
+        # CSS href
+        html = re.sub(
+            r'''href=(['"])(?!/|http|https|data:)([^'"]+\.css[^'"]*)['"]''',
+            rf'href="{base}/\2"', html)
+        # JS src
+        html = re.sub(
+            r'''src=(['"])(?!/|http|https|data:)([^'"]+\.js[^'"]*)['"]''',
+            rf'src="{base}/\2"', html)
+        # images
+        html = re.sub(
+            r'''src=(['"])(?!/|http|https|data:)([^'"]+\.(?:png|jpg|jpeg|gif|svg|webp)[^'"]*)['"]''',
+            rf'src="{base}/\2"', html)
+        # data files
+        html = re.sub(
+            r'''(['"])(?!/|http|https|data:)([^'"]+\.(?:json|csv|data)[^'"]*)['"]''',
+            rf'"{base}/\2"', html)
+        return html
+
+    return _rewrite(content)
 

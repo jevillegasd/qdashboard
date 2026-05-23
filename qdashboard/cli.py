@@ -235,15 +235,50 @@ def main(argv: Optional[List[str]] = None) -> None:
 
         if 'debug' not in config:
             config['debug'] = False
-        # Start the Uvicorn ASGI server
-        uvicorn.run(
+
+        # Start the Uvicorn ASGI server via the Server API so we can ensure
+        # Ctrl+C always triggers a clean shutdown even when a third-party library
+        # (e.g. qibolab) has replaced the SIGINT signal handler with one that
+        # raises RuntimeError instead of KeyboardInterrupt.
+        import signal as _signal
+
+        uv_cfg = uvicorn.Config(
             app,
             host=config['host'],
             port=int(config['port']),
             reload=False,
             log_level='debug' if config['debug'] else 'info',
+            timeout_graceful_shutdown=5,  # force-close SSE/long-poll connections after 5 s
         )
-        
+        server = uvicorn.Server(uv_cfg)
+
+        # Monkey-patch signal.signal so that whenever any library installs a
+        # SIGINT handler we wrap it: our wrapper sets server.should_exit first,
+        # then calls the library handler (swallowing any RuntimeError from it).
+        _real_signal = _signal.signal
+
+        def _intercept_signal(sig, handler):
+            if sig == _signal.SIGINT and callable(handler):
+                _lib_handler = handler
+
+                def _wrapped(s, f):
+                    server.should_exit = True
+                    try:
+                        _lib_handler(s, f)
+                    except (SystemExit, KeyboardInterrupt):
+                        raise
+                    except Exception:
+                        pass  # swallow qibolab's RuntimeError
+
+                return _real_signal(sig, _wrapped)
+            return _real_signal(sig, handler)
+
+        _signal.signal = _intercept_signal
+        try:
+            server.run()
+        finally:
+            _signal.signal = _real_signal
+
     except KeyboardInterrupt:
         logger.error('\nQDashboard server stopped by user')
         sys.exit(0)

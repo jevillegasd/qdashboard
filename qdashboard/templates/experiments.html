@@ -80,11 +80,15 @@ Extended with quantum computing specific features:
         <!-- Left Panel: Experiment Library -->
         <div class="col-lg-3 col-md-3 panel-library p-0">
             <div class="card">
-                <div class="card-header">
-                    <i class="fas fa-book"></i> Experiment Library
+                <div class="panel-header card-header d-flex align-items-center justify-content-between">
+                    <div class="d-flex align-items-center flex-shrink-0 mr-2">
+                        <i class="fas fa-book mr-1"></i>
+                        <span class="font-weight-semibold">Experiment Library</span>
+                    </div>
+                    <input type="text" class="form-control form-control-sm" placeholder="Search…" id="experiment-search"
+                           style="max-width:130px;">
                 </div>
-                <div class="card-body">
-                    <input type="text" class="form-control mb-3" placeholder="Search experiments..." id="experiment-search">
+                <div class="card-body p-1">
                     
                     <div id="experiment-library" class="experiment-library">
                         {% for category, experiments in protocols.items() %}
@@ -250,6 +254,32 @@ Extended with quantum computing specific features:
                             </div>
                         </div>
                         {% endfor %}
+
+                        <!-- Action Nodes Section -->
+                        <div class="protocol-category" id="action-nodes-section">
+                            <div class="category-header" data-toggle="collapse"
+                                 data-target="#collapse-action-nodes"
+                                 aria-expanded="false"
+                                 aria-controls="collapse-action-nodes">
+                                <div class="d-flex align-items-center">
+                                    <span class="category-title"><i class="fas fa-project-diagram mr-1"></i>Action Nodes</span>
+                                    <span class="category-count ml-2" id="action-nodes-count">0</span>
+                                </div>
+                                <div class="category-icon">
+                                    <i class="fas fa-chevron-down"></i>
+                                </div>
+                            </div>
+                            <div class="collapse category-content" id="collapse-action-nodes">
+                                <div class="p-2">
+                                    <div id="action-nodes-list"></div>
+                                    <p id="no-action-nodes-msg" class="text-muted small text-center py-2 mb-0"
+                                       style="display:none">
+                                        <i class="fas fa-info-circle mr-1"></i>No nodes saved yet.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
             </div>
@@ -258,19 +288,33 @@ Extended with quantum computing specific features:
         <!-- Center Panel: Builder + Config -->
         <div class="col-lg-4 col-md-4 panel-builder p-0">
             <div class="card">
-                <div class="card-header">
-                    <div class="d-flex justify-content-between align-items-center">
+                <div class="panel-header card-header">
+                    <div class="d-flex align-items-center justify-content-between" style="gap:.4rem;">
                         <div class="d-flex align-items-center">
-                            <i class="fas fa-sliders-h mr-2"></i>
-                            <h5 class="mb-0">Configuration</h5>
+                            <i class="fas fa-sliders-h mr-1"></i>
+                            <span class="font-weight-semibold">Configuration</span>
                         </div>
-                        <div class="form-group mb-0" style="min-width: 250px;">
-                            <label for="qpu-select" class="sr-only">QPU Platform</label>
-                            <select class="form-control" id="qpu-select" onchange="loadQpuData()">
+                        <div class="d-flex align-items-center" style="gap:.4rem;">
+                            <select class="form-control form-control-sm" id="qpu-select"
+                                    style="max-width:140px" onchange="loadQpuData()">
                                 {% for qpu in qpus %}
                                 <option value="{{ qpu }}" {% if loop.first %}selected{% endif %}>{{ qpu }}</option>
                                 {% endfor %}
                             </select>
+                            <select multiple id="qubit-select" style="display:none"></select>
+                            <div class="dropdown" id="qubit-dropdown">
+                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button"
+                                        id="qubit-dropdown-btn" data-toggle="dropdown"
+                                        aria-haspopup="true" aria-expanded="false"
+                                        style="font-size:.8rem; white-space:nowrap; max-width:150px;">
+                                    <i class="fas fa-microchip mr-1"></i><span id="qubit-dropdown-label">Qubits</span>
+                                </button>
+                                <div class="dropdown-menu p-2" id="qubit-dropdown-menu"
+                                     style="min-width:150px; max-height:260px; overflow-y:auto;"
+                                     aria-labelledby="qubit-dropdown-btn">
+                                    <!-- Checkboxes populated dynamically -->
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -296,48 +340,32 @@ Extended with quantum computing specific features:
                         <!-- Action Card Builder Tab -->
                         <div class="tab-pane fade show active" id="action-builder" role="tabpanel" aria-labelledby="action-builder-tab">
                             {% if is_new_qibolab %}
-                            <div class="row mt-3">
-                                <div class="col-md-8">
-                                    <div id="action-card-builder" class="action-card-builder">
-                                        <div class="drop-zone-empty" id="empty-state">
-                                            <div>
-                                                <i class="fas fa-plus-circle fa-3x mb-3"></i>
-                                                <p>Drag experiments here to build your action card</p>
-                                            </div>
+                            <div class="mt-2">
+                                <div id="action-card-builder" class="action-card-builder">
+                                    <div class="drop-zone-empty" id="empty-state">
+                                        <div>
+                                            <i class="fas fa-plus-circle fa-3x mb-3"></i>
+                                            <p>Drag experiments here to build your action card</p>
                                         </div>
-                                    </div>
-                                    <div class="mt-4">
-                                        <button class="btn btn-primary" id="generate-yaml-btn" disabled>
-                                            <i class="fas fa-cogs"></i> Generate YAML
-                                        </button>
-                                        <button class="btn btn-success" id="run-experiment-btn" disabled>
-                                            <i class="fas fa-play"></i> Run Experiment
-                                        </button>
                                     </div>
                                 </div>
-                                <div class="col-md-4">
-                                    <div class="config-panel">
-                                        <div class="form-group">
-                                            <label for="qubit-select">Target Qubits</label>
-                                            <select multiple class="form-control" id="qubit-select" onchange="updateQubitParameters()">
-                                                <!-- Options will be populated dynamically -->
-                                            </select>
-                                        </div>
-                                        <hr>
-                                        <div id="qubit-parameters">
-                                            <p class="text-muted">Select qubits to configure parameters</p>
-                                        </div>
-                                        <hr>
-                                        <div>
-                                            <h5><i class="fas fa-project-diagram mr-2"></i>Action Nodes</h5>
-                                            <div id="action-nodes-list" class="mt-3">
-                                                <!-- Action nodes will be populated here -->
-                                                <p class="text-muted" id="no-action-nodes-msg">No action nodes saved for this QPU.</p>
-                                            </div>
-                                            <button class="btn btn-info btn-block mt-3" id="save-action-node-btn" disabled>
-                                                <i class="fas fa-save"></i> Save as Action Node
-                                            </button>
-                                        </div>
+                                <!-- Qubit parameter overrides (collapsed by default) -->
+                                <div id="qubit-parameters" class="mt-2"></div>
+                                <div class="mt-3 d-flex align-items-center flex-wrap" style="gap:.5rem;">
+                                    <button class="btn btn-primary btn-sm" id="generate-yaml-btn" disabled>
+                                        <i class="fas fa-cogs"></i> YAML
+                                    </button>
+                                    <button class="btn btn-success btn-sm" id="run-experiment-btn" disabled>
+                                        <i class="fas fa-play"></i> Run
+                                    </button>
+                                    <button class="btn btn-info btn-sm" id="save-action-node-btn" disabled>
+                                        <i class="fas fa-save"></i> Save Node
+                                    </button>
+                                    <div class="form-check mb-0 ml-2" style="white-space:nowrap;">
+                                        <input class="form-check-input" type="checkbox" id="update-platform-checkbox" checked>
+                                        <label class="form-check-label text-light small" for="update-platform-checkbox">
+                                            Update platform
+                                        </label>
                                     </div>
                                 </div>
                             </div>
@@ -369,24 +397,64 @@ Extended with quantum computing specific features:
                         </div>
                     </div>
                 </div>
+
             </div>
         </div>
         <!-- #center panel -->
 
         <!-- Right Panel: Results Viewer -->
         <div class="col-lg-5 col-md-5 panel-results p-0">
-            <div class="panel-results d-flex flex-column h-100">
-                <div class="panel-results-header p-2 border-bottom d-flex justify-content-between align-items-center">
-                    <div>
-                        <h6 class="mb-0"><i class="fas fa-chart-bar mr-1"></i> Results</h6>
-                        <small id="results-experiment-label" class="text-muted">Select an experiment from the library</small>
+            <div class="card h-100">
+                <div class="panel-header card-header d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center">
+                        <i class="fas fa-chart-bar mr-1"></i>
+                        <span class="font-weight-semibold">Results</span>
+                        <small id="results-experiment-label" class="text-muted ml-2">Select an experiment</small>
                     </div>
-                    <span id="results-experiment-id" class="badge badge-secondary"></span>
+                    <div class="d-flex align-items-center">
+                        <span id="results-experiment-id" class="badge badge-secondary mr-1"></span>
+                        <a id="results-open-link" href="#" target="_blank" title="Open in file browser"
+                           style="display:none; color:#aaa; font-size:.85rem;">
+                            <i class="fas fa-external-link-alt"></i>
+                        </a>
+                    </div>
                 </div>
-                <div id="results-panel-content" class="flex-grow-1 overflow-auto p-2">
-                    <div id="results-empty-state" class="text-center p-5 text-muted">
-                        <i class="fas fa-chart-line fa-3x mb-3 d-block"></i>
-                        <p>Click an experiment in the library<br>to view its last result</p>
+                <div id="results-panel-content" class="card-body p-2 overflow-auto">
+                    <div id="results-empty-state" class="text-center p-4 text-muted">
+                        <i class="fas fa-terminal fa-2x mb-2 d-block"></i>
+                        <p class="mb-0 small">Run an experiment to see live logs<br>or click <i class="fas fa-chart-bar"></i> to load last result</p>
+                    </div>
+                    <div id="results-log-viewer" style="display:none;">
+                        <div class="d-flex justify-content-between align-items-center mb-1 results-log-header"
+                             style="cursor:pointer;"
+                             data-toggle="collapse" data-target="#results-log-body"
+                             aria-expanded="true" aria-controls="results-log-body">
+                            <small class="text-muted"><i class="fas fa-terminal mr-1"></i> SLURM Log</small>
+                            <div class="d-flex align-items-center" style="gap:.4rem;">
+                                <span id="results-log-status" class="badge badge-warning">Running</span>
+                                <i class="fas fa-chevron-down results-log-chevron" style="font-size:.7rem; color:#666; transition:transform .2s;"></i>
+                            </div>
+                        </div>
+                        <!-- Error/traceback summary (hidden until an exception is detected) -->
+                        <div id="results-error-summary" style="display:none;" class="results-error-summary mb-1">
+                            <div class="results-error-header d-flex justify-content-between align-items-center px-2 py-1"
+                                 style="cursor:pointer;"
+                                 data-toggle="collapse" data-target="#results-error-body"
+                                 aria-expanded="true" aria-controls="results-error-body">
+                                <small>
+                                    <i class="fas fa-exclamation-triangle mr-1 text-warning"></i>
+                                    <span id="results-error-type" class="text-warning font-weight-bold"></span>
+                                    <span id="results-error-message" class="text-muted ml-1" style="font-size:.7rem;"></span>
+                                </small>
+                                <i class="fas fa-chevron-down results-error-chevron" style="font-size:.65rem; color:#888; transition:transform .2s;"></i>
+                            </div>
+                            <div class="collapse show" id="results-error-body">
+                                <pre id="results-error-traceback" class="error-traceback"></pre>
+                            </div>
+                        </div>
+                        <div class="collapse show" id="results-log-body">
+                            <pre id="results-log-content" class="log-viewer mb-1">Waiting for logs…</pre>
+                        </div>
                     </div>
                     <div id="results-loading" style="display:none;" class="text-center p-4 text-muted">
                         <i class="fas fa-spinner fa-spin fa-2x"></i>
@@ -457,6 +525,38 @@ Extended with quantum computing specific features:
         $('.category-content').on('hide.bs.collapse', function() {
             const categoryId = $(this).attr('id');
             $(`[data-target="#${categoryId}"] .category-icon i`).removeClass('fa-chevron-up').addClass('fa-chevron-down');
+        });
+
+        // Restore QPU from cookie before initial load
+        var _savedQpu = getCookie('qd_qpu_selection');
+        if (_savedQpu) {
+            var _qpuSel = document.getElementById('qpu-select');
+            if (Array.from(_qpuSel.options).some(o => o.value === _savedQpu)) {
+                _qpuSel.value = _savedQpu;
+            }
+        }
+
+        // Keep qubit dropdown open when clicking checkboxes
+        $(document).on('click', '#qubit-dropdown-menu', function(e) {
+            e.stopPropagation();
+        });
+
+        // Animate log collapse chevron
+        $(document).on('hide.bs.collapse', '#results-log-body', function() {
+            var ic = document.querySelector('.results-log-chevron');
+            if (ic) ic.style.transform = 'rotate(-90deg)';
+        }).on('show.bs.collapse', '#results-log-body', function() {
+            var ic = document.querySelector('.results-log-chevron');
+            if (ic) ic.style.transform = '';
+        });
+
+        // Animate error traceback chevron
+        $(document).on('hide.bs.collapse', '#results-error-body', function() {
+            var ic = document.querySelector('.results-error-chevron');
+            if (ic) ic.style.transform = 'rotate(-90deg)';
+        }).on('show.bs.collapse', '#results-error-body', function() {
+            var ic = document.querySelector('.results-error-chevron');
+            if (ic) ic.style.transform = '';
         });
 
         // Load initial data
@@ -538,6 +638,30 @@ Extended with quantum computing specific features:
         document.cookie = `${name}=${value}; expires=${expires}; path=/`;
     }
 
+    // ——— Qubit popup helpers ———
+    function _syncQubitLabel() {
+        const checked = Array.from(document.querySelectorAll('#qubit-dropdown-menu .qubit-cb:checked'));
+        const label = document.getElementById('qubit-dropdown-label');
+        if (!label) return;
+        if (checked.length === 0) {
+            label.textContent = 'Qubits';
+        } else if (checked.length <= 4) {
+            label.textContent = checked.map(cb => 'Q' + cb.value).join(', ');
+        } else {
+            label.textContent = checked.length + ' qubits';
+        }
+    }
+
+    function _saveQubitCookie() {
+        const checked = Array.from(document.querySelectorAll('#qubit-dropdown-menu .qubit-cb:checked'))
+                             .map(cb => cb.value);
+        setCookie('qd_qubits_' + ExperimentBuilder.qpu.selectedName, JSON.stringify(checked), 30);
+    }
+
+    function _loadQubitCookie() {
+        const val = getCookie('qd_qubits_' + ExperimentBuilder.qpu.selectedName);
+        try { return val ? JSON.parse(val) : []; } catch(e) { return []; }
+    }
     // Parse qubit value - handles both numeric and string qubit names
     function parseQubit(value) {
         if (value === null || value === undefined || value === '') {
@@ -566,46 +690,36 @@ Extended with quantum computing specific features:
     function generateInputFields(experiment, savedDefaults) {
         let html = '';
         
-        // Generate collapsible section for common parameters
-        const commonId = `common-${Date.now()}`;
+        // Compact always-visible row for common parameters
         html += `
-            <div class="protocol-section">
-                <div class="protocol-section-header" data-toggle="collapse" data-target="#${commonId}" 
-                     aria-expanded="false" aria-controls="${commonId}">
-                    <i class="fas fa-cog mr-2"></i>
-                    <span>Common Parameters</span>
-                    <span class="badge badge-secondary ml-2">3</span>
-                    <i class="fas fa-chevron-down ml-auto"></i>
-                </div>
-                <div class="collapse" id="${commonId}">
-                    <div class="protocol-section-body">
-                        <div class="form-group-compact">
-                            <div class="input-row">
-                                <label class="input-label">Target Qubit:</label>
-                                <select class="form-control protocol-input compact-input target-qubit-select" 
-                                        data-field="targets" title="Target qubit for this action (optional)">
-                                    <option value="">[Use Global Targets]</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="form-group-compact">
-                            <div class="input-row">
-                                <label class="input-label">Shots:</label>
-                                <input type="number" class="form-control protocol-input compact-input" 
-                                       data-field="nshots" value="${savedDefaults.shots || '1024'}" min="1"
-                                       title="Number of measurement repetitions">
-                            </div>
-                        </div>
-                        <div class="form-group-compact">
-                            <div class="input-row">
-                                <label class="input-label">Relaxation Time (μs):</label>
-                                <input type="number" class="form-control protocol-input compact-input" 
-                                       data-field="relaxation_time" value="${savedDefaults.relaxation_time || '[Optional]'}" step="0.001"
-                                       title="Relaxation time in microseconds (optional)"
-                                       placeholder="Optional parameter">
-                            </div>
-                        </div>
+            <div class="action-common-params">
+                <!-- Hidden multi-select carries targets; visible dropdown drives it -->
+                <select multiple class="protocol-input action-target-select" data-field="targets" style="display:none;"></select>
+                <div class="dropdown action-target-dropdown" title="Target qubits — empty = use global selection">
+                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle action-target-btn"
+                            type="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                        <i class="fas fa-crosshairs mr-1"></i><span class="action-target-label">Global</span>
+                    </button>
+                    <div class="dropdown-menu p-2 action-target-menu"
+                         style="min-width:130px; max-height:220px; overflow-y:auto;">
+                        <!-- populated by updateTargetQubitDropdowns() -->
                     </div>
+                </div>
+                <div class="d-flex align-items-center" style="gap:.3rem;">
+                    <label class="mb-0 action-param-label">Shots</label>
+                    <input type="number" class="form-control protocol-input action-param-input"
+                           data-field="nshots" value="${savedDefaults.shots || '1024'}" min="1"
+                           title="Number of measurement repetitions">
+                </div>
+                <div class="d-flex align-items-center" style="gap:.3rem;">
+                    <label class="mb-0 action-param-label">T<sub>relax</sub>&nbsp;(μs)</label>
+                    <input type="number" class="form-control protocol-input action-param-input"
+                           data-field="relaxation_time" value="${savedDefaults.relaxation_time || ''}" step="0.001"
+                           placeholder="–" title="Relaxation time in microseconds (optional)">
+                </div>
+                <div class="form-check mb-0" style="white-space:nowrap;" title="Update platform parameters after this routine completes">
+                    <input type="checkbox" class="form-check-input action-update-checkbox" checked>
+                    <label class="form-check-label action-param-label">Update</label>
                 </div>
             </div>
         `;
@@ -734,17 +848,21 @@ Extended with quantum computing specific features:
             } else if (input.type === 'number') {
                 value = input.value ? parseFloat(input.value) : null;
             } else if (input.tagName === 'SELECT') {
-                value = input.value;
+                if (input.multiple) {
+                    value = Array.from(input.selectedOptions).map(o => o.value).filter(v => v);
+                } else {
+                    value = input.value;
+                }
             } else {
                 value = input.value;
             }
             
             // Handle target qubit selection specially - goes outside parameters
-            if (fieldName === 'targets' && value && value !== '') {
-                // Convert single qubit to list format for qibocal using unified parseQubit function
-                const qubitValue = parseQubit(value);
-                if (qubitValue !== null) {
-                    actionData[fieldName] = [qubitValue];
+            if (fieldName === 'targets') {
+                const arr = Array.isArray(value) ? value : (value && value !== '' ? [value] : []);
+                const parsed = arr.map(v => parseQubit(v)).filter(v => v !== null);
+                if (parsed.length > 0) {
+                    actionData.targets = parsed;
                 }
             } else if (value !== null && value !== '' && value !== '[Optional]') {
                 // Skip empty values and optional parameters with "[Optional]" placeholder
@@ -754,6 +872,12 @@ Extended with quantum computing specific features:
         });
         
         // Don't add platform to action parameters - it should only be global
+
+        // Read per-action update checkbox
+        const updateCheckbox = actionItem.querySelector('.action-update-checkbox');
+        if (updateCheckbox) {
+            actionData.update = updateCheckbox.checked;
+        }
         
         return { parameters, actionData };
     }
@@ -796,6 +920,7 @@ Extended with quantum computing specific features:
         const qpuSelect = document.getElementById('qpu-select');
         const selectedQpu = qpuSelect.value;
         ExperimentBuilder.qpu.selectedName = selectedQpu;
+        setCookie('qd_qpu_selection', selectedQpu, 30);
         
         // Fetch parameters
         fetch(`/api/qpu_parameters/${selectedQpu}`)
@@ -860,17 +985,50 @@ Extended with quantum computing specific features:
     // Update qubit dropdown with available qubits for selected QPU
     function updateQubitDropdown() {
         const qubitSelect = document.getElementById('qubit-select');
+        const menu = document.getElementById('qubit-dropdown-menu');
         qubitSelect.innerHTML = '';
+        menu.innerHTML = '';
+
+        const savedQubits = _loadQubitCookie();
 
         if (ExperimentBuilder.availableQubits.length > 0) {
             ExperimentBuilder.availableQubits.forEach(qubit => {
+                // Keep hidden <select> in sync for all existing JS readers
                 const option = document.createElement('option');
                 option.value = qubit;
-                option.textContent = `Qubit ${qubit}`;
-                if (qubit === 0) option.selected = true; // Select qubit 0 by default
                 qubitSelect.appendChild(option);
+
+                // Checkbox in popup
+                const label = document.createElement('label');
+                label.className = 'dropdown-item d-flex align-items-center py-1 px-2 mb-0';
+                label.style.cssText = 'cursor:pointer; font-size:.82rem;';
+
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.value = qubit;
+                cb.className = 'qubit-cb mr-2';
+                // Restore from cookie, else select qubit 0 by default
+                cb.checked = savedQubits.length > 0
+                    ? savedQubits.includes(String(qubit))
+                    : (qubit === 0);
+                if (cb.checked) option.selected = true;
+
+                cb.addEventListener('change', function() {
+                    option.selected = cb.checked;
+                    _syncQubitLabel();
+                    _saveQubitCookie();
+                    updateQubitParameters();
+                });
+
+                label.appendChild(cb);
+                label.appendChild(document.createTextNode('Q' + qubit));
+                menu.appendChild(label);
             });
+        } else {
+            menu.innerHTML = '<span class="dropdown-item text-muted small py-1">No qubits available</span>';
         }
+
+        _syncQubitLabel();
     }
 
     // Update qubit parameters display
@@ -909,24 +1067,90 @@ Extended with quantum computing specific features:
 
     // Update target qubit dropdowns in all action cards
     function updateTargetQubitDropdowns() {
-        const targetQubitSelects = document.querySelectorAll('.target-qubit-select');
-        
-        targetQubitSelects.forEach(select => {
-            const currentValue = select.value;
-            select.innerHTML = '<option value="">[Use Global Targets]</option>';
-            
+        document.querySelectorAll('.action-item').forEach(item => {
+            const menu = item.querySelector('.action-target-menu');
+            const hiddenSelect = item.querySelector('.action-target-select');
+            if (!menu || !hiddenSelect) return;
+
+            // Preserve current selections
+            const currentSelected = new Set(
+                Array.from(hiddenSelect.selectedOptions).map(o => o.value)
+            );
+
+            // Rebuild hidden select options
+            hiddenSelect.innerHTML = '';
+            // Rebuild menu
+            menu.innerHTML = '';
+
+            // "Use global" clear-all item
+            const globalItem = document.createElement('div');
+            globalItem.className = 'dropdown-item action-target-item px-1 py-0';
+            globalItem.style.cssText = 'font-size:.74rem; color:#aaa; cursor:pointer;';
+            globalItem.innerHTML = '<em><i class="fas fa-globe-americas mr-1"></i>Use global targets</em>';
+            globalItem.addEventListener('click', e => {
+                e.stopPropagation();
+                Array.from(hiddenSelect.options).forEach(o => o.selected = false);
+                menu.querySelectorAll('.action-qubit-cb').forEach(cb => { cb.checked = false; });
+                _syncActionTargetLabel(item);
+            });
+            menu.appendChild(globalItem);
+
+            const divider = document.createElement('div');
+            divider.className = 'dropdown-divider my-1';
+            menu.appendChild(divider);
+
             if (ExperimentBuilder.availableQubits) {
                 ExperimentBuilder.availableQubits.forEach(qubit => {
-                    const option = document.createElement('option');
-                    option.value = qubit;
-                    option.textContent = `Qubit ${qubit}`;
-                    if (qubit.toString() === currentValue) {
-                        option.selected = true;
-                    }
-                    select.appendChild(option);
+                    const qStr = qubit.toString();
+
+                    // Hidden select option
+                    const opt = document.createElement('option');
+                    opt.value = qStr;
+                    opt.textContent = qStr;
+                    opt.selected = currentSelected.has(qStr);
+                    hiddenSelect.appendChild(opt);
+
+                    // Checkbox row in dropdown
+                    const row = document.createElement('label');
+                    row.className = 'dropdown-item action-target-item px-1 py-0 d-flex align-items-center';
+                    row.style.cssText = 'gap:.4rem; font-size:.78rem; cursor:pointer; margin:0;';
+
+                    const cb = document.createElement('input');
+                    cb.type = 'checkbox';
+                    cb.className = 'action-qubit-cb';
+                    cb.value = qStr;
+                    cb.checked = currentSelected.has(qStr);
+                    cb.addEventListener('change', () => {
+                        const o = Array.from(hiddenSelect.options).find(x => x.value === qStr);
+                        if (o) o.selected = cb.checked;
+                        _syncActionTargetLabel(item);
+                    });
+
+                    row.appendChild(cb);
+                    row.appendChild(document.createTextNode(`Q${qStr}`));
+                    menu.appendChild(row);
                 });
             }
+
+            // Prevent Bootstrap from closing the menu when clicking checkboxes
+            menu.addEventListener('click', e => e.stopPropagation());
+
+            _syncActionTargetLabel(item);
         });
+    }
+
+    function _syncActionTargetLabel(actionItem) {
+        const hiddenSelect = actionItem.querySelector('.action-target-select');
+        const label = actionItem.querySelector('.action-target-label');
+        if (!hiddenSelect || !label) return;
+        const selected = Array.from(hiddenSelect.selectedOptions).map(o => o.value);
+        if (selected.length === 0) {
+            label.textContent = 'Global';
+        } else if (selected.length <= 2) {
+            label.textContent = selected.map(q => `Q${q}`).join(', ');
+        } else {
+            label.textContent = `${selected.length} qubits`;
+        }
     }
 
     // Extract experiment attributes from DOM for drag and drop
@@ -1299,6 +1523,8 @@ Extended with quantum computing specific features:
         const runButton = document.getElementById('run-experiment-btn');
         const originalText = runButton.innerHTML;
         runButton.disabled = true;
+
+        const autoUpdate = document.getElementById('update-platform-checkbox').checked;
         runButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
 
         try {
@@ -1330,7 +1556,7 @@ Extended with quantum computing specific features:
                     id: experimentName,
                     operation: experimentOperation,
                     parameters: parameters,
-                    update: false  // Always set to false as requested
+                    update: actionData.update !== undefined ? actionData.update : autoUpdate
                 };
 
                 // Add targets if they override the global ones
@@ -1351,7 +1577,8 @@ Extended with quantum computing specific features:
                 },
                 body: JSON.stringify({
                     runcard_data: config,
-                    environment: null  // Could be made configurable later
+                    environment: null,  // Could be made configurable later
+                    auto_update: autoUpdate
                 })
             })
             .then(response => response.json())
@@ -1359,12 +1586,11 @@ Extended with quantum computing specific features:
                 if (data.success) {
                     showNotification(
                         `Experiment submitted successfully. ` +
-                        `ID: <strong>${data.experiment_id}</strong> &mdash; Job: <strong>${data.job_id}</strong><br>` +
-                        `The experiment is now running on SLURM. Check the QPU Status or Dashboard for updates.`,
+                        `ID: <strong>${data.experiment_id}</strong> &mdash; Job: <strong>${data.job_id}</strong>`,
                         'success'
                     );
-                    // Optionally clear the action card or keep it for resubmission
-                    // clearActionCard();
+                    // Show live log in results panel
+                    showExperimentLog(data.experiment_id);
                 } else {
                     showNotification(`Failed to submit experiment: ${data.message}`, 'danger');
                 }
@@ -1446,30 +1672,72 @@ Extended with quantum computing specific features:
     function updateActionNodesList() {
         const listDiv = document.getElementById('action-nodes-list');
         const noNodesMsg = document.getElementById('no-action-nodes-msg');
+        const countBadge = document.getElementById('action-nodes-count');
         listDiv.innerHTML = '';
 
-        if (Object.keys(ExperimentBuilder.actionCard.savedNodes).length === 0) {
-            listDiv.appendChild(noNodesMsg);
+        const nodes = ExperimentBuilder.actionCard.savedNodes;
+        const nodeNames = Object.keys(nodes);
+        if (countBadge) countBadge.textContent = nodeNames.length;
+
+        if (nodeNames.length === 0) {
             noNodesMsg.style.display = 'block';
         } else {
             noNodesMsg.style.display = 'none';
-            for (const [nodeName, nodeData] of Object.entries(ExperimentBuilder.actionCard.savedNodes)) {
-                const nodeItem = document.createElement('div');
-                nodeItem.className = 'action-node-item';
-                nodeItem.innerHTML = `
-                    <span>${nodeName}</span>
-                    <div>
-                        <button class="btn btn-sm btn-outline-primary" onclick="loadActionNode('${nodeName}')">
+            nodeNames.forEach(nodeName => {
+                const item = document.createElement('div');
+                item.className = 'd-flex align-items-center justify-content-between rounded px-2 py-1 mb-1';
+                item.style.cssText = 'background:#252525; border:1px solid #3a3a3a;';
+                item.innerHTML = `
+                    <span class="small text-truncate" style="cursor:pointer; max-width:110px; color:#ccc"
+                          title="Load ${nodeName}" onclick="loadActionNode('${nodeName}')">${nodeName}</span>
+                    <div class="d-flex ml-1" style="gap:.2rem">
+                        <button class="btn btn-xs py-0 px-1 btn-outline-success" title="Load into builder"
+                                onclick="loadActionNode('${nodeName}')" style="font-size:.65rem">
                             <i class="fas fa-upload"></i>
                         </button>
-                        <button class="btn btn-sm btn-outline-danger" onclick="deleteActionNode('${nodeName}')">
-                            <i class="fas fa-trash"></i>
+                        <button class="btn btn-xs py-0 px-1 btn-outline-secondary" title="Rename"
+                                onclick="renameActionNode('${nodeName}')" style="font-size:.65rem">
+                            <i class="fas fa-pencil-alt"></i>
+                        </button>
+                        <button class="btn btn-xs py-0 px-1 btn-outline-danger" title="Delete"
+                                onclick="deleteActionNode('${nodeName}')" style="font-size:.65rem">
+                            <i class="fas fa-times"></i>
                         </button>
                     </div>
                 `;
-                listDiv.appendChild(nodeItem);
-            }
+                listDiv.appendChild(item);
+            });
         }
+    }
+
+    function renameActionNode(oldName) {
+        const newName = prompt(`Rename "${oldName}" to:`, oldName);
+        if (!newName || newName.trim() === '' || newName === oldName) return;
+        const trimmedName = newName.trim();
+        const selectedQpu = ExperimentBuilder.qpu.selectedName;
+        const nodeData = ExperimentBuilder.actionCard.savedNodes[oldName];
+        // Save under new name first, then delete the old one
+        fetch(`/api/action_nodes/${selectedQpu}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({node_name: trimmedName, action_card: nodeData.action_card}),
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                showNotification('Rename failed: ' + data.error, 'danger');
+                return Promise.reject();
+            }
+            ExperimentBuilder.actionCard.savedNodes = data.nodes;
+            return fetch(`/api/action_nodes/${selectedQpu}/${encodeURIComponent(oldName)}`, {method: 'DELETE'});
+        })
+        .then(r => r && r.json())
+        .then(data => {
+            if (data && data.nodes) ExperimentBuilder.actionCard.savedNodes = data.nodes;
+            updateActionNodesList();
+            showNotification(`Renamed to <strong>${trimmedName}</strong>.`, 'success');
+        })
+        .catch(() => {});
     }
 
     function loadActionNode(nodeName) {
@@ -1785,14 +2053,12 @@ $('#save-parameters-btn').on('click', function () {
 
 // ——— Results panel ———
 function loadExperimentResults(protocolId, protocolName) {
+    if (_logPollTimer) { clearInterval(_logPollTimer); _logPollTimer = null; }
     const platform = ExperimentBuilder.qpu.selectedName;
     const qubits = Array.from(document.getElementById('qubit-select').selectedOptions).map(o => o.value);
     document.getElementById('results-experiment-label').textContent = protocolName;
     document.getElementById('results-experiment-id').textContent = '';
-    document.getElementById('results-empty-state').style.display = 'none';
-    document.getElementById('results-not-found').style.display = 'none';
-    document.getElementById('results-report-container').style.display = 'none';
-    document.getElementById('results-loading').style.display = 'block';
+    _showResultsState('results-loading');
 
     const params = new URLSearchParams({ platform: platform || '', protocol: protocolId });
     if (qubits.length) params.set('qubits', qubits.join(','));
@@ -1804,26 +2070,125 @@ function loadExperimentResults(protocolId, protocolName) {
         })
         .then(data => {
             document.getElementById('results-experiment-id').textContent = data.experiment_id || '';
-            return fetch(`/api/experiment_report/${data.experiment_id}`);
-        })
-        .then(r => {
-            if (!r.ok) throw new Error('not_found');
-            return r.json();
-        })
-        .then(fragment => {
-            document.getElementById('results-loading').style.display = 'none';
-            const container = document.getElementById('results-report-container');
-            container.style.display = 'block';
-            container.innerHTML = `<style>${fragment.head_css}</style>${fragment.body_html}`;
-        })
-        .catch(err => {
-            document.getElementById('results-loading').style.display = 'none';
-            if (err.message === 'not_found') {
-                document.getElementById('results-not-found').style.display = 'block';
+            // Show open-in-browser link
+            var openLink = document.getElementById('results-open-link');
+            if (data.report_url) {
+                openLink.href = data.report_url;
+                openLink.style.display = '';
             } else {
-                document.getElementById('results-not-found').style.display = 'block';
+                openLink.style.display = 'none';
             }
+            // Use iframe approach for proper rendering
+            _showResultsState('results-report-container');
+            const container = document.getElementById('results-report-container');
+            container.innerHTML = `<iframe src="/experiment_report_page/${data.experiment_id}"
+                style="width:100%;height:100%;min-height:600px;border:none;background:#fff"
+                title="Experiment Report"></iframe>`;
+        })
+        .catch(() => {
+            _showResultsState('results-not-found');
         });
+}
+
+// ——— Live log viewer ———
+var _logPollTimer = null;
+var _logCurrentId = null;
+
+function _updateErrorSummary(errorInfo) {
+    var panel = document.getElementById('results-error-summary');
+    if (!errorInfo || !errorInfo.found) {
+        panel.style.display = 'none';
+        return;
+    }
+    document.getElementById('results-error-type').textContent = errorInfo.error_type || 'Error';
+    var msgEl = document.getElementById('results-error-message');
+    var msg = errorInfo.error_message || '';
+    msgEl.textContent = msg.length > 80 ? msg.slice(0, 80) + '…' : msg;
+    document.getElementById('results-error-traceback').textContent = errorInfo.traceback || '';
+    panel.style.display = '';
+}
+
+function _showResultsState(state) {
+    ['results-empty-state','results-log-viewer','results-loading',
+     'results-not-found','results-report-container'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.style.display = (id === state) ? '' : 'none';
+    });
+}
+
+function showExperimentLog(experimentId) {
+    // Stop any previous poll
+    if (_logPollTimer) clearInterval(_logPollTimer);
+    _logCurrentId = experimentId;
+
+    document.getElementById('results-experiment-label').textContent = experimentId;
+    document.getElementById('results-experiment-id').textContent = '';
+    // Reset report container, error panel, and re-expand log body for fresh run
+    var container = document.getElementById('results-report-container');
+    container.style.display = 'none';
+    container.innerHTML = '';
+    document.getElementById('results-error-summary').style.display = 'none';
+    document.getElementById('results-error-traceback').textContent = '';
+    $('#results-log-body').collapse('show');
+    _showResultsState('results-log-viewer');
+    document.getElementById('results-log-content').textContent = 'Waiting for logs\u2026';
+    document.getElementById('results-log-status').textContent = 'Running';
+    document.getElementById('results-log-status').className = 'badge badge-warning';
+    document.getElementById('results-open-link').style.display = 'none';
+
+    function poll() {
+        if (_logCurrentId !== experimentId) return;
+        fetch('/api/experiment_log/' + experimentId)
+            .then(r => r.json())
+            .then(data => {
+                if (data.found && data.lines && data.lines.length) {
+                    var pre = document.getElementById('results-log-content');
+                    pre.textContent = data.lines.join('');
+                    pre.scrollTop = pre.scrollHeight;
+                }
+                _updateErrorSummary(data.error_info || {});
+            }).catch(() => {});
+        // Also check experiment status to know when done
+        fetch('/api/experiments/' + experimentId)
+            .then(r => r.json())
+            .then(d => {
+                var exp = d.experiment || {};
+                var status = exp.status || 'running';
+                if (status === 'completed') {
+                    clearInterval(_logPollTimer);
+                    _logPollTimer = null;
+                    document.getElementById('results-log-status').textContent = 'Completed';
+                    document.getElementById('results-log-status').className = 'badge badge-success';
+                    // Auto-load report if available — keep log visible (collapsed) + show report
+                    if (exp.report_available) {
+                        document.getElementById('results-experiment-id').textContent = experimentId;
+                        var openLink = document.getElementById('results-open-link');
+                        if (exp.report_url) { openLink.href = exp.report_url; openLink.style.display = ''; }
+                        // Collapse the log body; leave log header visible
+                        $('#results-log-body').collapse('hide');
+                        // Hide all other state panels
+                        ['results-empty-state','results-loading','results-not-found'].forEach(function(id) {
+                            var el = document.getElementById(id); if (el) el.style.display = 'none';
+                        });
+                        // Show report below the (now-collapsed) log
+                        var container = document.getElementById('results-report-container');
+                        container.style.display = '';
+                        container.innerHTML = '<div class="results-report-separator"></div>' +
+                            '<iframe src="/experiment_report_page/' + experimentId + '"' +
+                            ' style="width:100%;height:100%;min-height:600px;border:none;background:#fff"' +
+                            ' title="Experiment Report"></iframe>';
+                    }
+                } else if (status === 'failed') {
+                    clearInterval(_logPollTimer);
+                    _logPollTimer = null;
+                    document.getElementById('results-log-status').textContent = 'Failed';
+                    document.getElementById('results-log-status').className = 'badge badge-danger';
+                }
+            }).catch(() => {});
+    }
+
+    poll();
+    _logPollTimer = setInterval(poll, 4000);
 }
 </script>
 </body>

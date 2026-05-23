@@ -109,7 +109,8 @@ def prepare_runcard(runcard_path: str, experiment_dir: str) -> Tuple[str, Dict[s
 
 def create_slurm_script(experiment_id: str, experiment_dir: str, runcard_path: str, 
                        platform: str, partition: str, platforms_base: str, 
-                       environment: str = None, logs_dir: str = None) -> str:
+                       environment: str = None, logs_dir: str = None,
+                       auto_update: bool = True) -> str:
     """Create SLURM job submission script."""
    
     output_dir = os.path.join(experiment_dir, 'output')
@@ -148,7 +149,7 @@ cd {experiment_dir}
 
 # Run the experiment
 echo "Running experiment..."
-qq run {runcard_path} -o {output_dir} -f --no-update
+qq run {runcard_path} -o {output_dir} -f{'' if auto_update else ' --no-update'}
 
 # Log completion
 echo "End time: $(date)"
@@ -213,7 +214,8 @@ def submit_slurm_job(job_script_path: str) -> Tuple[bool, str, Optional[str]]:
 
 
 def submit_experiment(runcard_path: str = None, runcard_data: Dict[str, Any] = None, 
-                     config: Dict[str, Any] = None, environment: str = None) -> Dict[str, Any]:
+                     config: Dict[str, Any] = None, environment: str = None,
+                     auto_update: bool = True) -> Dict[str, Any]:
     """
     Submit a new experiment to SLURM.
     
@@ -316,10 +318,12 @@ def submit_experiment(runcard_path: str = None, runcard_data: Dict[str, Any] = N
             if not environment:
                 environment = runcard_data_parsed.get('environment') or config.get('environment')
             
-            # Create SLURM script
+            # Create SLURM script — logs go inside the experiment directory so
+            # the per-experiment log API can find them at <experiment_dir>/logs/
             job_script_path = create_slurm_script(
                 experiment_id, experiment_dir, final_runcard_path,
-                platform, partition, platforms_base, environment, logs_dir=config.get('logs_dir')
+                platform, partition, platforms_base, environment, logs_dir=None,
+                auto_update=auto_update
             )
             
             # Submit job
@@ -351,27 +355,19 @@ def submit_experiment(runcard_path: str = None, runcard_data: Dict[str, Any] = N
 
             # Write to experiment history DB (non-fatal)
             try:
-                from ..db.database import get_db_connection, get_or_create_qpu, upsert_experiment_run, add_qpu_qubits
+                from ..db.database import (get_db_connection, get_or_create_qpu,
+                                           upsert_experiment_run, add_qpu_qubits,
+                                           _extract_protocol_info)
                 with get_db_connection(config) as conn:
                     qpu_id = get_or_create_qpu(conn, platform)
-                    actions = runcard_data_parsed.get('actions') or {}
-                    first_action = next(iter(actions.values()), {})
-                    protocol_id = first_action.get('id', 'unknown')
-                    all_qubits: set = set()
-                    for action in actions.values():
-                        targets = action.get('targets') or action.get('qubits') or []
-                        if isinstance(targets, (list, tuple)):
-                            all_qubits.update(str(q) for q in targets)
-                        elif targets:
-                            all_qubits.add(str(targets))
-                    qubit_list = sorted(all_qubits)
+                    protocol_id, protocol_name, qubit_list = _extract_protocol_info(runcard_data_parsed)
                     if qubit_list:
                         add_qpu_qubits(conn, qpu_id, qubit_list)
                     upsert_experiment_run(conn, {
                         'experiment_id': experiment_id,
                         'qpu_id': qpu_id,
                         'protocol_id': protocol_id,
-                        'protocol_name': protocol_id.replace('_', ' ').title(),
+                        'protocol_name': protocol_name,
                         'target_qubits': qubit_list,
                         'submitted_at': metadata['submitted_at'],
                         'slurm_job_id': job_id,
@@ -504,11 +500,11 @@ def repeat_experiment(report_path: str, config: Dict[str, Any]) -> Dict[str, Any
             shutil.copy2(report_parameters_path, backup_parameters_path)
             logger.info(f"Backed up original parameters.json for reference")
         
-        # Create SLURM script
+        # Create SLURM script — logs go inside the experiment directory
         job_script_path = create_slurm_script(
             experiment_id, experiment_dir, final_runcard_path,
             platform, partition, platforms_base, environment, 
-            logs_dir=logs_dir
+            logs_dir=None
         )
         
         # Submit job
@@ -575,9 +571,13 @@ def get_experiment_status(experiment_id: str, config: Dict[str, Any] = None) -> 
             qd_root = os.path.normpath(os.getenv('QD_ROOT', os.path.expanduser('~/.qdashboard')))
             data_dir = os.path.join(qd_root, 'data')
 
-        # Search across nested platform/date structure
-        pattern = os.path.join(data_dir, '*', '*', experiment_id, 'experiment_metadata.json')
-        matches = glob.glob(pattern)
+        # Search across nested platform/date structure.
+        # Try two-level (data_dir/<platform>/<date>/<id>) first,
+        # then one-level (data_dir/<date>/<id>) for deployments where
+        # data_dir already embeds the platform name.
+        pattern2 = os.path.join(data_dir, '*', '*', experiment_id, 'experiment_metadata.json')
+        pattern1 = os.path.join(data_dir, '*', experiment_id, 'experiment_metadata.json')
+        matches = glob.glob(pattern2) or glob.glob(pattern1)
         if not matches:
             return None
         metadata_path = matches[0]
@@ -593,16 +593,59 @@ def get_experiment_status(experiment_id: str, config: Dict[str, Any] = None) -> 
         else:
             metadata['has_output'] = False
             metadata['output_files'] = []
-        
+
+        # --- SLURM-aware status ---
+        # If the experiment was submitted via SLURM, check the live job state
+        # first so we can short-circuit the filesystem poll while the job is
+        # still in the queue.
+        slurm_job_id = metadata.get('job_id')
+        slurm_state = None
+        if slurm_job_id:
+            try:
+                from ..qpu.slurm import check_slurm_job_status, _SLURM_ACTIVE_STATES
+                slurm_state = check_slurm_job_status(slurm_job_id)
+                metadata['slurm_state'] = slurm_state
+                if slurm_state in _SLURM_ACTIVE_STATES:
+                    # Job is still alive — no need to touch the filesystem
+                    metadata['status'] = 'running' if slurm_state == 'RUNNING' else 'pending'
+                    metadata['report_available'] = False
+                    # Still expose the log path so the UI can tail it
+                    exp_dir = metadata.get('experiment_dir', '')
+                    slurm_log = os.path.join(exp_dir, 'logs', 'slurm_output.log')
+                    metadata['has_slurm_log'] = os.path.exists(slurm_log)
+                    return metadata
+                # Job has left the queue (COMPLETED / FAILED / CANCELLED / UNKNOWN)
+                # Fall through to filesystem check; treat missing output as failed.
+            except Exception as _slurm_err:
+                logger.debug("SLURM status check failed for job %s: %s", slurm_job_id, _slurm_err)
+
+        # Compute dynamic status from filesystem
+        report_index = os.path.join(output_dir or '', 'index.html') if output_dir else ''
+        meta_json = os.path.join(output_dir or '', 'meta.json') if output_dir else ''
+        if os.path.exists(report_index) or os.path.exists(meta_json):
+            metadata['status'] = 'completed'
+            metadata['report_available'] = os.path.exists(report_index)
+        elif metadata.get('has_output'):
+            # Output dir exists but no report yet — could still be post-processing
+            metadata['status'] = 'running'
+            metadata['report_available'] = False
+        elif slurm_state is not None:
+            # Job left the queue but produced no output → it failed
+            metadata['status'] = 'failed'
+            metadata['report_available'] = False
+        else:
+            metadata['status'] = metadata.get('status', 'pending')
+            metadata['report_available'] = False
+
         # Check SLURM log if available
-        logs_dir = os.path.join(experiment_dir, 'logs')
+        exp_dir = metadata.get('experiment_dir', '')
+        logs_dir = os.path.join(exp_dir, 'logs')
         slurm_log_path = os.path.join(logs_dir, 'slurm_output.log')
         if os.path.exists(slurm_log_path):
             metadata['has_slurm_log'] = True
-            # Could read last few lines of log for status
         else:
             metadata['has_slurm_log'] = False
-        
+
         return metadata
         
     except Exception as e:
@@ -703,9 +746,9 @@ def find_latest_experiment(
                     rc = yaml.safe_load(f)
                 if not rc or rc.get("platform") != platform:
                     continue
-                actions = rc.get("actions") or {}
+                actions = rc.get("actions") or []
                 match = False
-                for action in actions.values():
+                for action in (actions if isinstance(actions, list) else actions.values()):
                     if action.get("id") != protocol_id:
                         continue
                     targets = action.get("targets") or action.get("qubits") or []
