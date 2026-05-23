@@ -460,6 +460,13 @@ def refresh_run_status(
 # ------------------------------------------------------------------ #
 
 _MAX_PER_PLATFORM = 200
+_MAX_PER_PLATFORM_INITIAL = 100   # cap for the first-run backfill on an empty DB
+
+
+def _db_is_empty(conn: sqlite3.Connection) -> bool:
+    """Return True if experiment_runs has no rows."""
+    row = conn.execute("SELECT COUNT(*) FROM experiment_runs").fetchone()
+    return row[0] == 0
 
 
 def backfill_from_disk(config: Dict[str, Any]) -> int:
@@ -476,20 +483,23 @@ def backfill_from_disk(config: Dict[str, Any]) -> int:
 
     conn = get_db_connection(config)
     try:
+        # Use a smaller cap on the very first run so startup isn't slow on
+        # large data directories. Subsequent backfills (e.g. /api/history/backfill)
+        # use the full limit.
+        cap = _MAX_PER_PLATFORM_INITIAL if _db_is_empty(conn) else _MAX_PER_PLATFORM
+
         count = 0
-        # Walk platform directories
         for platform_name in os.listdir(data_dir):
             platform_dir = os.path.join(data_dir, platform_name)
             if not os.path.isdir(platform_dir) or platform_name.startswith("."):
                 continue
 
-            # Collect all experiment dirs (platform/date/experiment_id)
             exp_dirs = glob.glob(os.path.join(platform_dir, "*", "*"))
             exp_dirs = [d for d in exp_dirs if os.path.isdir(d)]
 
-            # Sort newest-first by directory mtime, cap at MAX_PER_PLATFORM
+            # Newest-first, capped per platform
             exp_dirs.sort(key=lambda d: os.path.getmtime(d), reverse=True)
-            exp_dirs = exp_dirs[:_MAX_PER_PLATFORM]
+            exp_dirs = exp_dirs[:cap]
 
             qpu_id = get_or_create_qpu(conn, platform_name)
 
@@ -499,7 +509,6 @@ def backfill_from_disk(config: Dict[str, Any]) -> int:
                     if not scanned:
                         continue
                     scanned["qpu_id"] = qpu_id
-                    # Register qubits
                     if scanned.get("target_qubits"):
                         add_qpu_qubits(conn, qpu_id, scanned["target_qubits"])
                     upsert_experiment_run(conn, scanned)
@@ -507,7 +516,7 @@ def backfill_from_disk(config: Dict[str, Any]) -> int:
                 except Exception as exc:
                     logger.debug(f"backfill: skipping {exp_dir}: {exc}")
 
-        logger.info(f"backfill: upserted {count} experiment records")
+        logger.info(f"backfill: upserted {count} experiment records (cap={cap}/platform)")
         return count
     finally:
         conn.close()

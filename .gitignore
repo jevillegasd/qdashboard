@@ -63,4 +63,3 @@ Thumbs.db
 .env.local
 config.local.yaml
 activate_dev.sh
-qdashboard/tests/
