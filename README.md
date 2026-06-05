@@ -36,7 +36,7 @@ Optional but recommended:
 
 ## Installation
 
-### From PyPI
+### From PyPI (nopte yet suppoorted)
 
 ```bash
 uv venv
