@@ -14,7 +14,14 @@ import threading
 import traceback
 from functools import lru_cache
 
-from qibocal.auto.operation import Parameters, Results, Data, Routine
+try:
+    from qibocal.auto.operation import Parameters, Results, Data, Routine
+    QIBOCAL_AVAILABLE = True
+    QIBOCAL_IMPORT_ERROR = None
+except Exception as _qibocal_exc:
+    Parameters = Results = Data = Routine = None
+    QIBOCAL_AVAILABLE = False
+    QIBOCAL_IMPORT_ERROR = _qibocal_exc
 
 from qdashboard.utils.logger import get_logger
 
@@ -25,6 +32,12 @@ _cache_lock = threading.Lock()
 
 logger = get_logger(__name__)
 
+if not QIBOCAL_AVAILABLE:
+    logger.warning(
+        f"qibocal could not be imported ({QIBOCAL_IMPORT_ERROR}). "
+        "Protocol discovery and experiment submission will be unavailable."
+    )
+
 
 def get_qibocal_protocols():
     """
@@ -33,7 +46,10 @@ def get_qibocal_protocols():
     Uses caching and fallback methods to handle signal issues.
     """
     global _protocol_cache
-    
+
+    if not QIBOCAL_AVAILABLE:
+        return _get_fallback_protocols()
+
     # Check if we have cached results
     with _cache_lock:
         if _protocol_cache is not None:
@@ -334,6 +350,10 @@ def get_protocol_attributes(protocol: dict) -> dict:
         results (subclass of type qibocal.auto.Results)
         data (subclass of type qibocal.auto.Data)
     """
+    if not QIBOCAL_AVAILABLE:
+        logger.warning("qibocal is not available; cannot retrieve protocol attributes.")
+        return {"inputs": {}, "results": {}, "data": {}, "error": str(QIBOCAL_IMPORT_ERROR)}
+
     try:
         if isinstance(protocol, dict):
             routine_obj = protocol.get('routine_obj')

@@ -129,8 +129,8 @@ def get_default_config(args: argparse.Namespace) -> dict:
         'logs_dir':    logs_dir,
         'temp_dir':    temp_dir,
         'log_path':    log_path,
-        'key':         args.auth_key  or os.environ.get('QD_KEY',         ''),
-        'debug':       args.debug     or os.environ.get('QD_DEBUG',       'false').lower() == 'true',
+        'key':         args.auth_key  or os.environ.get('QD_KEY', ''),
+        'debug':       args.debug     or os.environ.get('QD_DEBUG', 'false').lower() == 'true',
         'environment': args.environment or os.environ.get('QD_ENVIRONMENT', 'default'),
         'home_path':   os.path.expanduser(
                            args.home_path or os.environ.get('QD_HOME_PATH', '~')
