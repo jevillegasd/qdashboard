@@ -349,9 +349,13 @@ def _get_all_annotations(cls) -> dict:
     so that fields defined on parent classes (e.g. SpinEchoParameters
     for CpmgSpectroscopyParameters) are not lost. Annotations are merged
     in MRO order (base classes first) so subclasses can override field types.
+
+    Specifically design for the protocol Parameters, which often inherit from each other
     """
     annotations = {}
     for klass in reversed(cls.__mro__):
+        if klass is Parameters:
+            continue  # Skip base class Parameters
         annotations.update(getattr(klass, '__annotations__', {}))
     return annotations
 

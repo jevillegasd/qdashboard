@@ -756,6 +756,90 @@ async def qpu_calibration_api(request: Request, platform: str):
                     status_code=404, media_type='application/json')
 
 
+def _action_nodes_path(config: dict, platform: str) -> str | None:
+    """Return the path to the action_nodes.json file for a QPU platform, or None if invalid."""
+    qrc_path = get_platforms_path(config['root'])
+    if not qrc_path:
+        return None
+    qpu_path = _safe_path_join(qrc_path, platform)
+    if qpu_path is None or not os.path.isdir(qpu_path):
+        return None
+    return os.path.join(qpu_path, 'action_nodes.json')
+
+
+def _load_action_nodes(path: str) -> dict:
+    if not os.path.exists(path):
+        return {}
+    with open(path, 'r') as f:
+        return json.load(f)
+
+
+@router.get("/api/action_nodes/{platform}", name="api_action_nodes_list", tags=["Experiments"],
+            summary="List saved action nodes for a QPU platform")
+async def api_action_nodes_list(request: Request, platform: str):
+    """Return all saved action nodes for a QPU platform."""
+    config = _get_config(request)
+    path = _action_nodes_path(config, platform)
+    if path is None:
+        return Response(content=json.dumps({'error': 'QPU not found'}),
+                        status_code=404, media_type='application/json')
+    try:
+        return {'nodes': _load_action_nodes(path)}
+    except Exception as e:
+        return _error_response(request, e, {'error': str(e)})
+
+
+@router.post("/api/action_nodes/{platform}", name="api_action_nodes_save", tags=["Experiments"],
+             summary="Save (or rename into) an action node for a QPU platform")
+async def api_action_nodes_save(request: Request, platform: str):
+    """Create or overwrite a saved action node for a QPU platform."""
+    config = _get_config(request)
+    path = _action_nodes_path(config, platform)
+    if path is None:
+        return Response(content=json.dumps({'success': False, 'error': 'QPU not found'}),
+                        status_code=404, media_type='application/json')
+    try:
+        body = await request.json()
+        node_name = (body.get('node_name') or '').strip()
+        action_card = body.get('action_card')
+        if not node_name:
+            return Response(content=json.dumps({'success': False, 'error': 'node_name is required'}),
+                            status_code=400, media_type='application/json')
+        if not isinstance(action_card, list):
+            return Response(content=json.dumps({'success': False, 'error': 'action_card must be a list'}),
+                            status_code=400, media_type='application/json')
+
+        nodes = _load_action_nodes(path)
+        nodes[node_name] = {'action_card': action_card}
+        with open(path, 'w') as f:
+            json.dump(nodes, f, indent=2)
+        return {'success': True, 'nodes': nodes}
+    except Exception as e:
+        return _error_response(request, e, {'success': False, 'error': str(e)})
+
+
+@router.delete("/api/action_nodes/{platform}/{node_name}", name="api_action_nodes_delete", tags=["Experiments"],
+               summary="Delete a saved action node for a QPU platform")
+async def api_action_nodes_delete(request: Request, platform: str, node_name: str):
+    """Delete a saved action node for a QPU platform."""
+    config = _get_config(request)
+    path = _action_nodes_path(config, platform)
+    if path is None:
+        return Response(content=json.dumps({'success': False, 'error': 'QPU not found'}),
+                        status_code=404, media_type='application/json')
+    try:
+        nodes = _load_action_nodes(path)
+        if node_name not in nodes:
+            return Response(content=json.dumps({'success': False, 'error': 'Action node not found'}),
+                            status_code=404, media_type='application/json')
+        del nodes[node_name]
+        with open(path, 'w') as f:
+            json.dump(nodes, f, indent=2)
+        return {'success': True, 'nodes': nodes}
+    except Exception as e:
+        return _error_response(request, e, {'success': False, 'error': str(e)})
+
+
 @router.post("/qibocal/{action}", name="qibocal_cli_action", tags=["Experiments"],
              summary="Run a qibocal CLI action (fit / report / update) on an existing report")
 async def qibocal_cli_action(request: Request, action: str,
