@@ -115,12 +115,17 @@ def create_slurm_script(experiment_id: str, experiment_dir: str, runcard_path: s
    
     output_dir = os.path.join(experiment_dir, 'output')
     ensure_directory_exists(output_dir)
-    
+
     # Create logs directory for SLURM output
     if not logs_dir:
         logs_dir = os.path.join(experiment_dir, 'logs')
     ensure_directory_exists(logs_dir)
-    
+
+    # `environment` is a venv path (explicitly set via QD_ENVIRONMENT, or
+    # auto-detected from the dashboard's own launch environment when
+    # QD_ENVIRONMENT was unset/'default').
+    activate_path = os.path.join(os.path.expanduser(environment), 'bin', 'activate') if environment else None
+
     job_script_content = f"""#!/bin/bash
 #SBATCH --job-name={experiment_id}
 #SBATCH --partition={partition}
@@ -145,7 +150,8 @@ echo "Output directory: {output_dir}"
 cd {experiment_dir}
 
 # Activate environment if specified
-{f'source ~/.env/{environment}/bin/activate' if environment else '# No environment specified'}
+{f'source {activate_path}' if activate_path else '# No environment specified'}
+echo "Activated environment: $(which python) ($(python --version 2>&1))"
 
 # Run the experiment
 echo "Running experiment..."

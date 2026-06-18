@@ -343,6 +343,19 @@ def _categorize_protocols(routine_protocols) -> dict:
     return categorized
 
 
+def _get_all_annotations(cls) -> dict:
+    """
+    Collect type annotations from a class and all its base classes,
+    so that fields defined on parent classes (e.g. SpinEchoParameters
+    for CpmgSpectroscopyParameters) are not lost. Annotations are merged
+    in MRO order (base classes first) so subclasses can override field types.
+    """
+    annotations = {}
+    for klass in reversed(cls.__mro__):
+        annotations.update(getattr(klass, '__annotations__', {}))
+    return annotations
+
+
 def get_protocol_attributes(protocol: dict) -> dict:
     """
     Get attributes of a specific protocol. These are classified as:
@@ -423,19 +436,19 @@ def get_protocol_attributes(protocol: dict) -> dict:
             "data": {}
         }
 
-        # Extract fields from the Parameters class
-        if parameters_class and hasattr(parameters_class, '__annotations__'):
-            for name, field_type in parameters_class.__annotations__.items():
+        # Extract fields from the Parameters class (including inherited ones)
+        if parameters_class:
+            for name, field_type in _get_all_annotations(parameters_class).items():
                 attributes["inputs"][name] = str(field_type)
 
-        # Extract fields from the Results class
-        if results_class and hasattr(results_class, '__annotations__'):
-            for name, field_type in results_class.__annotations__.items():
+        # Extract fields from the Results class (including inherited ones)
+        if results_class:
+            for name, field_type in _get_all_annotations(results_class).items():
                 attributes["results"][name] = str(field_type)
 
-        # Extract fields from the Data class
-        if data_class and hasattr(data_class, '__annotations__'):
-            for name, field_type in data_class.__annotations__.items():
+        # Extract fields from the Data class (including inherited ones)
+        if data_class:
+            for name, field_type in _get_all_annotations(data_class).items():
                 attributes["data"][name] = str(field_type)
 
         # Extract parameter-class docstring as a human-readable description

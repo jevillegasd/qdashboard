@@ -67,7 +67,8 @@ def create_parser() -> argparse.ArgumentParser:
         '--environment',
         type=str,
         default=None,
-        help='Environment name (env: QD_ENVIRONMENT)'
+        help='Path to the venv/conda environment to activate for job submission '
+             '(env: QD_ENVIRONMENT). Defaults to the environment the dashboard itself is running in.'
     )
 
     parser.add_argument(
@@ -85,6 +86,22 @@ def create_parser() -> argparse.ArgumentParser:
     )
 
     return parser
+
+
+def _detect_launch_environment() -> Optional[str]:
+    """Return the venv/conda path the dashboard process itself is running under.
+
+    Used as the job submission environment when QD_ENVIRONMENT is unset or
+    'default', so submitted jobs activate the same environment that launched
+    the dashboard. Returns None if the dashboard isn't running inside a venv
+    or conda environment (job submission then activates nothing).
+    """
+    venv = os.environ.get('VIRTUAL_ENV') or os.environ.get('CONDA_PREFIX')
+    if venv:
+        return venv
+    if sys.prefix != sys.base_prefix:
+        return sys.prefix
+    return None
 
 
 def _load_env() -> None:
@@ -122,6 +139,9 @@ def get_default_config(args: argparse.Namespace) -> dict:
         or os.environ.get('QD_LOG_PATH', os.path.join(logs_dir, 'slurm_output.txt'))
     )
 
+    env_arg = args.environment or os.environ.get('QD_ENVIRONMENT')
+    environment = _detect_launch_environment() if not env_arg or env_arg == 'default' else env_arg
+
     config = {
         'qd_root':     qd_root,
         'root':        qd_root,
@@ -131,7 +151,7 @@ def get_default_config(args: argparse.Namespace) -> dict:
         'log_path':    log_path,
         'key':         args.auth_key  or os.environ.get('QD_KEY', ''),
         'debug':       args.debug     or os.environ.get('QD_DEBUG', 'false').lower() == 'true',
-        'environment': args.environment or os.environ.get('QD_ENVIRONMENT', 'default'),
+        'environment': environment,
         'home_path':   os.path.expanduser(
                            args.home_path or os.environ.get('QD_HOME_PATH', '~')
                        ),
