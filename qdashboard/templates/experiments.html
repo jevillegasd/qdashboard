@@ -708,7 +708,7 @@ Extended with quantum computing specific features:
                 <div class="d-flex align-items-center" style="gap:.3rem;">
                     <label class="mb-0 action-param-label">Shots</label>
                     <input type="number" class="form-control protocol-input action-param-input"
-                           data-field="nshots" value="${savedDefaults.shots || '1024'}" min="1"
+                           data-field="nshots" value="${savedDefaults.nshots || '1024'}" min="1"
                            title="Number of measurement repetitions">
                 </div>
                 <div class="d-flex align-items-center" style="gap:.3rem;">
@@ -793,10 +793,10 @@ Extended with quantum computing specific features:
                            id="${fieldId}" data-field="${fieldName}" value="${savedValue}"
                            title="Text value">`;
         } else if (fieldType.includes('list') || fieldType.includes('List')) {
-            inputElement = `<input type="text" class="form-control protocol-input compact-input" 
-                           id="${fieldId}" data-field="${fieldName}" value="${savedValue}" 
-                           placeholder="comma-separated values"
-                           title="List of values (comma-separated)">`;
+            inputElement = `<input type="text" class="form-control protocol-input compact-input"
+                           id="${fieldId}" data-field="${fieldName}" data-type="list" value="${savedValue}"
+                           placeholder="1, 2, 3 or [1, 2, 3] or (1, 2, 3)"
+                           title="List of values: comma-separated, or wrapped in [] / ()">`;
         } else if (fieldType.includes('dict') || fieldType.includes('Dict')) {
             inputElement = `<textarea class="form-control protocol-input compact-input" 
                            id="${fieldId}" data-field="${fieldName}" rows="2" 
@@ -833,20 +833,42 @@ Extended with quantum computing specific features:
         `;
     }
 
+    // Parse a list/tuple-style text input into an array of values.
+    // "1, 2, 3", "[1, 2, 3]" and "(1, 2, 3)" all parse to the same array - JSON/YAML
+    // have no separate tuple type, and qibocal's "list" parameters accept a plain sequence.
+    function parseListInput(text) {
+        let trimmed = String(text == null ? '' : text).trim();
+        if (!trimmed) return [];
+        if ((trimmed.startsWith('[') && trimmed.endsWith(']')) ||
+            (trimmed.startsWith('(') && trimmed.endsWith(')'))) {
+            trimmed = trimmed.slice(1, -1).trim();
+        }
+        if (!trimmed) return [];
+        return trimmed.split(',')
+            .map(token => {
+                const t = token.trim().replace(/^['"]|['"]$/g, '');
+                const num = Number(t);
+                return t !== '' && !isNaN(num) ? num : t;
+            })
+            .filter(v => v !== '');
+    }
+
     // Collect current protocol values from form
     function collectProtocolValues(actionItem) {
         const parameters = {};
         const actionData = {};
         const inputs = actionItem.querySelectorAll('.protocol-input');
-        
+
         inputs.forEach(input => {
             const fieldName = input.dataset.field;
             let value;
-            
+
             if (input.type === 'checkbox') {
                 value = input.checked;
             } else if (input.type === 'number') {
                 value = input.value ? parseFloat(input.value) : null;
+            } else if (input.dataset.type === 'list') {
+                value = parseListInput(input.value);
             } else if (input.tagName === 'SELECT') {
                 if (input.multiple) {
                     value = Array.from(input.selectedOptions).map(o => o.value).filter(v => v);
@@ -856,13 +878,17 @@ Extended with quantum computing specific features:
             } else {
                 value = input.value;
             }
-            
+
             // Handle target qubit selection specially - goes outside parameters
             if (fieldName === 'targets') {
                 const arr = Array.isArray(value) ? value : (value && value !== '' ? [value] : []);
                 const parsed = arr.map(v => parseQubit(v)).filter(v => v !== null);
                 if (parsed.length > 0) {
                     actionData.targets = parsed;
+                }
+            } else if (Array.isArray(value)) {
+                if (value.length > 0) {
+                    parameters[fieldName] = value;
                 }
             } else if (value !== null && value !== '' && value !== '[Optional]') {
                 // Skip empty values and optional parameters with "[Optional]" placeholder
@@ -1281,27 +1307,29 @@ Extended with quantum computing specific features:
         });
     });
 
-    function addExperimentToActionCard(experiment) {
+    function addExperimentToActionCard(experiment, savedValues) {
+        savedValues = savedValues || {};
         const emptyState = document.getElementById('empty-state');
         const actionBuilder = document.getElementById('action-card-builder');
-        
+
         // Remove empty state if present
         if (emptyState) {
             emptyState.remove();
         }
 
-        // Load saved defaults from cookies
-        const savedDefaults = getProtocolDefaults(experiment.id);
+        // Load saved defaults from cookies, overridden by values from a loaded action node
+        const savedDefaults = { ...getProtocolDefaults(experiment.id), ...(savedValues.parameters || {}) };
 
         // Create action item
         const actionItem = document.createElement('div');
         actionItem.className = 'action-item';
         actionItem.dataset.experimentId = experiment.id;
         actionItem.dataset.experimentName = experiment.name;
-        
+        actionItem.dataset.experimentAttributes = JSON.stringify(experiment.attributes || {});
+
         // Generate dynamic input fields based on protocol attributes
         const inputFieldsHtml = generateInputFields(experiment, savedDefaults);
-        
+
         actionItem.innerHTML = `
             <div class="action-item-header">
                 <h5>${experiment.name}</h5>
@@ -1316,10 +1344,25 @@ Extended with quantum computing specific features:
 
         actionBuilder.appendChild(actionItem);
         ExperimentBuilder.actionCard.items.push(experiment);
-        
+
         // Update target qubit dropdowns for the new action item
         updateTargetQubitDropdowns();
-        
+
+        // Restore saved target qubits and per-action update flag
+        if (savedValues.targets && savedValues.targets.length) {
+            const wanted = new Set(savedValues.targets.map(String));
+            const hiddenSelect = actionItem.querySelector('.action-target-select');
+            if (hiddenSelect) {
+                Array.from(hiddenSelect.options).forEach(o => { o.selected = wanted.has(o.value); });
+            }
+            actionItem.querySelectorAll('.action-qubit-cb').forEach(cb => { cb.checked = wanted.has(cb.value); });
+            _syncActionTargetLabel(actionItem);
+        }
+        if (savedValues.update !== undefined) {
+            const updateCheckbox = actionItem.querySelector('.action-update-checkbox');
+            if (updateCheckbox) updateCheckbox.checked = savedValues.update;
+        }
+
         // Enable buttons and save node button
         document.getElementById('generate-yaml-btn').disabled = false;
         document.getElementById('run-experiment-btn').disabled = false;
@@ -1637,11 +1680,19 @@ Extended with quantum computing specific features:
 
     function saveActionNode(nodeName) {
         const selectedQpu = ExperimentBuilder.qpu.selectedName;
-        const actionCard = ExperimentBuilder.actionCard.items.map(item => ({
-            id: item.id,
-            name: item.name,
-            // In a real implementation, you would collect parameters here
-        }));
+        const actionCard = Array.from(document.querySelectorAll('.action-item')).map(actionItem => {
+            const { parameters, actionData } = collectProtocolValues(actionItem);
+            let attributes = {};
+            try { attributes = JSON.parse(actionItem.dataset.experimentAttributes || '{}'); } catch (e) {}
+            return {
+                id: actionItem.dataset.experimentId,
+                name: actionItem.dataset.experimentName,
+                attributes: attributes,
+                parameters: parameters,
+                targets: actionData.targets || [],
+                update: actionData.update !== undefined ? actionData.update : true,
+            };
+        });
 
         fetch(`/api/action_nodes/${selectedQpu}`, {
             method: 'POST',
@@ -1748,9 +1799,14 @@ Extended with quantum computing specific features:
             actionBuilder.innerHTML = '';
             ExperimentBuilder.actionCard.items = [];
 
-            // Load experiments from the node
-            nodeData.action_card.forEach(experiment => {
-                addExperimentToActionCard(experiment);
+            // Load experiments from the node, restoring parameters/targets/update flag
+            nodeData.action_card.forEach(savedItem => {
+                const experiment = {
+                    id: savedItem.id,
+                    name: savedItem.name,
+                    attributes: savedItem.attributes || {},
+                };
+                addExperimentToActionCard(experiment, savedItem);
             });
             showNotification(`Action node <strong>${nodeName}</strong> loaded.`, 'success');
         }
