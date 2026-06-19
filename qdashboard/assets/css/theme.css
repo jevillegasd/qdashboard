@@ -1,0 +1,187 @@
+/*
+ * QDashboard Design Tokens
+ * ------------------------
+ * VS Code-inspired dark theme: flat panels, hairline borders, a single
+ * accent color, compact spacing. Load this before any page-specific
+ * stylesheet so it establishes the base tokens they build on.
+ */
+
+:root {
+    /* Surfaces */
+    --vsc-bg: #1a1a1a;
+    --vsc-bg-elevated: #2c2c2c;
+    --vsc-bg-header: #383838;
+    --vsc-bg-hover: #333333;
+    --vsc-bg-input: #2a2a2a;
+
+    /* Borders */
+    --vsc-border: #3c3c3c;
+    --vsc-border-strong: #555555;
+
+    /* Text */
+    --vsc-text: #f0f0f0;
+    --vsc-text-muted: #999999;
+    --vsc-text-faint: #6c757d;
+
+    /* Accent (RGB 0,195,137) */
+    --vsc-accent: #00c389;
+    --vsc-accent-hover: #00e09e;
+    --vsc-accent-muted: rgba(0, 195, 137, 0.15);
+
+    /* Status */
+    --vsc-danger: #dc3545;
+    --vsc-warning: #ffc107;
+    --vsc-success: var(--vsc-accent);
+    --vsc-info: #4dabf7;
+
+    /* Spacing scale */
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.5rem;
+
+    /* Shape */
+    --radius: 3px;
+    --radius-sm: 2px;
+    --border-hairline: 1px solid var(--vsc-border);
+}
+
+/* ——— Reusable components ——— */
+
+/* Flat panel: replaces ad hoc bordered/shadowed/gradient cards */
+.vsc-panel {
+    background: var(--vsc-bg-elevated);
+    border: var(--border-hairline);
+    border-radius: var(--radius);
+    box-shadow: none;
+}
+
+/* Single-line hoverable row with a left accent indicator */
+.vsc-list-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-2) var(--space-3);
+    border-left: 3px solid transparent;
+    color: var(--vsc-text);
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.vsc-list-row:hover {
+    background-color: var(--vsc-bg-hover);
+}
+
+.vsc-list-row.active {
+    background-color: var(--vsc-bg-hover);
+    border-left-color: var(--vsc-accent);
+}
+
+/* Flat underline tabs */
+.vsc-tabs {
+    display: flex;
+    border-bottom: var(--border-hairline);
+    gap: 0;
+}
+
+.vsc-tab {
+    padding: var(--space-2) var(--space-3);
+    font-size: 0.8rem;
+    color: var(--vsc-text-muted);
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.vsc-tab:hover {
+    color: var(--vsc-text);
+}
+
+.vsc-tab.active {
+    color: var(--vsc-text);
+    border-bottom-color: var(--vsc-accent);
+}
+
+/* Compact muted count badge */
+.vsc-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    line-height: 1.4;
+    padding: 0 0.4em;
+    border-radius: var(--radius-sm);
+    background: var(--vsc-bg-header);
+    color: var(--vsc-text-muted);
+}
+
+/* ——— Targeted Bootstrap overrides to land the single accent color ——— */
+
+a {
+    color: var(--vsc-accent);
+}
+a:hover {
+    color: var(--vsc-accent-hover);
+}
+
+.btn-primary {
+    background-color: var(--vsc-accent);
+    border-color: var(--vsc-accent);
+    color: #0a0a0a;
+}
+.btn-primary:hover,
+.btn-primary:focus,
+.btn-primary:not(:disabled):not(.disabled):active {
+    background-color: var(--vsc-accent-hover);
+    border-color: var(--vsc-accent-hover);
+    color: #0a0a0a;
+}
+
+.btn-info {
+    background-color: var(--vsc-info);
+    border-color: var(--vsc-info);
+}
+
+.badge-primary {
+    background-color: var(--vsc-accent);
+    color: #0a0a0a;
+}
+
+.badge-info {
+    background-color: var(--vsc-info);
+}
+
+.nav-tabs .nav-link.active {
+    border-color: var(--vsc-border) var(--vsc-border) var(--vsc-bg-elevated);
+    color: var(--vsc-accent);
+}
+
+.form-control:focus,
+.btn:focus,
+.custom-control-input:focus ~ .custom-control-label::before {
+    border-color: var(--vsc-accent) !important;
+    box-shadow: 0 0 0 0.2rem var(--vsc-accent-muted) !important;
+}
+
+.form-check-input:checked,
+.custom-control-input:checked ~ .custom-control-label::before {
+    background-color: var(--vsc-accent) !important;
+    border-color: var(--vsc-accent) !important;
+}
+
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+::-webkit-scrollbar-track {
+    background: var(--vsc-bg);
+}
+::-webkit-scrollbar-thumb {
+    background: var(--vsc-border-strong);
+    border-radius: var(--radius-sm);
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--vsc-text-faint);
+}

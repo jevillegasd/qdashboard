@@ -12,6 +12,7 @@ Extended with quantum computing specific features:
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Experiment Builder - QDashboard</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="{{url_for('assets', path='css/theme.css')}}">
     <link rel="stylesheet" href="{{url_for('assets', path='css/dashboard.css')}}">
     <link rel="stylesheet" href="{{url_for('assets', path='css/menu.css')}}">
     <link rel="stylesheet" href="{{url_for('assets', path='css/experiments.css')}}">
@@ -146,41 +147,41 @@ Extended with quantum computing specific features:
                                         
                                         <!-- Protocol Attributes Section -->
                                         <div class="collapse" id="attrs-{{ experiment.id }}">
-                                            <div class="card card-body mt-1 bg-light">
+                                            <div class="experiment-attributes mt-1">
                                                 <!-- Tabs Navigation -->
-                                                <ul class="nav nav-tabs nav-tabs-sm" id="tabs-{{ experiment.id }}" role="tablist">
+                                                <ul class="nav vsc-tabs" id="tabs-{{ experiment.id }}" role="tablist">
                                                     <li class="nav-item">
-                                                        <a class="nav-link active" id="inputs-tab-{{ experiment.id }}" data-toggle="tab" 
-                                                           href="#inputs-{{ experiment.id }}" role="tab" aria-controls="inputs-{{ experiment.id }}" 
+                                                        <a class="nav-link vsc-tab active" id="inputs-tab-{{ experiment.id }}" data-toggle="tab"
+                                                           href="#inputs-{{ experiment.id }}" role="tab" aria-controls="inputs-{{ experiment.id }}"
                                                            aria-selected="true">
                                                             <i class="fas fa-sign-in-alt mr-1"></i> Inputs
                                                             {% if experiment.attributes.inputs %}
-                                                                <span class="badge badge-primary ml-1">{{ experiment.attributes.inputs|length }}</span>
+                                                                <span class="vsc-badge ml-1">{{ experiment.attributes.inputs|length }}</span>
                                                             {% endif %}
                                                         </a>
                                                     </li>
                                                     <li class="nav-item">
-                                                        <a class="nav-link" id="results-tab-{{ experiment.id }}" data-toggle="tab" 
-                                                           href="#results-{{ experiment.id }}" role="tab" aria-controls="results-{{ experiment.id }}" 
+                                                        <a class="nav-link vsc-tab" id="results-tab-{{ experiment.id }}" data-toggle="tab"
+                                                           href="#results-{{ experiment.id }}" role="tab" aria-controls="results-{{ experiment.id }}"
                                                            aria-selected="false">
                                                             <i class="fas fa-chart-line mr-1"></i> Results
                                                             {% if experiment.attributes.results %}
-                                                                <span class="badge badge-success ml-1">{{ experiment.attributes.results|length }}</span>
+                                                                <span class="vsc-badge ml-1">{{ experiment.attributes.results|length }}</span>
                                                             {% endif %}
                                                         </a>
                                                     </li>
                                                     <li class="nav-item">
-                                                        <a class="nav-link" id="data-tab-{{ experiment.id }}" data-toggle="tab" 
-                                                           href="#data-{{ experiment.id }}" role="tab" aria-controls="data-{{ experiment.id }}" 
+                                                        <a class="nav-link vsc-tab" id="data-tab-{{ experiment.id }}" data-toggle="tab"
+                                                           href="#data-{{ experiment.id }}" role="tab" aria-controls="data-{{ experiment.id }}"
                                                            aria-selected="false">
                                                             <i class="fas fa-database mr-1"></i> Data
                                                             {% if experiment.attributes.data %}
-                                                                <span class="badge badge-info ml-1">{{ experiment.attributes.data|length }}</span>
+                                                                <span class="vsc-badge ml-1">{{ experiment.attributes.data|length }}</span>
                                                             {% endif %}
                                                         </a>
                                                     </li>
                                                 </ul>
-                                                
+
                                                 <!-- Tabs Content -->
                                                 <div class="tab-content mt-3" id="tabContent-{{ experiment.id }}">
                                                     <!-- Inputs Tab -->
@@ -192,7 +193,7 @@ Extended with quantum computing specific features:
                                                                 <div class="col-md-6 mb-2">
                                                                     <div class="attribute-item">
                                                                         <code class="attribute-name">{{ key }}</code>
-                                                                        <div class="attribute-type text-muted">{{ value }}</div>
+                                                                        <div class="attribute-type">{{ value }}</div>
                                                                     </div>
                                                                 </div>
                                                                 {% endfor %}
@@ -213,7 +214,7 @@ Extended with quantum computing specific features:
                                                                 <div class="col-md-6 mb-2">
                                                                     <div class="attribute-item">
                                                                         <code class="attribute-name">{{ key }}</code>
-                                                                        <div class="attribute-type text-muted">{{ value }}</div>
+                                                                        <div class="attribute-type">{{ value }}</div>
                                                                     </div>
                                                                 </div>
                                                                 {% endfor %}
@@ -234,7 +235,7 @@ Extended with quantum computing specific features:
                                                                 <div class="col-md-6 mb-2">
                                                                     <div class="attribute-item">
                                                                         <code class="attribute-name">{{ key }}</code>
-                                                                        <div class="attribute-type text-muted">{{ value }}</div>
+                                                                        <div class="attribute-type">{{ value }}</div>
                                                                     </div>
                                                                 </div>
                                                                 {% endfor %}
@@ -347,6 +348,10 @@ Extended with quantum computing specific features:
                                             <i class="fas fa-plus-circle fa-3x mb-3"></i>
                                             <p>Drag experiments here to build your action card</p>
                                         </div>
+                                    </div>
+                                    <div class="action-tabs-wrapper" id="action-tabs-wrapper" style="display:none;">
+                                        <div class="action-tabs-list" id="action-tabs-list"></div>
+                                        <div class="action-tabs-content" id="action-tabs-content"></div>
                                     </div>
                                 </div>
                                 <!-- Qubit parameter overrides (collapsed by default) -->
@@ -1310,39 +1315,45 @@ Extended with quantum computing specific features:
     function addExperimentToActionCard(experiment, savedValues) {
         savedValues = savedValues || {};
         const emptyState = document.getElementById('empty-state');
-        const actionBuilder = document.getElementById('action-card-builder');
+        const tabsWrapper = document.getElementById('action-tabs-wrapper');
+        const tabsList = document.getElementById('action-tabs-list');
+        const tabsContent = document.getElementById('action-tabs-content');
 
-        // Remove empty state if present
-        if (emptyState) {
-            emptyState.remove();
-        }
+        // Swap empty state for the vertical-tab layout
+        if (emptyState) emptyState.style.display = 'none';
+        tabsWrapper.style.display = 'flex';
 
         // Load saved defaults from cookies, overridden by values from a loaded action node
         const savedDefaults = { ...getProtocolDefaults(experiment.id), ...(savedValues.parameters || {}) };
 
-        // Create action item
+        // Create the tab button (protocol title on the left, with a remove icon)
+        const tabBtn = document.createElement('button');
+        tabBtn.type = 'button';
+        tabBtn.className = 'action-tab-btn';
+        tabBtn.dataset.experimentId = experiment.id;
+        tabBtn.innerHTML = `
+            <span class="action-tab-label"><i class="fas fa-flask"></i>${experiment.name}</span>
+            <span class="action-tab-remove" title="Remove"><i class="fas fa-times"></i></span>
+        `;
+        tabBtn.addEventListener('click', function(e) {
+            if (e.target.closest('.action-tab-remove')) {
+                e.stopPropagation();
+                removeActionItem(experiment.id);
+            } else {
+                activateActionTab(experiment.id);
+            }
+        });
+        tabsList.appendChild(tabBtn);
+
+        // Create the content pane for this protocol's parameters
         const actionItem = document.createElement('div');
-        actionItem.className = 'action-item';
+        actionItem.className = 'action-item action-tab-pane';
         actionItem.dataset.experimentId = experiment.id;
         actionItem.dataset.experimentName = experiment.name;
         actionItem.dataset.experimentAttributes = JSON.stringify(experiment.attributes || {});
+        actionItem.innerHTML = generateInputFields(experiment, savedDefaults);
+        tabsContent.appendChild(actionItem);
 
-        // Generate dynamic input fields based on protocol attributes
-        const inputFieldsHtml = generateInputFields(experiment, savedDefaults);
-
-        actionItem.innerHTML = `
-            <div class="action-item-header">
-                <h5>${experiment.name}</h5>
-                <button class="btn btn-sm btn-danger" onclick="removeActionItem(this)">
-                    <i class="fas fa-trash"></i>
-                </button>
-            </div>
-            <div class="action-item-body mt-3">
-                ${inputFieldsHtml}
-            </div>
-        `;
-
-        actionBuilder.appendChild(actionItem);
         ExperimentBuilder.actionCard.items.push(experiment);
 
         // Update target qubit dropdowns for the new action item
@@ -1363,35 +1374,47 @@ Extended with quantum computing specific features:
             if (updateCheckbox) updateCheckbox.checked = savedValues.update;
         }
 
+        // Newly added protocol becomes the active tab
+        activateActionTab(experiment.id);
+
         // Enable buttons and save node button
         document.getElementById('generate-yaml-btn').disabled = false;
         document.getElementById('run-experiment-btn').disabled = false;
         document.getElementById('save-action-node-btn').disabled = false;
     }
 
-    function removeActionItem(button) {
-        const actionItem = button.closest('.action-item');
-        const experimentId = actionItem.dataset.experimentId;
-        actionItem.remove();
+    // Switch the visible protocol pane in the action card builder
+    function activateActionTab(experimentId) {
+        document.querySelectorAll('.action-tab-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.experimentId === experimentId);
+        });
+        document.querySelectorAll('.action-tab-pane').forEach(pane => {
+            pane.classList.toggle('active', pane.dataset.experimentId === experimentId);
+        });
+    }
+
+    function removeActionItem(experimentId) {
+        const tabBtn = document.querySelector(`.action-tab-btn[data-experiment-id="${experimentId}"]`);
+        const actionItem = document.querySelector(`.action-tab-pane[data-experiment-id="${experimentId}"]`);
+        const wasActive = !!(actionItem && actionItem.classList.contains('active'));
+
+        if (tabBtn) tabBtn.remove();
+        if (actionItem) actionItem.remove();
 
         // Remove from action card items array
         ExperimentBuilder.actionCard.items = ExperimentBuilder.actionCard.items.filter(item => item.id !== experimentId);
-        
+
         // If no more action items, show empty state and disable buttons
-        const remaining = document.querySelectorAll('.action-item');
+        const remaining = document.querySelectorAll('.action-tab-btn');
         if (remaining.length === 0) {
-            const actionBuilder = document.getElementById('action-card-builder');
-            actionBuilder.innerHTML = `
-                <div class="drop-zone-empty" id="empty-state">
-                    <div>
-                        <i class="fas fa-plus-circle fa-3x mb-3"></i>
-                        <p>Drag experiments here to build your action card</p>
-                    </div>
-                </div>
-            `;
+            document.getElementById('action-tabs-wrapper').style.display = 'none';
+            const emptyState = document.getElementById('empty-state');
+            if (emptyState) emptyState.style.display = '';
             document.getElementById('generate-yaml-btn').disabled = true;
             document.getElementById('run-experiment-btn').disabled = true;
             document.getElementById('save-action-node-btn').disabled = true;
+        } else if (wasActive) {
+            activateActionTab(remaining[0].dataset.experimentId);
         }
     }
 
@@ -1659,16 +1682,11 @@ Extended with quantum computing specific features:
 
     // Helper function to clear the action card
     function clearActionCard() {
-        const actionBuilder = document.getElementById('action-card-builder');
-        actionBuilder.innerHTML = `
-            <div class="drop-zone-empty" id="empty-state">
-                <div>
-                    <i class="fas fa-plus-circle fa-3x mb-3"></i>
-                    <p>Drag experiments here to build your action card</p>
-                </div>
-            </div>
-        `;
-        
+        document.getElementById('action-tabs-list').innerHTML = '';
+        document.getElementById('action-tabs-content').innerHTML = '';
+        document.getElementById('action-tabs-wrapper').style.display = 'none';
+        document.getElementById('empty-state').style.display = '';
+
         // Clear the state
         ExperimentBuilder.actionCard.items = [];
         
@@ -1795,9 +1813,7 @@ Extended with quantum computing specific features:
         const nodeData = ExperimentBuilder.actionCard.savedNodes[nodeName];
         if (nodeData) {
             // Clear current action card
-            const actionBuilder = document.getElementById('action-card-builder');
-            actionBuilder.innerHTML = '';
-            ExperimentBuilder.actionCard.items = [];
+            clearActionCard();
 
             // Load experiments from the node, restoring parameters/targets/update flag
             nodeData.action_card.forEach(savedItem => {

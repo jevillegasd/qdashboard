@@ -25,8 +25,8 @@
     -moz-transition: width .3s ease-out;
     -o-transition: width .3s ease-out;
     transition: width .3s ease-out;
-    background-color: #2c2c2c;
-    border-right: 1px solid #444;
+    background-color: var(--vsc-bg-elevated);
+    border-right: 1px solid var(--vsc-border);
     display: flex;
     flex-direction: column;
     overflow: hidden; /* Hide overflowing content when collapsed */
@@ -50,7 +50,7 @@
     font-size: 1.2rem;
     font-weight: 500; /* Added for emphasis */
     color: #fff;
-    border-bottom: 1px solid #444; /* Added for separation */
+    border-bottom: 1px solid var(--vsc-border); /* Added for separation */
     white-space: nowrap; /* Prevent text wrapping */
     overflow: hidden; /* Hide text when collapsed */
     transition: opacity 0.3s ease;
@@ -67,21 +67,28 @@
 
 /* 3. List Group Items */
 #sidebar-wrapper .list-group-item {
-    background-color: #2c2c2c;
+    background-color: var(--vsc-bg-elevated);
     color: #ccc;
     border: none;
-    padding: 1rem 1.25rem; /* Standardized padding */
+    border-left: 3px solid transparent;
+    padding: 1rem calc(1.25rem - 3px); /* Standardized padding, minus accent bar width */
     font-weight: 500;
     white-space: nowrap; /* Prevent text wrapping */
     overflow: hidden; /* Hide overflowing text */
     display: flex;
     align-items: center;
-    transition: all 0.3s ease;
+    transition: all 0.2s ease;
 }
 
-#sidebar-wrapper .list-group-item:hover,
-#sidebar-wrapper .list-group-item.active { /* Added .active for current page */
-    background-color: #383838;
+#sidebar-wrapper .list-group-item:hover {
+    background-color: var(--vsc-bg-hover);
+    color: #fff;
+    text-decoration: none;
+}
+
+#sidebar-wrapper .list-group-item.active { /* Current page */
+    background-color: var(--vsc-bg-hover);
+    border-left-color: var(--vsc-accent);
     color: #fff;
     text-decoration: none;
 }
@@ -115,8 +122,8 @@
     bottom: 0;
     left: 0;
     right: 0;
-    background-color: #2c2c2c;
-    border-top: 1px solid #444;
+    background-color: var(--vsc-bg-elevated);
+    border-top: 1px solid var(--vsc-border);
     padding: 0.75rem 1.25rem;
     font-size: 0.75rem;
     color: #999;
@@ -199,9 +206,9 @@
 
 #page-content-wrapper .navbar {
     padding: 0.75rem 1.25rem;
-    background-color: #2c2c2c;
+    background-color: var(--vsc-bg-elevated);
     min-height: 60px;
-    border-bottom: 0px solid #2c2c2c;
+    border-bottom: 0px solid var(--vsc-bg-elevated);
 }
 
 #page-content-wrapper .container-fluid {
