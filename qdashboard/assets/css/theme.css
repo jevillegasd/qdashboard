@@ -45,6 +45,9 @@
     --radius: 3px;
     --radius-sm: 2px;
     --border-hairline: 1px solid var(--vsc-border);
+
+    /* Shell activity bar width — resizable via the drag handle in shell.js */
+    --activity-bar-width: 4rem;
 }
 
 /* ——— Reusable components ——— */
@@ -191,7 +194,7 @@ a:hover {
     position: fixed;
     top: 0;
     bottom: 28px;
-    left: 4rem;
+    left: var(--activity-bar-width, 4rem);
     width: 300px;
     background: var(--vsc-bg-elevated);
     border-right: var(--border-hairline);
@@ -202,7 +205,7 @@ a:hover {
 .side-panel-pane { display: none; height: 100%; overflow-y: auto; }
 
 #wrapper.panel-open #page-content-wrapper {
-    margin-left: calc(4rem + 300px);
+    margin-left: calc(var(--activity-bar-width, 4rem) + 300px);
 }
 
 .explorer-list, .history-list {
@@ -298,7 +301,7 @@ a:hover {
 .qd-status-bar {
     position: fixed;
     bottom: 0;
-    left: 4rem;
+    left: var(--activity-bar-width, 4rem);
     right: 0;
     height: 28px;
     background: var(--vsc-accent);

@@ -19,6 +19,19 @@
     var TABS_KEY = 'qd_shell_tabs';
     var PANEL_KEY = 'qd_shell_panel';
 
+    // The Slurm Monitor pane holds an SSE connection (dashboard-common.js)
+    // open for as long as it's "open" — start/stop it with the tab instead
+    // of unconditionally on page load, otherwise the dashboard keeps a
+    // connection alive any time a browser tab is open, which is what made
+    // `qdashboard` take ~5-10s to exit on Ctrl+C (uvicorn has to wait out or
+    // force-cancel that connection during graceful shutdown).
+    var TAB_LIFECYCLE = {
+        slurm: {
+            onOpen: function () { if (window.initializeDashboardCommon) window.initializeDashboardCommon(); },
+            onClose: function () { if (window.stopAutoRefresh) window.stopAutoRefresh(); }
+        }
+    };
+
     var tabState = { open: ['slurm', 'action_builder'], active: 'action_builder' };
     var panelState = { active: 'library', open: true };
     var reportLabels = {}; // experimentId -> label, for report tabs re-render after reload (not persisted across reload by design)
@@ -94,24 +107,43 @@
     }
 
     function openTab(id) {
-        if (tabState.open.indexOf(id) === -1) {
+        var wasOpen = tabState.open.indexOf(id) !== -1;
+        if (!wasOpen) {
             tabState.open.push(id);
         }
         activateTab(id);
+        if (!wasOpen && TAB_LIFECYCLE[id] && TAB_LIFECYCLE[id].onOpen) {
+            TAB_LIFECYCLE[id].onOpen();
+        }
     }
 
-    function openReportTab(experimentId, label) {
-        var id = 'report:' + experimentId;
-        reportLabels[id] = label || experimentId;
-        if (!document.getElementById(tabPaneId(id))) {
+    function openIframeTab(id, src, label) {
+        reportLabels[id] = label || id;
+        var existing = document.getElementById(tabPaneId(id));
+        if (existing) {
+            // Re-point an already-open pinned tab (e.g. "Latest Report") at
+            // the current src instead of stacking duplicate iframes.
+            existing.querySelector('iframe').src = src;
+        } else {
             $('#qd-tab-content').append(
                 '<div id="' + tabPaneId(id) + '" class="qd-tabpane qd-tabpane-report">' +
-                '<iframe src="/experiment_report_page/' + encodeURIComponent(experimentId) + '" ' +
-                'style="width:100%;height:100%;border:none;" title="Experiment Report"></iframe>' +
+                '<iframe src="' + src + '" title="Experiment Report"></iframe>' +
                 '</div>'
             );
         }
         openTab(id);
+    }
+
+    function openReportTab(experimentId, label) {
+        openIframeTab('report:' + experimentId,
+            '/experiment_report_page/' + encodeURIComponent(experimentId),
+            label || experimentId);
+    }
+
+    function openLatestReportTab() {
+        // Pinned single tab (not one-per-experiment): re-fetches "whatever
+        // the latest report is" each time it's (re)opened.
+        openIframeTab('report:latest', '/latest_report_page?_=' + Date.now(), 'Latest Report');
     }
 
     function closeTab(id) {
@@ -136,6 +168,10 @@
             $('.qd-tabpane').removeClass('active').css('display', 'none');
         }
         saveState(TABS_KEY, tabState);
+
+        if (TAB_LIFECYCLE[id] && TAB_LIFECYCLE[id].onClose) {
+            TAB_LIFECYCLE[id].onClose();
+        }
     }
 
     function reorderTabs(draggedId, beforeId) {
@@ -212,6 +248,58 @@
         togglePanel($(this).data('panel'));
     });
 
+    // Direct activity-bar shortcuts: open a tab without going through the
+    // side panel or the tab strip's "+" menu.
+    $(document).on('click', '[data-open-tab]', function (e) {
+        e.preventDefault();
+        openTab($(this).data('open-tab'));
+    });
+    $(document).on('click', '[data-open-latest-report]', function (e) {
+        e.preventDefault();
+        openLatestReportTab();
+    });
+
+    // ---- Activity bar resize ----
+
+    var ACTIVITY_BAR_KEY = 'qd_activity_bar_width';
+    var ACTIVITY_BAR_MIN = 64;   // icon-only
+    var ACTIVITY_BAR_MAX = 240;  // wide enough for full labels
+
+    function setActivityBarWidth(px) {
+        px = Math.max(ACTIVITY_BAR_MIN, Math.min(ACTIVITY_BAR_MAX, px));
+        document.documentElement.style.setProperty('--activity-bar-width', px + 'px');
+        $('body').toggleClass('activity-bar-wide', px > ACTIVITY_BAR_MIN + 20);
+        return px;
+    }
+
+    (function initResizeHandle() {
+        var saved = parseInt(loadState(ACTIVITY_BAR_KEY, null), 10);
+        if (!isNaN(saved)) setActivityBarWidth(saved);
+
+        var handle = document.getElementById('sidebar-resize-handle');
+        if (!handle) return;
+        var dragging = false;
+
+        handle.addEventListener('mousedown', function (e) {
+            dragging = true;
+            handle.classList.add('resizing');
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
+        document.addEventListener('mousemove', function (e) {
+            if (!dragging) return;
+            setActivityBarWidth(e.clientX);
+        });
+        document.addEventListener('mouseup', function () {
+            if (!dragging) return;
+            dragging = false;
+            handle.classList.remove('resizing');
+            document.body.style.userSelect = '';
+            var current = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--activity-bar-width'));
+            saveState(ACTIVITY_BAR_KEY, current || ACTIVITY_BAR_MIN);
+        });
+    })();
+
     // ---- Bootstrap from URL query params, else localStorage ----
 
     function bootstrap() {
@@ -229,6 +317,13 @@
 
         renderTabsBar();
         if (tabState.active) showPane(tabState.active);
+
+        // Tabs that are open at load (default or restored) need their
+        // lifecycle onOpen too — openTab() only fires it on a closed->open
+        // transition, which doesn't cover "already open when the page loads".
+        tabState.open.forEach(function (id) {
+            if (TAB_LIFECYCLE[id] && TAB_LIFECYCLE[id].onOpen) TAB_LIFECYCLE[id].onOpen();
+        });
 
         if (panelState.open && panelState.active) {
             showPanel(panelState.active);
@@ -261,7 +356,8 @@
         open: openTab,
         close: closeTab,
         activate: activateTab,
-        openReportTab: openReportTab
+        openReportTab: openReportTab,
+        openLatestReportTab: openLatestReportTab
     };
     window.ShellPanel = {
         show: showPanel,

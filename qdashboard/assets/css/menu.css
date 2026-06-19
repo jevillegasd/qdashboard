@@ -46,7 +46,8 @@
 }
 
 /* Once widened past icon-only width, reveal text labels permanently. */
-.activity-bar-wide #sidebar-wrapper .menu-text {
+.activity-bar-wide #sidebar-wrapper .menu-text,
+.activity-bar-wide #sidebar-wrapper .sidebar-heading {
     opacity: 1;
 }
 
@@ -118,15 +119,12 @@
     justify-content: flex-start;
 }
 
-/* Text part of menu items */
+/* Text part of menu items — hidden at icon-only width, shown once the
+   activity bar is resized wide enough (see .activity-bar-wide above). */
 #sidebar-wrapper .list-group-item .menu-text {
     opacity: 0;
-    transition: opacity 0.3s ease;
-}
-
-/* Show text on hover */
-#sidebar-wrapper:hover .list-group-item .menu-text {
-    opacity: 1;
+    margin-left: 0.5rem;
+    transition: opacity 0.15s ease;
 }
 
 /* 3.1. Sidebar Footer for Package Versions */
@@ -213,8 +211,7 @@
 #page-content-wrapper {
     width: 100%;
     min-height: 100vh;
-    margin-left: 4rem; /* Account for collapsed sidebar */
-    transition: margin-left 0.3s ease;
+    margin-left: var(--activity-bar-width, 4rem);
 }
 
 #page-content-wrapper .navbar {
@@ -247,27 +244,13 @@
 /* 7. Page Content Positioning */
 /* Updated to work with always-visible sidebar */
 
-@media (min-width: 768px) {
-    #sidebar-wrapper {
-        width: 4rem; /* Collapsed width on desktop */
-    }
-
-    #sidebar-wrapper:hover {
-        width: 15rem; /* Expanded width on hover */
-    }
-
-    #page-content-wrapper {
-        margin-left: 4rem; /* Account for collapsed sidebar */
-    }
-}
-
 @media (max-width: 767px) {
     #sidebar-wrapper {
-        width: 4rem; /* Keep collapsed on mobile */
+        width: var(--activity-bar-width, 4rem);
         height: 100vh;
     }
-    
+
     #page-content-wrapper {
-        margin-left: 4rem; /* Consistent margin on mobile */
+        margin-left: var(--activity-bar-width, 4rem);
     }
 }
