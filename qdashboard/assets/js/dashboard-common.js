@@ -508,8 +508,15 @@ function cleanupSlurmStream() {
     isAutoRefreshActive = false;
 }
 
-// Initialize when DOM is ready
-document.addEventListener('DOMContentLoaded', initializeDashboardCommon);
+// NOTE: no auto-init on DOMContentLoaded here. The Slurm Monitor pane lives
+// inside the shell's always-rendered tab content (see shell.js), so starting
+// the SSE stream unconditionally on every page load would keep a connection
+// open even when that tab is closed/never viewed — and, worse, would keep one
+// open for as long as any browser tab has the dashboard open, which is what
+// made `qdashboard` take ~5-10s to exit on Ctrl+C (uvicorn's graceful
+// shutdown has to wait out/cancel that connection). shell.js calls
+// initializeDashboardCommon()/stopAutoRefresh() itself when the Slurm tab is
+// actually opened/closed.
 
 // Cleanup when page unloads or navigates away
 window.addEventListener('beforeunload', cleanupSlurmStream);

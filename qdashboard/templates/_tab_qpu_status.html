@@ -1,0 +1,196 @@
+<p class="page-subtitle">Overview of available Quantum Processing Units and their current status.</p>
+
+<!-- Platform Repository Information -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card platform-info-card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div class="text-nowrap">
+                    <i class="fas fa-code-branch"></i>
+                    <span>Platform Repository Info</span>
+                    <div id="branchBadge">
+                        {% if current_branch_info %}
+                            {% if current_branch_info.behind > 0 %}
+                                <span class="badge badge-info">{{ current_branch_info.behind }} commits behind</span>
+                            {% endif %}
+                            {% if current_branch_info.ahead > 0 %}
+                                <span class="badge badge-info">{{ current_branch_info.ahead }} commits ahead</span>
+                            {% endif %}
+                            {% if not current_branch_info.clean %}
+                                <span class="badge badge-warning">Unstaged changes</span>
+                            {% endif %}
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="btn-group" role="group">
+                    <button class="btn btn-sm btn-outline-success" id="gitCommit" title="Commit changes">
+                        <i class="fas fa-check"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary" id="gitPush" title="Push to remote">
+                        <i class="fas fa-upload"></i>
+                    </button>
+                    <button class="btn btn-sm btn-danger" id="discardChanges" title="Discard all uncommitted changes">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" id="refreshBranches" title="Refresh branch list">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- Path information -->
+                <div class="row">
+                    <div class="col-4">
+                        <p><strong>Path:</strong> </p>
+                    </div>
+                    <div class="col-8">
+                        <code>{{ platforms_path }}</code>
+                    </div>
+                </div>
+
+                <!-- Interactive Branch Selector -->
+                <div class="row">
+                    <div class="col-4">
+                        <p class="mb-1"><strong>Current Branch:</strong></p>
+                        <small class="form-text text-muted" style="line-height: 1.2;">Select a branch to switch platform configurations</small>
+                    </div>
+                    <div class="col-8">
+                        <div class="form-group">
+                            <div class="input-group">
+                                <select class="form-control form-control-sm" id="branchSelector" style="font-size: 1rem;">
+                                    {% if branches_info and branches_info.current %}
+                                        <option value="{{ branches_info.current }}" selected>{{ branches_info.current }} (current)</option>
+                                    {% else %}
+                                        <option value="{{ git_branch }}" selected>{{ git_branch }} (current)</option>
+                                    {% endif %}
+                                </select>
+                                <div class="input-group-append">
+                                    <button class="btn btn-outline-primary btn-sm" type="button" id="switchBranch" disabled style="font-size: 0.875rem;">
+                                        <i class="fas fa-exchange-alt"></i> Switch
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Branch Status -->
+                <div id="branchStatus">
+                    <div class="row">
+                        <div class="col-4">
+                            <p><strong>Commit:</strong></p>
+                        </div>
+                        <div class="col-8">
+                            {% if current_branch_info %}
+                                <p><code>{{ current_branch_info.commit }}</code></p>
+                            {% else %}
+                                <p><code>{{ git_commit }}</code></p>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-4">
+                            <p><strong>Message:</strong></p>
+                        </div>
+                        <div class="col-8">
+                            {% if current_branch_info %}
+                                <p><small class="text-muted">{{ current_branch_info.commit_message }}</small></p>
+                            {% else %}
+                                <p><code>No branch info available.</code></p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Branch Switching Status -->
+    <div class="col-md-6">
+        <div id="switchAlert" class="alert" style="display: none;"></div>
+    </div>
+</div>
+
+<div class="table-responsive mt-4">
+    <table id="qpuTable" class="table table-dark table-hover">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Qubits</th>
+                <th>Status</th>
+                <th>Queue</th>
+                <th>Topology</th>
+                <th>Calibration</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for qpu in qpu_details %}
+            <tr>
+                <td><strong>{{ qpu.name }}</strong></td>
+                <td>{{ qpu.qubits }}</td>
+                <td>
+                    {% if qpu.status == 'online' %}
+                        <span class="badge badge-success">{{ qpu.status }}</span>
+                    {% elif qpu.status == 'running' %}
+                        <span class="badge badge-success">{{ qpu.status }}</span>
+                    {% else %}
+                        <span class="badge badge-danger">{{ qpu.status }}</span>
+                    {% endif %}
+                </td>
+                <td>{{ qpu.queue }}</td>
+                <td>
+                    {% if qpu.topology != 'N/A' and qpu.topology != 'unknown' %}
+                        <a href="#" class="topology-link" data-qpu="{{ qpu.name }}" data-topology="{{ qpu.topology }}">
+                            <span class="badge badge-info">{{ qpu.topology }}</span>
+                        </a>
+                    {% else %}
+                        <span class="text-muted">{{ qpu.topology }}</span>
+                    {% endif %}
+                </td>
+                <td>{{ qpu.calibration_time }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Topology Visualization Modal -->
+<div class="modal fade" id="topologyModal" tabindex="-1" role="dialog" aria-labelledby="topologyModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="topologyModalLabel">QPU Topology Visualization</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div id="topologyLoading" class="text-center">
+                    <div class="spinner-border" role="status">
+                        <span class="sr-only">Loading...</span>
+                    </div>
+                    <p class="mt-2">Generating topology visualization...</p>
+                </div>
+                <div id="topologyContent" style="display: none;">
+                    <div id="topologyInfo" class="mb-3"></div>
+                    <div class="text-center">
+                        <img id="topologyImage" src="" alt="Topology Visualization" class="img-fluid" style="max-width: 100%; height: auto;">
+                    </div>
+                </div>
+                <div id="topologyError" style="display: none;">
+                    <div class="alert alert-danger" role="alert">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <span id="errorMessage">Failed to load topology visualization.</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    window.QD_CURRENT_BRANCH = '{{ branches_info.current if branches_info else git_branch }}';
+</script>

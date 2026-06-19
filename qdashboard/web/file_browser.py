@@ -9,10 +9,10 @@ import json
 import mimetypes
 from pathlib2 import Path
 from fastapi import APIRouter, Request, UploadFile, File
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, RedirectResponse, JSONResponse
 from starlette.responses import HTMLResponse
 
-from ..utils.formatters import get_type
+from ..utils.formatters import get_type, size_fmt, time_humanize, icon_fmt
 from ..qpu.monitoring import get_qibo_versions
 from ..web.reports import report_viewer
 
@@ -84,8 +84,6 @@ def make_file_router(root_path: str, key: str = "") -> APIRouter:
         return candidate
 
     async def _handle_get(request: Request, p: str):
-        from ..core.app import templates
-
         hide_dotfile = request.query_params.get(
             'hide-dotfile', request.cookies.get('hide-dotfile', 'no'))
 
@@ -107,47 +105,11 @@ def make_file_router(root_path: str, key: str = "") -> APIRouter:
                 except Exception:
                     pass  # fall through to directory listing
 
-            contents = []
-            total = {'size': 0, 'dir': 0, 'file': 0}
-            for filename in os.listdir(path):
-                if filename in ignored:
-                    continue
-                if hide_dotfile == 'yes' and filename[0] == '.':
-                    continue
-                filepath = os.path.join(path, filename)
-                try:
-                    stat_res = os.stat(filepath)
-                except (PermissionError, OSError):
-                    continue
-                info = {
-                    'name': filename,
-                    'mtime': stat_res.st_mtime,
-                    'type': get_type(stat_res.st_mode),
-                    'size': stat_res.st_size,
-                    'is_qibocal_report': False,
-                }
-                ft = info['type']
-                if ft == 'dir' and is_qibocal_report(filepath):
-                    info['is_qibocal_report'] = True
-                total[ft] += 1
-                total['size'] += stat_res.st_size
-                contents.append(info)
-
-            qibo_versions = get_qibo_versions(request=request)
-            html = templates.get_template('file_browser.html').render(
-                request=request,
-                path=p,
-                contents=contents,
-                total=total,
-                hide_dotfile=hide_dotfile,
-                qibo_versions=qibo_versions['versions'],
-            )
-            response = HTMLResponse(content=html, status_code=200)
+            # Directory listing is now a side panel inside the shell, not its own
+            # page — redirect there with the path carried along as a query param.
+            response = RedirectResponse(url=f"/?panel=explorer&path={p}", status_code=307)
             response.set_cookie('hide-dotfile', hide_dotfile,
                                 max_age=16070400, httponly=True, secure=False)
-            if not qibo_versions.get('from_cache', False):
-                response.set_cookie('qibo_versions', qibo_versions['cookie_data'],
-                                    max_age=24 * 60 * 60, httponly=True, secure=False)
             return response
 
         elif os.path.isfile(path):
@@ -177,6 +139,48 @@ def make_file_router(root_path: str, key: str = "") -> APIRouter:
             return FileResponse(path, filename=os.path.basename(path))
         else:
             return Response(content='Not found', status_code=404)
+
+    @router.get('/api/files_list', name='api_files_list')
+    async def api_files_list(request: Request):
+        """JSON directory listing for the Explorer side panel (AJAX navigation)."""
+        p = request.query_params.get('path', '')
+        hide_dotfile = request.query_params.get(
+            'hide-dotfile', request.cookies.get('hide-dotfile', 'no'))
+
+        path = _safe_join(p)
+        if path is None or not os.path.isdir(path):
+            return JSONResponse({'error': 'Not a directory'}, status_code=404)
+
+        contents = []
+        total = {'size': 0, 'dir': 0, 'file': 0}
+        for filename in sorted(os.listdir(path)):
+            if filename in ignored:
+                continue
+            if hide_dotfile == 'yes' and filename[0] == '.':
+                continue
+            filepath = os.path.join(path, filename)
+            try:
+                stat_res = os.stat(filepath)
+            except (PermissionError, OSError):
+                continue
+            ftype = get_type(stat_res.st_mode)
+            info = {
+                'name': filename,
+                'type': ftype,
+                'size': stat_res.st_size,
+                'size_fmt': size_fmt(stat_res.st_size),
+                'mtime': stat_res.st_mtime,
+                'mtime_fmt': time_humanize(stat_res.st_mtime),
+                'is_qibocal_report': ftype == 'dir' and is_qibocal_report(filepath),
+                'icon_class': icon_fmt(filename) if ftype == 'file' else None,
+            }
+            total[ftype] += 1
+            total['size'] += stat_res.st_size
+            contents.append(info)
+
+        # Directories first, then files — both alphabetical (matches the old table sort default).
+        contents.sort(key=lambda e: (e['type'] != 'dir', e['name'].lower()))
+        return JSONResponse({'path': p, 'contents': contents, 'total': total})
 
     @router.get('/files/', name='files_root')
     async def files_root(request: Request):

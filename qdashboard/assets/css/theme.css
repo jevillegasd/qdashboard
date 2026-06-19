@@ -185,3 +185,145 @@ a:hover {
 ::-webkit-scrollbar-thumb:hover {
     background: var(--vsc-text-faint);
 }
+
+/* ——— Shell: side panel ——— */
+.side-panel {
+    position: fixed;
+    top: 0;
+    bottom: 28px;
+    left: 4rem;
+    width: 300px;
+    background: var(--vsc-bg-elevated);
+    border-right: var(--border-hairline);
+    z-index: 900;
+    overflow-y: auto;
+}
+
+.side-panel-pane { display: none; height: 100%; overflow-y: auto; }
+
+#wrapper.panel-open #page-content-wrapper {
+    margin-left: calc(4rem + 300px);
+}
+
+.explorer-list, .history-list {
+    overflow-y: auto;
+    max-height: calc(100vh - 220px);
+}
+
+/* ——— Shell: tab strip ——— */
+.qd-tabs {
+    display: flex;
+    align-items: center;
+    background: var(--vsc-bg-elevated);
+    border-bottom: var(--border-hairline);
+    height: 36px;
+    overflow-x: auto;
+}
+
+.qd-tabs-list {
+    display: flex;
+    flex: 1;
+    height: 100%;
+}
+
+.qd-tab {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    padding: 0 .6rem;
+    height: 100%;
+    font-size: .8rem;
+    color: var(--vsc-text-muted);
+    border-right: var(--border-hairline);
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    white-space: nowrap;
+    user-select: none;
+}
+
+.qd-tab:hover { color: var(--vsc-text); background: var(--vsc-bg-hover); }
+
+.qd-tab.active {
+    color: var(--vsc-text);
+    background: var(--vsc-bg);
+    border-bottom-color: var(--vsc-accent);
+}
+
+.qd-tab-close {
+    opacity: 0;
+    padding: 0 .15rem;
+    transition: opacity 0.15s ease;
+}
+
+.qd-tab:hover .qd-tab-close, .qd-tab.active .qd-tab-close { opacity: 1; }
+.qd-tab-close:hover { color: var(--vsc-danger); }
+
+.qd-tab-add-btn {
+    background: transparent;
+    border: none;
+    color: var(--vsc-text-muted);
+    height: 36px;
+    width: 36px;
+    flex-shrink: 0;
+}
+.qd-tab-add-btn:hover { color: var(--vsc-text); background: var(--vsc-bg-hover); }
+
+.qd-tab-content {
+    position: relative;
+    height: calc(100vh - 36px - 28px);
+}
+
+/* Absolute-positioned panes (rather than relying on a height:100% cascade
+   through several ancestors) so a tab's content — especially an iframe —
+   always gets a real, non-zero box to render into. */
+.qd-tabpane {
+    display: none;
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    overflow-y: auto;
+}
+.qd-tabpane.active { display: block; }
+.qd-tabpane-report { overflow: hidden; }
+.qd-tabpane-report iframe {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: none;
+}
+
+.action-builder-workspace { height: 100%; }
+.action-builder-workspace .card { height: 100%; }
+
+/* ——— Shell: status bar ——— */
+.qd-status-bar {
+    position: fixed;
+    bottom: 0;
+    left: 4rem;
+    right: 0;
+    height: 28px;
+    background: var(--vsc-accent);
+    color: #0a0a0a;
+    font-size: .72rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 .75rem;
+    z-index: 950;
+}
+
+.qd-status-bar .version-item { margin-right: .9rem; }
+.qd-status-bar .version-name { color: rgba(0,0,0,.6); }
+.qd-status-bar .version-number { color: #0a0a0a; font-weight: 600; }
+.qd-status-bar .version-error, .qd-status-bar .version-not-installed { color: rgba(0,0,0,.55); }
+.qd-status-bar-right a { color: #0a0a0a; text-decoration: underline; }
+
+/* ——— History panel badges (moved from the retired history.html page) ——— */
+.badge-pending   { background: #6c757d; }
+.badge-running   { background: #fd7e14; }
+.badge-completed { background: #198754; }
+.badge-failed    { background: #dc3545; }
+.badge-fit-pass  { background: #198754; }
+.badge-fit-partial { background: #ffc107; color: #111; }
+.badge-fit-fail  { background: #dc3545; }
+.badge-fit-unknown { background: #6c757d; }
+.history-row { font-size: .8rem; }

@@ -32,9 +32,11 @@
     overflow: hidden; /* Hide overflowing content when collapsed */
 }
 
-/* Expanded state on hover */
+/* Activity bar: fixed icon-only width (no hover-expand) so it never
+   overlaps the side panel docked immediately to its right. Labels are
+   shown via the native title="" tooltip instead. */
 #sidebar-wrapper:hover {
-    width: 15rem;
+    width: 4rem;
 }
 
 /* 1.1. Navigation Container */

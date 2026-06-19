@@ -95,12 +95,49 @@
             }
         }
         
+        /* ——— Experiment Library: VS Code "Source Control" panel conventions ——— */
+        .scm-header {
+            text-transform: uppercase;
+            letter-spacing: .04em;
+        }
+
+        .scm-title {
+            font-size: .78rem;
+            color: var(--vsc-text-muted);
+        }
+
+        .scm-header-actions {
+            display: flex;
+            gap: .15rem;
+            opacity: 0;
+            transition: opacity 0.15s ease;
+        }
+
+        .panel-header.scm-header:hover .scm-header-actions {
+            opacity: 1;
+        }
+
+        .scm-input-row {
+            padding: var(--space-2) var(--space-2) 0;
+        }
+
+        .scm-filter-input {
+            background: transparent !important;
+            border: 1px solid transparent !important;
+        }
+
+        .scm-filter-input:focus {
+            background: var(--vsc-bg-input) !important;
+            border-color: var(--vsc-border-strong) !important;
+            box-shadow: none !important;
+        }
+
         /* ——— Protocol category list (left panel) ——— */
         .protocol-category {
-            margin-bottom: var(--space-2);
-            border: var(--border-hairline);
-            border-radius: var(--radius);
-            background: var(--vsc-bg-elevated);
+            margin-bottom: 0;
+            border: none;
+            border-radius: 0;
+            background: transparent;
             overflow: hidden;
         }
 
@@ -108,7 +145,7 @@
             background: transparent;
             border: none;
             color: var(--vsc-text);
-            padding: var(--space-2) var(--space-3);
+            padding: var(--space-1) var(--space-2);
             text-align: left;
             text-decoration: none;
             display: flex;
@@ -116,7 +153,22 @@
             align-items: center;
             cursor: pointer;
             border-left: 3px solid transparent;
+            min-height: 24px;
             transition: background-color 0.15s ease, border-color 0.15s ease;
+        }
+
+        .category-header .category-icon {
+            font-size: .7rem;
+            width: 14px;
+            color: var(--vsc-text-faint);
+            transition: transform 0.2s ease;
+        }
+
+        .category-header[aria-expanded="true"] .category-icon {
+            transform: rotate(0deg);
+        }
+        .category-header:not([aria-expanded="true"]) .category-icon {
+            transform: rotate(-90deg);
         }
 
         .category-header:hover {
@@ -567,6 +619,18 @@
 
 .btn-doc-info:hover { color: var(--vsc-accent); }
 .btn-result-load:hover { color: #28a745; }
+
+/* SCM-style hover-reveal row actions (Experiment Library, History rows) */
+.experiment-card-actions,
+.history-row .btn-doc-info {
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.experiment-card:hover .experiment-card-actions,
+.history-row:hover .btn-doc-info {
+    opacity: 1;
+}
 
 /* JSONEditor dark overrides */
 .jsoneditor { border: 1px solid #444 !important; }

@@ -13,7 +13,7 @@ import yaml
 import traceback as _tb
 from typing import Optional
 from fastapi import APIRouter, Request, Form, File, UploadFile, Query
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse, RedirectResponse
 from starlette.responses import HTMLResponse
 
 from ..qpu.monitoring import get_qpu_health, get_available_qpus, get_qibo_versions, get_qpu_details, get_qpu_list, qpu_parameters
@@ -145,26 +145,81 @@ def register_routes(app, config):
     return app
 
 
-@router.get("/", name="dashboard", include_in_schema=False)
-async def dashboard(request: Request):
-    """Main dashboard route with QPU health and SLURM status."""
+@router.get("/", name="shell", include_in_schema=False)
+@router.get("/experiments", name="experiments", include_in_schema=False)
+async def shell(request: Request):
+    """VS Code-style app shell: activity bar + side panel + tab strip.
+
+    Gathers the data for every singleton tab/panel (Slurm Monitor, QPU Status,
+    Action Card Builder, Explorer, Experiment Library, History) in one go,
+    since shell.html renders all of them once and toggles visibility in JS
+    rather than fetching each on demand.
+    """
     from ..core.app import templates
 
+    version_data = get_qibo_versions(request=request)
+
+    # Slurm Monitor tab
     qpu_health = get_qpu_health()
     available_qpus = get_available_qpus()
-    version_data = get_qibo_versions(request=request)
     slurm_queue_status = get_slurm_status()
     last_slurm_log = get_slurm_output()
 
-    logger.info("Dashboard loaded with QPU health and SLURM status")
+    # QPU Status tab
+    config = _get_config(request)
+    qpu_details = get_qpu_details()
+    platforms_path = get_platforms_path(config['root'])
+    git_branches_info = list_repository_branches(platforms_path) if platforms_path else None
+    git_current_branch_info = get_current_branch_info(platforms_path) if platforms_path else None
 
-    html = templates.get_template('dashboard.html').render(
+    # Action Card Builder tab + Experiment Library panel
+    protocols = get_qibocal_protocols()
+    qpus_list = get_qpu_list()
+    qibolab_version = version_data['versions'].get('qibolab', '0.0.0')
+    is_new_qibolab = parse_version(qibolab_version) > parse_version('0.2.0')
+    protocols_with_attributes = {}
+    for category, protocol_list in protocols.items():
+        protocols_with_attributes[category] = []
+        for protocol in protocol_list:
+            protocol_attrs = get_protocol_attributes(protocol)
+            protocol_with_attrs = protocol.copy()
+            protocol_with_attrs['attributes'] = protocol_attrs
+            protocols_with_attributes[category].append(protocol_with_attrs)
+
+    # History panel (the distinct-QPUs query, when available, also refines the
+    # `qpus` list shared with the Action Card Builder's QPU selector)
+    history_protocols = []
+    try:
+        from ..db.database import get_db_connection, get_distinct_protocols, get_distinct_qpus
+        with get_db_connection(config) as conn:
+            history_protocols = get_distinct_protocols(conn)
+            qpus_list = get_distinct_qpus(conn) or qpus_list
+    except Exception:
+        pass
+
+    logger.info("Shell loaded (Slurm/QPU/Action-builder tabs + Explorer/Library/History panels)")
+
+    html = templates.get_template('shell.html').render(
         request=request,
+        qibo_versions=version_data['versions'],
+        # Slurm Monitor
         qpu_health=qpu_health,
         available_qpus=available_qpus,
-        qibo_versions=version_data['versions'],
         slurm_queue_status=slurm_queue_status,
         last_slurm_log=last_slurm_log,
+        # QPU Status
+        qpu_details=qpu_details,
+        git_branch=git_current_branch_info['branch'] if git_current_branch_info else None,
+        git_commit=git_current_branch_info['commit'] if git_current_branch_info else None,
+        platforms_path=platforms_path,
+        branches_info=git_branches_info,
+        current_branch_info=git_current_branch_info,
+        # Action Card Builder + Experiment Library
+        protocols=protocols_with_attributes,
+        qpus=qpus_list,
+        is_new_qibolab=is_new_qibolab,
+        # History
+        history_protocols=history_protocols,
     )
     response = HTMLResponse(content=html, headers=_no_cache_headers())
     if not version_data.get('from_cache', False):
@@ -254,6 +309,23 @@ async def latest(request: Request):
         return _not_found_response(last_path)
     except Exception as e:
         return _html_error_response(request, e)
+
+
+@router.get("/latest_report_page", name="latest_report_page", include_in_schema=False)
+async def latest_report_page(request: Request):
+    """Resolve the latest report to an experiment_id and hand off to the
+    iframe-friendly /experiment_report_page/{id} route, so "Latest Report"
+    can open as a shell tab instead of navigating to the full /latest page."""
+    last_path = get_latest_report_path()
+    if not last_path:
+        return HTMLResponse(
+            content="<html><body style='font-family:sans-serif;color:#888;padding:2rem;'>"
+                     "<p>No reports yet — run an experiment first.</p></body></html>",
+            status_code=404)
+    # last_path follows the same data_dir/<platform>/<date>/<experiment_id>/output
+    # convention as experiment_report_page's glob match.
+    experiment_id = os.path.basename(os.path.dirname(last_path.rstrip('/')))
+    return RedirectResponse(url=f"/experiment_report_page/{experiment_id}", status_code=307)
 
 
 @router.get("/report_assets/{filename:path}", name="report_assets", include_in_schema=False)
@@ -381,32 +453,8 @@ async def api_slurm_stream(request: Request):
 
 @router.get("/qpus", name="qpus", include_in_schema=False)
 async def qpus(request: Request):
-    """QPU status and monitoring page."""
-    from ..core.app import templates
-
-    config = _get_config(request)
-    qpu_details = get_qpu_details()
-    version_data = get_qibo_versions(request=request)
-    platforms_path = get_platforms_path(config['root'])
-    git_branches_info = list_repository_branches(platforms_path) if platforms_path else None
-    git_current_branch_info = get_current_branch_info(platforms_path) if platforms_path else None
-
-    logger.info("QPU status page loaded")
-    html = templates.get_template('qpus.html').render(
-        request=request,
-        qpus=qpu_details,
-        git_branch=git_current_branch_info['branch'] if git_current_branch_info else None,
-        git_commit=git_current_branch_info['commit'] if git_current_branch_info else None,
-        platforms_path=platforms_path,
-        branches_info=git_branches_info,
-        current_branch_info=git_current_branch_info,
-        qibo_versions=version_data['versions'],
-    )
-    response = HTMLResponse(content=html)
-    if not version_data.get('from_cache', False):
-        response.set_cookie('qibo_versions', version_data['cookie_data'],
-                            max_age=24 * 60 * 60, httponly=True, secure=False)
-    return response
+    """QPU Status is now a tab inside the shell — redirect there, opening it."""
+    return RedirectResponse(url="/?open=qpu_status", status_code=307)
 
 
 @router.get("/api/platforms/branches", name="api_platforms_branches", tags=["Platforms"],
@@ -618,41 +666,6 @@ async def api_protocol_details(protocol_id: str):
         logger.warning(f"Protocol not found: {protocol_id}")
         return Response(content=json.dumps({'error': 'Protocol not found'}),
                         status_code=404, media_type='application/json')
-
-
-@router.get("/experiments", name="experiments", include_in_schema=False)
-async def experiments(request: Request):
-    """Experiment builder page."""
-    from ..core.app import templates
-
-    protocols = get_qibocal_protocols()
-    qpus_list = get_qpu_list()
-    version_data = get_qibo_versions(request=request)
-    qibolab_version = version_data['versions'].get('qibolab', '0.0.0')
-    is_new_qibolab = parse_version(qibolab_version) > parse_version('0.2.0')
-
-    protocols_with_attributes = {}
-    for category, protocol_list in protocols.items():
-        protocols_with_attributes[category] = []
-        for protocol in protocol_list:
-            protocol_attrs = get_protocol_attributes(protocol)
-            protocol_with_attrs = protocol.copy()
-            protocol_with_attrs['attributes'] = protocol_attrs
-            protocols_with_attributes[category].append(protocol_with_attrs)
-
-    logger.info("Experiment builder page loaded")
-    html = templates.get_template('experiments.html').render(
-        request=request,
-        protocols=protocols_with_attributes,
-        qpus=qpus_list,
-        qibo_versions=version_data['versions'],
-        is_new_qibolab=is_new_qibolab,
-    )
-    response = HTMLResponse(content=html)
-    if not version_data.get('from_cache', False):
-        response.set_cookie('qibo_versions', version_data['cookie_data'],
-                            max_age=24 * 60 * 60, httponly=True, secure=False)
-    return response
 
 
 @router.get("/api/qpu_parameters/{platform}", name="qpu_parameters_api", tags=["QPU"],
@@ -1289,30 +1302,8 @@ async def api_experiment_log(request: Request, experiment_id: str):
 
 @router.get("/history", name="history", include_in_schema=False)
 async def history_page(request: Request):
-    """Experiment history browser page."""
-    from ..core.app import templates
-    try:
-        config = _get_config(request)
-        version_data = get_qibo_versions(request=request)
-        qpus = get_qpu_list()
-        # Fetch distinct protocols from DB for filter dropdowns
-        protocols_list = []
-        try:
-            from ..db.database import get_db_connection, get_distinct_protocols, get_distinct_qpus
-            with get_db_connection(config) as conn:
-                protocols_list = get_distinct_protocols(conn)
-                qpus = get_distinct_qpus(conn) or qpus
-        except Exception:
-            pass
-        html = templates.get_template('history.html').render(
-            request=request,
-            qibo_versions=version_data['versions'],
-            qpus=qpus,
-            protocols=protocols_list,
-        )
-        return HTMLResponse(content=html)
-    except Exception as e:
-        return _html_error_response(request, e)
+    """History is now a side panel inside the shell — redirect there, opening it."""
+    return RedirectResponse(url="/?panel=history", status_code=307)
 
 
 @router.get("/api/history", name="api_history_list", tags=["Experiments"],
