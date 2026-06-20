@@ -45,13 +45,21 @@
                 ? (e.is_qibocal_report ? 'fa-chart-bar qibocal-report-icon' : 'fa-folder text-warning')
                 : e.icon_class || 'fa-file';
             var rowAttrs = e.type === 'dir'
-                ? 'data-dir="' + e.name + '" data-report="' + (e.is_qibocal_report ? '1' : '0') + '"'
+                ? 'data-dir="' + e.name + '"'
                 : 'data-file="' + e.name + '"';
+            // Qibocal report directories browse like any other folder; the
+            // chart-bar button opens the report as a tab without navigating.
+            var reportBtn = (e.type === 'dir' && e.is_qibocal_report)
+                ? '<button class="btn-doc-info explorer-open-report" title="Open report" data-dir="' + e.name + '">'
+                  + '<i class="fas fa-chart-bar"></i></button>'
+                : '';
             html += '<div class="vsc-list-row explorer-row" ' + rowAttrs + '>'
                 + '<div class="d-flex align-items-center text-truncate" style="gap:.4rem;">'
                 + '<i class="fa fa-fw ' + icon + '"></i><span class="text-truncate">' + e.name + '</span>'
                 + '</div>'
-                + (e.type === 'file' ? '<span class="text-muted" style="font-size:.68rem;">' + e.size_fmt + '</span>' : '')
+                + (e.type === 'file'
+                    ? '<span class="text-muted" style="font-size:.68rem;">' + e.size_fmt + '</span>'
+                    : reportBtn)
                 + '</div>';
         });
         $('#explorer-list').html(html);
@@ -76,18 +84,20 @@
         loadDir($(this).data('path') || '');
     });
 
+    $(document).on('click', '.explorer-open-report', function (e) {
+        e.stopPropagation();
+        var dir = $(this).data('dir');
+        // The report dir (conventionally "output") sits inside the
+        // experiment_id-named directory currently being listed.
+        var experimentId = currentPath.split('/').filter(Boolean).pop() || dir;
+        if (window.ShellTabs) window.ShellTabs.openReportTab(experimentId, experimentId);
+    });
+
     $(document).on('click', '.explorer-row', function () {
         var dir = $(this).data('dir');
         var file = $(this).data('file');
         if (dir !== undefined) {
-            var isReport = $(this).data('report') === 1 || $(this).data('report') === '1';
-            var newPath = (currentPath ? currentPath + '/' : '') + dir;
-            if (isReport) {
-                // Qibocal report directories render as a full standalone report page.
-                window.location.href = '/files/' + newPath;
-            } else {
-                loadDir(newPath);
-            }
+            loadDir((currentPath ? currentPath + '/' : '') + dir);
         } else if (file !== undefined) {
             var filePath = (currentPath ? currentPath + '/' : '') + file;
             window.open('/files/' + filePath, '_blank');

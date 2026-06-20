@@ -552,7 +552,31 @@
 
 .panel-library,
 .panel-builder {
-    border-right: 1px solid #333;
+    border-right: 0px solid #333;
+}
+
+/* Resizable split between the Configuration and Results columns. The
+   handle is a normal flex sibling between the two columns (not viewport
+   -fixed), so its position is correct regardless of the side panel or
+   activity bar's current width — only .panel-builder's own width is
+   driven by --builder-panel-width; .panel-results just takes what's left. */
+.panel-builder {
+    flex: 0 0 var(--builder-panel-width, 58%);
+    max-width: var(--builder-panel-width, 58%);
+}
+.panel-results {
+    flex: 1 1 auto;
+    max-width: 100%;
+}
+
+.panel-builder-resize-handle {
+    flex: 0 0 4px;
+    width: 4px;
+    cursor: col-resize;
+    background: transparent;
+}
+.panel-builder-resize-handle:hover, .panel-builder-resize-handle.resizing {
+    background: var(--vsc-accent);
 }
 
 /* Results panel */

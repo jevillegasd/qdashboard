@@ -2,12 +2,10 @@
 Core FastAPI application configuration and setup.
 """
 
-import html as _html
-import json
 import os
 import traceback as _tb
-from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
+from fastapi.exceptions import HTTPException
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -22,6 +20,36 @@ logger = get_logger(__name__)
 
 # Module-level templates instance — imported by route modules
 templates: Jinja2Templates = None  # type: ignore[assignment]
+
+_ERROR_ICONS = {404: 'fa-compass', 403: 'fa-lock', 401: 'fa-key', 400: 'fa-exclamation-circle'}
+_ERROR_TITLES = {400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden',
+                 404: 'Page Not Found', 500: 'Internal Server Error'}
+
+
+def render_error_page(request: Request, status_code: int, message: str = None,
+                       trace: str = None) -> HTMLResponse:
+    """Render the themed error page (templates/error.html) for HTML routes.
+
+    JSON/API routes use their own JSON error shape instead — see the
+    exception handlers below, which branch on the request path before
+    calling this.
+    """
+    title = _ERROR_TITLES.get(status_code, 'Something Went Wrong')
+    html = templates.get_template('error.html').render(
+        request=request,
+        status_code=status_code,
+        title=title,
+        message=message or title,
+        icon=_ERROR_ICONS.get(status_code, 'fa-exclamation-triangle'),
+        trace=trace,
+    )
+    return HTMLResponse(content=html, status_code=status_code)
+
+
+def _wants_json(request: Request) -> bool:
+    """API routes (and anything actually expecting JSON) get a JSON error
+    body instead of the themed HTML page."""
+    return request.url.path.startswith('/api/')
 
 
 def create_app(config: dict = None) -> FastAPI:

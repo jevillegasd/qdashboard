@@ -48,6 +48,9 @@
 
     /* Shell activity bar width — resizable via the drag handle in shell.js */
     --activity-bar-width: 4rem;
+    /* Shell side panel (Explorer/Library/History) width — resizable via the
+       drag handle in shell.js */
+    --side-panel-width: 300px;
 }
 
 /* ——— Reusable components ——— */
@@ -195,22 +198,47 @@ a:hover {
     top: 0;
     bottom: 28px;
     left: var(--activity-bar-width, 4rem);
-    width: 300px;
+    width: var(--side-panel-width, 300px);
     background: var(--vsc-bg-elevated);
     border-right: var(--border-hairline);
     z-index: 900;
-    overflow-y: auto;
+    overflow: hidden;
 }
 
-.side-panel-pane { display: none; height: 100%; overflow-y: auto; }
+/* Flex column: header/filters/pagination keep their natural size, the
+   list (.explorer-list/.history-list) is the only part that scrolls. */
+.side-panel-pane {
+    display: none;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+.side-panel-pane.active { display: flex; }
+
+/* Resizable: drag #side-panel-resize-handle (see shell.js) to change
+   --side-panel-width. */
+#side-panel-resize-handle {
+    position: fixed;
+    top: 0;
+    bottom: 28px;
+    left: calc(var(--activity-bar-width, 4rem) + var(--side-panel-width, 300px));
+    width: 4px;
+    cursor: col-resize;
+    z-index: 901;
+    background: transparent;
+}
+#side-panel-resize-handle:hover, #side-panel-resize-handle.resizing {
+    background: var(--vsc-accent);
+}
 
 #wrapper.panel-open #page-content-wrapper {
-    margin-left: calc(var(--activity-bar-width, 4rem) + 300px);
+    margin-left: calc(var(--activity-bar-width, 4rem) + var(--side-panel-width, 300px));
 }
 
 .explorer-list, .history-list {
+    flex: 1 1 auto;
+    min-height: 0; /* let flex shrink below content size so this scrolls instead of the pane */
     overflow-y: auto;
-    max-height: calc(100vh - 220px);
 }
 
 /* ——— Shell: tab strip ——— */
@@ -292,6 +320,12 @@ a:hover {
     width: 100%;
     height: 100%;
     border: none;
+}
+
+/* While dragging a resize handle (shell.js), iframes must not capture mouse
+   events — otherwise the drag "loses" the cursor the moment it crosses one. */
+.qd-resizing iframe {
+    pointer-events: none;
 }
 
 .action-builder-workspace { height: 100%; }

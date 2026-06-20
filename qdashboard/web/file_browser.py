@@ -10,11 +10,8 @@ import mimetypes
 from pathlib2 import Path
 from fastapi import APIRouter, Request, UploadFile, File
 from fastapi.responses import FileResponse, Response, RedirectResponse, JSONResponse
-from starlette.responses import HTMLResponse
 
 from ..utils.formatters import get_type, size_fmt, time_humanize, icon_fmt
-from ..qpu.monitoring import get_qibo_versions
-from ..web.reports import report_viewer
 
 
 def is_qibocal_report(directory_path):
@@ -92,42 +89,16 @@ def make_file_router(root_path: str, key: str = "") -> APIRouter:
             return Response(content='Forbidden', status_code=403)
 
         if os.path.isdir(path):
-            # Qibocal report directory — render as report
-            if is_qibocal_report(path):
-                try:
-                    version_data = get_qibo_versions(request=request)
-                    response = report_viewer(path, root_path, request, version_data['versions'],
-                                            access_mode="file_browser")
-                    if not version_data.get('from_cache', False):
-                        response.set_cookie('qibo_versions', version_data['cookie_data'],
-                                            max_age=24 * 60 * 60, httponly=True, secure=False)
-                    return response
-                except Exception:
-                    pass  # fall through to directory listing
-
-            # Directory listing is now a side panel inside the shell, not its own
-            # page — redirect there with the path carried along as a query param.
+            # Qibocal report directories browse like any other folder now —
+            # the Explorer panel adds an "open report" button (opening it as
+            # a shell tab via /experiment_report_page/{id}) instead of this
+            # route auto-rendering a full standalone report page.
             response = RedirectResponse(url=f"/?panel=explorer&path={p}", status_code=307)
             response.set_cookie('hide-dotfile', hide_dotfile,
                                 max_age=16070400, httponly=True, secure=False)
             return response
 
         elif os.path.isfile(path):
-            # index.html inside a qibocal report → render as report
-            if os.path.basename(path).lower() == 'index.html':
-                parent_dir = os.path.dirname(path)
-                if is_qibocal_report(parent_dir):
-                    try:
-                        version_data = get_qibo_versions(request=request)
-                        response = report_viewer(parent_dir, root_path, request, version_data['versions'],
-                                                 access_mode="file_browser")
-                        if not version_data.get('from_cache', False):
-                            response.set_cookie('qibo_versions', version_data['cookie_data'],
-                                                max_age=24 * 60 * 60, httponly=True, secure=False)
-                        return response
-                    except Exception:
-                        pass
-
             # Range request
             if 'range' in request.headers or 'Range' in request.headers:
                 start, end = get_range(request)

@@ -31,7 +31,7 @@
 /* Resizable: drag #sidebar-resize-handle (see shell.js) to change
    --activity-bar-width. No hover-expand — that would overlap the side
    panel docked immediately to its right. */
-#sidebar-resize-handle {
+/* #sidebar-resize-handle {
     position: fixed;
     top: 0;
     bottom: 0;
@@ -43,7 +43,7 @@
 }
 #sidebar-resize-handle:hover, #sidebar-resize-handle.resizing {
     background: var(--vsc-accent);
-}
+} */
 
 /* Once widened past icon-only width, reveal text labels permanently. */
 .activity-bar-wide #sidebar-wrapper .menu-text,

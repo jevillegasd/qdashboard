@@ -1767,3 +1767,45 @@ function showExperimentLog(experimentId) {
     poll();
     _logPollTimer = setInterval(poll, 4000);
 }
+
+function makeResizable(handleId, cssVar, storageKey, min, max, widthFromEvent, onResize) {
+        function setWidth(px) {
+            px = Math.max(min, Math.min(max, px));
+            document.documentElement.style.setProperty(cssVar, px + 'px');
+            if (onResize) onResize(px);
+            return px;
+        }
+
+        var saved = parseInt(loadState(storageKey, null), 10);
+        if (!isNaN(saved)) setWidth(saved);
+
+        var handle = document.getElementById(handleId);
+        if (!handle) return;
+        var dragging = false;
+
+        handle.addEventListener('mousedown', function (e) {
+            dragging = true;
+            handle.classList.add('resizing');
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
+        document.addEventListener('mousemove', function (e) {
+            if (!dragging) return;
+            setWidth(widthFromEvent(e));
+        });
+        document.addEventListener('mouseup', function () {
+            if (!dragging) return;
+            dragging = false;
+            handle.classList.remove('resizing');
+            document.body.style.userSelect = '';
+            var current = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(cssVar));
+            saveState(storageKey, current || min);
+        });
+    }
+
+makeResizable('panel-builder-resize-handle', '--panel-builder-width', 'qd_panel_builder_width',
+    180, 600,
+    function (e) {
+        var panel = document.getElementById('panel-builder');
+        return e.clientX - panel.getBoundingClientRect().left;
+    });

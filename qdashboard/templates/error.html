@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QDashboard — {{ status_code }} {{ title }}</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="{{url_for('assets', path='css/theme.css')}}">
+    <link rel="stylesheet" href="{{url_for('assets', path='css/dashboard.css')}}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .error-card {
+            max-width: 560px;
+            width: 100%;
+            margin: 1rem;
+            padding: 2rem;
+            text-align: center;
+        }
+        .error-icon {
+            font-size: 2.5rem;
+            color: var(--vsc-accent);
+            margin-bottom: 1rem;
+        }
+        .error-code {
+            font-size: .8rem;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            color: var(--vsc-text-muted);
+        }
+        .error-title {
+            margin: .25rem 0 .75rem;
+        }
+        .error-message {
+            color: var(--vsc-text-muted);
+            margin-bottom: 1.5rem;
+        }
+        .error-trace {
+            text-align: left;
+            background: var(--vsc-bg);
+            border: var(--border-hairline);
+            border-radius: var(--radius);
+            color: #ffb74d;
+            font-size: .72rem;
+            line-height: 1.4;
+            max-height: 320px;
+            overflow: auto;
+            padding: .75rem;
+            margin-bottom: 1.5rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+    </style>
+</head>
+<body>
+    <div class="error-card vsc-panel">
+        <i class="fas {{ icon }} error-icon"></i>
+        <div class="error-code">Error {{ status_code }}</div>
+        <h3 class="error-title">{{ title }}</h3>
+        <p class="error-message">{{ message }}</p>
+        {% if trace %}
+        <pre class="error-trace">{{ trace }}</pre>
+        {% endif %}
+        <a href="/" class="btn btn-primary btn-sm"><i class="fas fa-arrow-left mr-1"></i>Back to Dashboard</a>
+    </div>
+</body>
+</html>

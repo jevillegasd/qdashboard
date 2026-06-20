@@ -10,11 +10,13 @@ Includes qibocal CLI action buttons and Plotly rerender logic from latest_report
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>QDashboard - Report</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="{{url_for('assets', path='css/theme.css')}}">
+    <link rel="stylesheet" href="{{url_for('assets', path='css/dashboard.css')}}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
         body {
-            background: #fff;
+            background: var(--vsc-bg, #1a1a1a);
             font-family: 'IBM Plex Sans', sans-serif;
             font-size: .88rem;
             margin: 0;
@@ -48,7 +50,7 @@ Includes qibocal CLI action buttons and Plotly rerender logic from latest_report
         {{ report_head_content | safe }}
     {% endif %}
 </head>
-<body>
+<body class="dashboard-page">
 
     <!-- Qibocal CLI action bar -->
     {% if report_path_for_link %}
@@ -92,8 +94,10 @@ Includes qibocal CLI action buttons and Plotly rerender logic from latest_report
     </div>
     {% endif %}
 
-    <!-- Report content -->
-    <div class="report-body-content">
+    <!-- Report content — .report-content carries the dark-theme overrides
+         from dashboard.css that force qibocal's native light-themed HTML to
+         match the dashboard, same as latest_report.html. -->
+    <div class="report-body-content report-content">
         {% if report_body_content %}
             {{ report_body_content | safe }}
         {% else %}

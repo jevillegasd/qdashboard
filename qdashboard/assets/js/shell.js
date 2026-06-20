@@ -1,11 +1,9 @@
 /**
  * QDashboard shell: VS Code-style activity bar + side panel + tab strip.
  *
- * Singleton tabs (slurm, qpu_status, action_builder) are always rendered in
- * the DOM (see shell.html) — "closing" one only hides its tab/pane, it is
- * never destroyed, so in-progress state (e.g. a half-built action card) is
- * preserved across close/reopen. Report tabs are the one dynamic exception:
- * each is a fresh <iframe> created on open and removed from the DOM on close.
+ * Singleton tabs (slurm, qpu_status, action_builder) stay in the DOM when
+ * "closed" — only hidden — so state like a half-built action card survives.
+ * Report tabs are the exception: a fresh <iframe> per open, removed on close.
  */
 (function () {
     'use strict';
@@ -19,12 +17,8 @@
     var TABS_KEY = 'qd_shell_tabs';
     var PANEL_KEY = 'qd_shell_panel';
 
-    // The Slurm Monitor pane holds an SSE connection (dashboard-common.js)
-    // open for as long as it's "open" — start/stop it with the tab instead
-    // of unconditionally on page load, otherwise the dashboard keeps a
-    // connection alive any time a browser tab is open, which is what made
-    // `qdashboard` take ~5-10s to exit on Ctrl+C (uvicorn has to wait out or
-    // force-cancel that connection during graceful shutdown).
+    // Start/stop the Slurm SSE connection with its tab — leaving it always-on
+    // is what made `qdashboard` take ~5-10s to exit on Ctrl+C.
     var TAB_LIFECYCLE = {
         slurm: {
             onOpen: function () { if (window.initializeDashboardCommon) window.initializeDashboardCommon(); },
@@ -32,9 +26,10 @@
         }
     };
 
-    var tabState = { open: ['slurm', 'action_builder'], active: 'action_builder' };
+    // labels is persisted (it's part of tabState) so report tab titles survive
+    // a reload — the DOM panes themselves don't, see ensureReportPane() below.
+    var tabState = { open: ['slurm', 'action_builder'], active: 'action_builder', labels: {} };
     var panelState = { active: 'library', open: true };
-    var reportLabels = {}; // experimentId -> label, for report tabs re-render after reload (not persisted across reload by design)
 
     function loadState(key, fallback) {
         try {
@@ -56,13 +51,15 @@
     }
 
     function tabPaneId(id) {
-        return 'tab-pane-' + id;
+        // Report tab ids contain a colon ("report:<experiment_id>"), which
+        // breaks jQuery/CSS id selectors — sanitize for the DOM id only.
+        return 'tab-pane-' + id.replace(/[^a-zA-Z0-9_-]/g, '-');
     }
 
     function renderTabsBar() {
         var $list = $('#qd-tabs-list').empty();
         tabState.open.forEach(function (id) {
-            var def = TAB_DEFS[id] || { label: reportLabels[id] || id, icon: 'fa-chart-bar' };
+            var def = TAB_DEFS[id] || { label: tabState.labels[id] || id, icon: 'fa-chart-bar' };
             var $tab = $('<div class="qd-tab" draggable="true"></div>')
                 .attr('data-tab-id', id)
                 .toggleClass('active', id === tabState.active)
@@ -117,33 +114,45 @@
         }
     }
 
-    function openIframeTab(id, src, label) {
-        reportLabels[id] = label || id;
+    // Recomputed each time rather than stored, so "Latest Report" always
+    // re-fetches whatever the latest report currently is.
+    function reportSrcForId(id) {
+        if (id === 'report:latest') return '/latest_report_page?_=' + Date.now();
+        return '/experiment_report_page/' + encodeURIComponent(id.slice('report:'.length));
+    }
+
+    // Creates the iframe pane for a report tab if it doesn't already exist —
+    // used both when opening one fresh and when restoring tabs after a
+    // reload, since only tabState (the list of ids) survives that, not the
+    // DOM nodes openIframeTab() creates.
+    function ensureReportPane(id) {
+        if (document.getElementById(tabPaneId(id))) return;
+        $('#qd-tab-content').append(
+            '<div id="' + tabPaneId(id) + '" class="qd-tabpane qd-tabpane-report">' +
+            '<iframe src="' + reportSrcForId(id) + '" title="Experiment Report"></iframe>' +
+            '</div>'
+        );
+    }
+
+    function openIframeTab(id, label) {
+        tabState.labels[id] = label || id;
         var existing = document.getElementById(tabPaneId(id));
         if (existing) {
             // Re-point an already-open pinned tab (e.g. "Latest Report") at
-            // the current src instead of stacking duplicate iframes.
-            existing.querySelector('iframe').src = src;
+            // a fresh src instead of stacking duplicate iframes.
+            existing.querySelector('iframe').src = reportSrcForId(id);
         } else {
-            $('#qd-tab-content').append(
-                '<div id="' + tabPaneId(id) + '" class="qd-tabpane qd-tabpane-report">' +
-                '<iframe src="' + src + '" title="Experiment Report"></iframe>' +
-                '</div>'
-            );
+            ensureReportPane(id);
         }
         openTab(id);
     }
 
     function openReportTab(experimentId, label) {
-        openIframeTab('report:' + experimentId,
-            '/experiment_report_page/' + encodeURIComponent(experimentId),
-            label || experimentId);
+        openIframeTab('report:' + experimentId, label || experimentId);
     }
 
     function openLatestReportTab() {
-        // Pinned single tab (not one-per-experiment): re-fetches "whatever
-        // the latest report is" each time it's (re)opened.
-        openIframeTab('report:latest', '/latest_report_page?_=' + Date.now(), 'Latest Report');
+        openIframeTab('report:latest', 'Latest Report');
     }
 
     function closeTab(id) {
@@ -153,7 +162,7 @@
 
         if (isReportTab(id)) {
             $('#' + tabPaneId(id)).remove();
-            delete reportLabels[id];
+            delete tabState.labels[id];
         }
 
         if (tabState.active === id) {
@@ -216,9 +225,10 @@
     // ---- Side panel ----
 
     function showPanel(id) {
-        $('.side-panel-pane').hide();
-        $('#panel-' + id).show();
+        $('.side-panel-pane').removeClass('active');
+        $('#panel-' + id).addClass('active');
         $('#side-panel').show();
+        $('#side-panel-resize-handle').show();
         $('#wrapper').addClass('panel-open');
         $('[data-panel]').removeClass('active');
         $('[data-panel="' + id + '"]').addClass('active');
@@ -229,6 +239,7 @@
 
     function hidePanel() {
         $('#side-panel').hide();
+        $('#side-panel-resize-handle').hide();
         $('#wrapper').removeClass('panel-open');
         $('[data-panel]').removeClass('active');
         panelState.open = false;
@@ -259,24 +270,24 @@
         openLatestReportTab();
     });
 
-    // ---- Activity bar resize ----
+    // ---- Resizable bars ----
 
-    var ACTIVITY_BAR_KEY = 'qd_activity_bar_width';
-    var ACTIVITY_BAR_MIN = 64;   // icon-only
-    var ACTIVITY_BAR_MAX = 240;  // wide enough for full labels
+    // Drags `handleId`, clamping to [min,max], writing the result (px) to
+    // `cssVar` on :root, and persisting it under `storageKey`. `widthFromEvent`
+    // computes the candidate width from a mousemove event — callers differ on
+    // what reference point they measure from.
+    function makeResizable(handleId, cssVar, storageKey, min, max, widthFromEvent, onResize) {
+        function setWidth(px) {
+            px = Math.max(min, Math.min(max, px));
+            document.documentElement.style.setProperty(cssVar, px + 'px');
+            if (onResize) onResize(px);
+            return px;
+        }
 
-    function setActivityBarWidth(px) {
-        px = Math.max(ACTIVITY_BAR_MIN, Math.min(ACTIVITY_BAR_MAX, px));
-        document.documentElement.style.setProperty('--activity-bar-width', px + 'px');
-        $('body').toggleClass('activity-bar-wide', px > ACTIVITY_BAR_MIN + 20);
-        return px;
-    }
+        var saved = parseInt(loadState(storageKey, null), 10);
+        if (!isNaN(saved)) setWidth(saved);
 
-    (function initResizeHandle() {
-        var saved = parseInt(loadState(ACTIVITY_BAR_KEY, null), 10);
-        if (!isNaN(saved)) setActivityBarWidth(saved);
-
-        var handle = document.getElementById('sidebar-resize-handle');
+        var handle = document.getElementById(handleId);
         if (!handle) return;
         var dragging = false;
 
@@ -284,21 +295,51 @@
             dragging = true;
             handle.classList.add('resizing');
             document.body.style.userSelect = 'none';
+            // Mouse events over an iframe go to its own document, not this
+            // listener — dragging across a report tab would otherwise "lose"
+            // the cursor. Suppress pointer events on iframes for the drag.
+            document.body.classList.add('qd-resizing');
             e.preventDefault();
         });
         document.addEventListener('mousemove', function (e) {
             if (!dragging) return;
-            setActivityBarWidth(e.clientX);
+            setWidth(widthFromEvent(e));
         });
         document.addEventListener('mouseup', function () {
             if (!dragging) return;
             dragging = false;
             handle.classList.remove('resizing');
             document.body.style.userSelect = '';
-            var current = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--activity-bar-width'));
-            saveState(ACTIVITY_BAR_KEY, current || ACTIVITY_BAR_MIN);
+            document.body.classList.remove('qd-resizing');
+            var current = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(cssVar));
+            saveState(storageKey, current || min);
         });
-    })();
+    }
+
+    // Activity bar resize disabled — icon-only, doesn't need the width. Left
+    // here in case a "wide" labeled mode is wanted later.
+    // var ACTIVITY_BAR_MIN = 64;   // icon-only
+    // var ACTIVITY_BAR_MAX = 240;  // wide enough for full labels
+    // makeResizable('sidebar-resize-handle', '--activity-bar-width', 'qd_activity_bar_width',
+    //     ACTIVITY_BAR_MIN, ACTIVITY_BAR_MAX,
+    //     function (e) { return e.clientX; },
+    //     function (px) { $('body').toggleClass('activity-bar-wide', px > ACTIVITY_BAR_MIN + 20); });
+
+    makeResizable('side-panel-resize-handle', '--side-panel-width', 'qd_side_panel_width',
+        180, 600,
+        function (e) {
+            var panel = document.getElementById('side-panel');
+            return e.clientX - panel.getBoundingClientRect().left;
+        });
+
+    // Split between the builder and results columns; an in-flow flex sibling
+    // (see experiments.css), so width is measured from its own row, not the viewport.
+    makeResizable('panel-builder-handle', '--builder-panel-width', 'qd_builder_panel_width',
+        320, 1100,
+        function (e) {
+            var workspace = document.querySelector('.action-builder-workspace');
+            return e.clientX - workspace.getBoundingClientRect().left;
+        });
 
     // ---- Bootstrap from URL query params, else localStorage ----
 
@@ -309,18 +350,23 @@
         var savedTabs = loadState(TABS_KEY, null);
         if (savedTabs && savedTabs.open && savedTabs.open.length) {
             tabState = savedTabs;
+            tabState.labels = tabState.labels || {};
         }
         var savedPanel = loadState(PANEL_KEY, null);
         if (savedPanel) {
             panelState = savedPanel;
         }
 
+        // Only tabState (the ids) survives a reload — report tabs' actual
+        // iframe panes were DOM nodes created on the fly, so recreate them
+        // before trying to render/show anything.
+        tabState.open.filter(isReportTab).forEach(ensureReportPane);
+
         renderTabsBar();
         if (tabState.active) showPane(tabState.active);
 
-        // Tabs that are open at load (default or restored) need their
-        // lifecycle onOpen too — openTab() only fires it on a closed->open
-        // transition, which doesn't cover "already open when the page loads".
+        // openTab() only fires onOpen for a closed->open transition, which
+        // misses tabs already open at load (default or restored).
         tabState.open.forEach(function (id) {
             if (TAB_LIFECYCLE[id] && TAB_LIFECYCLE[id].onOpen) TAB_LIFECYCLE[id].onOpen();
         });

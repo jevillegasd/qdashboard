@@ -119,7 +119,14 @@
             .fail(function () { alert('Failed to refresh run ' + experimentId); });
     };
 
+    function updateActiveFilterCount() {
+        var active = $('#filter-platform, #filter-protocol, #filter-status, #filter-fit, #filter-date-from, #filter-date-to')
+            .filter(function () { return $(this).val(); }).length;
+        $('#history-active-filters-count').text(active || '');
+    }
+
     function debounceLoad() {
+        updateActiveFilterCount();
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(function () { loadHistory(1); }, 350);
     }
@@ -130,6 +137,7 @@
     $('#btn-reset-filters').on('click', function () {
         $('#filter-platform, #filter-protocol, #filter-status, #filter-fit').val('');
         $('#filter-date-from, #filter-date-to').val('');
+        updateActiveFilterCount();
         loadHistory(1);
     });
 

@@ -38,7 +38,7 @@ Action Card Builder, and on-demand Latest-experiment-Viewer report tabs).
                 </div>
             </div>
         </div>
-        <div id="sidebar-resize-handle" class="sidebar-resize-handle" title="Drag to resize"></div>
+        <!-- <div id="sidebar-resize-handle" class="sidebar-resize-handle" title="Drag to resize"></div> -->
         <!-- /#sidebar-wrapper -->
 
         <!-- Side Panel -->
@@ -47,6 +47,7 @@ Action Card Builder, and on-demand Latest-experiment-Viewer report tabs).
             <div id="panel-library" class="side-panel-pane">{% include '_panel_library.html' %}</div>
             <div id="panel-history" class="side-panel-pane">{% include '_panel_history.html' %}</div>
         </div>
+        <div id="side-panel-resize-handle" class="side-panel-resize-handle" style="display:none;" title="Drag to resize"></div>
 
         <!-- Page Content -->
         <div id="page-content-wrapper">
@@ -81,6 +82,12 @@ Action Card Builder, and on-demand Latest-experiment-Viewer report tabs).
 
     <!-- Status bar -->
     <div id="qd-status-bar" class="qd-status-bar">
+        <div class="qd-status-bar-left">
+            <span id="qd-status-message" class="qd-status-message"> Technology Innovation Institute - Quantum Research Center</span>
+            <span id="qd-status-spinner" class="qd-status-spinner" style="display:none;">
+                <i class="fas fa-spinner fa-spin"></i>
+            </span>
+        </div>
         <div class="qd-status-bar-versions">
             {% for package, version in qibo_versions.items() %}
                 <span class="version-item">

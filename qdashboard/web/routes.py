@@ -18,13 +18,12 @@ from starlette.responses import HTMLResponse
 
 from ..qpu.monitoring import get_qpu_health, get_available_qpus, get_qibo_versions, get_qpu_details, get_qpu_list, qpu_parameters
 from ..qpu.platforms import get_platforms_path, list_repository_branches, switch_repository_branch, get_current_branch_info, commit_changes, push_changes, stash_changes, list_stashes, apply_latest_stash, discard_changes, get_partition
-from ..qpu.slurm import get_slurm_status, get_slurm_output, parse_slurm_log_for_errors, slurm_log_path
+from ..qpu.slurm import get_slurm_status, get_slurm_output
 from ..qpu.topology import qpu_connectivity, infer_topology_from_connectivity, generate_topology_visualization
 from ..experiments.protocols import get_qibocal_protocols, get_protocol_attributes
 from ..experiments import submit_experiment, repeat_experiment, get_experiment_status, list_user_experiments
 from ..experiments.job_submission import find_latest_experiment
-from ..web.reports import (report_viewer, get_latest_report_path, get_report_fragment,
-                            get_full_report_html, check_qibocal_availability)
+from ..web.reports import get_latest_report_path, get_report_fragment, check_qibocal_availability
 from ..utils.formatters import yaml_response, json_response
 from qdashboard.utils.logger import get_logger
 from packaging.version import parse as parse_version
@@ -265,52 +264,6 @@ async def qqsubmit(request: Request, qpu: Optional[str] = Query(None)):
     return HTMLResponse(content=html)
 
 
-@router.get("/latest", name="latest", include_in_schema=False)
-async def latest(request: Request):
-    """View the latest report."""
-    from ..core.app import templates
-
-    config = _get_config(request)
-    last_path = get_latest_report_path()
-    version_data = get_qibo_versions(request=request)
-
-    def _not_found_response(last_path):
-        slurm_queue_status = get_slurm_status()
-        last_slurm_log = get_slurm_output()
-        has_error, error_message = parse_slurm_log_for_errors()
-        html = templates.get_template('latest_not_found.html').render(
-            request=request,
-            has_error=has_error,
-            error_message=error_message,
-            last_path=last_path,
-            slurm_queue_status=slurm_queue_status,
-            last_slurm_log=last_slurm_log,
-            qibo_versions=version_data['versions'],
-        )
-        response = HTMLResponse(content=html)
-        if not version_data.get('from_cache', False):
-            response.set_cookie('qibo_versions', version_data['cookie_data'],
-                                max_age=24 * 60 * 60, httponly=True, secure=False)
-        return response
-
-    if not last_path:
-        last_path = config.get('home_path', os.path.expanduser('~'))
-        logger.warning(f"Last report not found, using default path: {last_path}")
-        return _not_found_response(last_path)
-
-    try:
-        data_dir = config.get('data_dir', os.path.join(config['root'], 'data'))
-        res = report_viewer(last_path, data_dir, request, version_data['versions'], access_mode="latest")
-        logger.info(f"Latest report viewed: {last_path}")
-        return res
-    except FileNotFoundError:
-        last_path = "/" + last_path.replace(data_dir, "").lstrip("/")
-        logger.warning(f"Report not found: {last_path}")
-        return _not_found_response(last_path)
-    except Exception as e:
-        return _html_error_response(request, e)
-
-
 @router.get("/latest_report_page", name="latest_report_page", include_in_schema=False)
 async def latest_report_page(request: Request):
     """Resolve the latest report to an experiment_id and hand off to the
@@ -326,29 +279,6 @@ async def latest_report_page(request: Request):
     # convention as experiment_report_page's glob match.
     experiment_id = os.path.basename(os.path.dirname(last_path.rstrip('/')))
     return RedirectResponse(url=f"/experiment_report_page/{experiment_id}", status_code=307)
-
-
-@router.get("/report_assets/{filename:path}", name="report_assets", include_in_schema=False)
-async def report_assets(request: Request, filename: str):
-    """Serve assets from the latest report directory."""
-    config = _get_config(request)
-    try:
-        latest_path = get_latest_report_path()
-        if latest_path:
-            latest_path = os.path.realpath(latest_path)
-            asset_path = os.path.realpath(os.path.join(latest_path, filename))
-
-            if os.path.commonpath([latest_path, asset_path]) != latest_path:
-                logger.warning(f"Attempted path traversal for asset: {filename}")
-                return Response(content='Asset not found', status_code=404)
-
-            if os.path.exists(asset_path):
-                logger.info(f"Serving asset: {asset_path}")
-                return FileResponse(asset_path)
-        logger.warning(f"Asset not found: {filename}")
-        return Response(content='Asset not found', status_code=404)
-    except Exception as e:
-        return _html_error_response(request, e)
 
 
 @router.post("/cancel_job", name="cancel_job", tags=["SLURM"],
@@ -1211,7 +1141,7 @@ async def experiment_report_page(request: Request, experiment_id: str):
         )
         return HTMLResponse(content=html)
     except FileNotFoundError:
-        return HTMLResponse(content="<html><body><p>Report not ready yet.</p></body></html>",
+        return HTMLResponse(content="<html><body><p>Report not available.</p></body></html>",
                             status_code=404)
     except Exception as e:
         logger.exception("experiment_report_page error for %s", experiment_id)
