@@ -68,7 +68,22 @@
         {% if trace %}
         <pre class="error-trace">{{ trace }}</pre>
         {% endif %}
-        <a href="/" class="btn btn-primary btn-sm"><i class="fas fa-arrow-left mr-1"></i>Back to Dashboard</a>
+        <a href="/" id="error-back-link" class="btn btn-primary btn-sm"><i class="fas fa-arrow-left mr-1"></i>Back to Dashboard</a>
     </div>
+    <script>
+        // Rendered inside a report tab's iframe (e.g. a failed
+        // /experiment_report_page/{id}), "Back to Dashboard" can't navigate
+        // its own iframe to "/" without nesting the whole shell inside it —
+        // ask the parent shell to close this tab instead.
+        if (window.self !== window.top) {
+            var link = document.getElementById('error-back-link');
+            link.removeAttribute('href');
+            link.innerHTML = '<i class="fas fa-times mr-1"></i>Close Tab';
+            link.addEventListener('click', function (e) {
+                e.preventDefault();
+                window.parent.postMessage({ source: 'qdashboard', action: 'close-report-tab' }, '*');
+            });
+        }
+    </script>
 </body>
 </html>

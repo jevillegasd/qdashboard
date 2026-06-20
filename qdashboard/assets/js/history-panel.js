@@ -70,6 +70,10 @@
                 ? '<button class="btn-doc-info" title="Open report" onclick="openHistoryReport(\'' + r.experiment_id + '\', \'' + (r.protocol_name || r.protocol_id || r.experiment_id) + '\')">'
                   + '<i class="fas fa-chart-bar"></i></button>'
                 : '';
+            var explorerBtn = r.explorer_path
+                ? '<button class="btn-doc-info" title="Open experiment directory" onclick="openHistoryDirectory(\'' + r.explorer_path + '\')">'
+                  + '<i class="fas fa-folder-open"></i></button>'
+                : '';
             var refreshBtn = '<button class="btn-doc-info" title="Refresh" onclick="refreshRun(\'' + r.experiment_id + '\')">'
                 + '<i class="fas fa-sync-alt"></i></button>';
             html += '<div class="vsc-list-row history-row">'
@@ -82,7 +86,7 @@
                 + (r.qpu_name || '—') + ' · ' + fmtDate(r.submitted_at) + ' · ' + fmtExec(r.execution_time_seconds)
                 + '</div>'
                 + '</div>'
-                + '<div class="text-nowrap">' + reportBtn + refreshBtn + '</div>'
+                + '<div class="text-nowrap">' + explorerBtn + reportBtn + refreshBtn + '</div>'
                 + '</div>';
         });
         $('#history-list').html(html);
@@ -111,6 +115,11 @@
         if (window.ShellTabs && typeof window.ShellTabs.openReportTab === 'function') {
             window.ShellTabs.openReportTab(experimentId, label);
         }
+    };
+
+    window.openHistoryDirectory = function (explorerPath) {
+        if (window.ShellPanel) window.ShellPanel.show('explorer');
+        if (window.ExplorerPanel) window.ExplorerPanel.init(explorerPath);
     };
 
     window.refreshRun = function (experimentId) {

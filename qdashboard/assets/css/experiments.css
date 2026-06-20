@@ -559,13 +559,21 @@
    handle is a normal flex sibling between the two columns (not viewport
    -fixed), so its position is correct regardless of the side panel or
    activity bar's current width — only .panel-builder's own width is
-   driven by --builder-panel-width; .panel-results just takes what's left. */
+   driven by --builder-panel-width; .panel-results just takes what's left.
+   Bootstrap's .row defaults to flex-wrap:wrap — without overriding that,
+   a stale (too-wide for the current viewport) --builder-panel-width plus
+   .panel-results refusing to shrink below its content's natural width
+   wraps Results onto its own line instead of sitting beside the builder. */
+.action-builder-workspace {
+    flex-wrap: nowrap;
+}
 .panel-builder {
     flex: 0 0 var(--builder-panel-width, 58%);
     max-width: var(--builder-panel-width, 58%);
 }
 .panel-results {
     flex: 1 1 auto;
+    min-width: 0;
     max-width: 100%;
 }
 

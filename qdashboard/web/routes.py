@@ -1234,6 +1234,7 @@ async def api_history_list(
     """Return paginated experiment history rows from the DB."""
     try:
         config = _get_config(request)
+        data_dir = config.get('data_dir') or os.path.join(config.get('root', ''), 'data')
         from ..db.database import get_db_connection, query_runs, count_runs
         offset = (page - 1) * per_page
         with get_db_connection(config) as conn:
@@ -1242,6 +1243,19 @@ async def api_history_list(
                               date_to=date_to, limit=per_page, offset=offset)
             total = count_runs(conn, platform=platform, protocol=protocol,
                                status=status, fit=fit, date_from=date_from, date_to=date_to)
+        # explorer_path is the experiment dir (parent of "output") relative to
+        # data_dir, for the Explorer panel's "open directory" link — computed
+        # here so the raw absolute output_dir never has to reach the client.
+        for row in rows:
+            output_dir = row.get('output_dir')
+            if output_dir:
+                try:
+                    row['explorer_path'] = os.path.relpath(os.path.dirname(output_dir), data_dir)
+                except ValueError:
+                    row['explorer_path'] = None
+            else:
+                row['explorer_path'] = None
+        rows = [_sanitize_exp(row) for row in rows]
         return {
             'runs': rows,
             'total': total,

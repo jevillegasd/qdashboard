@@ -127,8 +127,11 @@
     // DOM nodes openIframeTab() creates.
     function ensureReportPane(id) {
         if (document.getElementById(tabPaneId(id))) return;
+        // data-tab-id carries the real (colon-bearing) id — tabPaneId()
+        // sanitizes it for the DOM id, so that alone can't be reversed; this
+        // is how the postMessage handler below maps an iframe back to its tab.
         $('#qd-tab-content').append(
-            '<div id="' + tabPaneId(id) + '" class="qd-tabpane qd-tabpane-report">' +
+            '<div id="' + tabPaneId(id) + '" class="qd-tabpane qd-tabpane-report" data-tab-id="' + id + '">' +
             '<iframe src="' + reportSrcForId(id) + '" title="Experiment Report"></iframe>' +
             '</div>'
         );
@@ -220,6 +223,18 @@
         var draggedId = e.originalEvent.dataTransfer.getData('text/plain');
         var beforeId = $(this).data('tab-id');
         if (draggedId && draggedId !== beforeId) reorderTabs(draggedId, beforeId);
+    });
+
+    // A report tab's iframe (e.g. error.html, rendered when a report fails to
+    // load) can't navigate itself out of the iframe — "Back to Dashboard"
+    // there posts a message asking the parent to close that tab instead.
+    window.addEventListener('message', function (e) {
+        if (!e.data || e.data.source !== 'qdashboard' || e.data.action !== 'close-report-tab') return;
+        var pane = Array.prototype.find.call(
+            document.querySelectorAll('.qd-tabpane-report'),
+            function (p) { var f = p.querySelector('iframe'); return f && f.contentWindow === e.source; }
+        );
+        if (pane) closeTab(pane.dataset.tabId);
     });
 
     // ---- Side panel ----

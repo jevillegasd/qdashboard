@@ -26,20 +26,23 @@
     </div>
 </div>
 
-<!-- Viewer Modal -->
+<!-- Viewer Modal: interactive collapsible tree for .json/.yaml/.yml files -->
 <div class="modal fade" id="viewer-modal" tabindex="-1" role="dialog" aria-labelledby="file-name" aria-hidden="true">
-  <div class="modal-dialog modal-lg">
+  <div class="modal-dialog modal-xl">
     <div class="modal-content bg-dark text-white">
       <div class="modal-header">
         <h4 class="modal-title text-left" id="file-name">&nbsp;</h4>
         <button type="button" class="close text-white" data-dismiss="modal" aria-hidden="true">&times;</button>
       </div>
-      <div class="modal-body"></div>
+      <div class="modal-body">
+        <div id="viewer-error" class="text-danger small mb-2" style="display:none;"></div>
+        <div id="viewer-json-container" style="height:65vh;"></div>
+      </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
         <div class="btn-group ml-auto">
           <a href="#" class="btn btn-info fullview" download><i class="fas fa-download"></i> Download</a>
-          <a href="#" class="btn btn-primary fullview"><i class="fas fa-external-link-alt"></i> Open</a>
+          <a href="#" class="btn btn-primary fullview" target="_blank"><i class="fas fa-external-link-alt"></i> Open Raw</a>
         </div>
       </div>
     </div>
