@@ -8,11 +8,9 @@
     var hideDotfiles = (getCookie('hide-dotfile') || 'no') === 'yes';
     var allEntries = [];
 
-    // The viewer/uploader modals are defined inside _panel_explorer.html, which
-    // lives inside .side-panel (position:fixed) + .side-panel-pane (overflow:
-    // hidden). A position:fixed Bootstrap modal nested in there can end up
-    // clipped/mis-stacked — backdrop shows (dimmed) but the modal itself isn't
-    // interactive. Move both to be direct children of <body> to escape that.
+    // These modals live inside .side-panel (position:fixed) + .side-panel-pane
+    // (overflow:hidden), which clips/mis-stacks a nested fixed-position modal.
+    // Move them to <body> to escape that.
     $('#viewer-modal, #uploader-modal').appendTo(document.body);
 
     function getCookie(name) {
@@ -54,8 +52,8 @@
             var rowAttrs = e.type === 'dir'
                 ? 'data-dir="' + e.name + '"'
                 : 'data-file="' + e.name + '"';
-            // Qibocal report directories browse like any other folder; the
-            // chart-bar button opens the report as a tab without navigating.
+            // Report dirs browse like any folder; the button opens the report
+            // as a tab instead.
             var reportBtn = (e.type === 'dir' && e.is_qibocal_report)
                 ? '<button class="btn-doc-info explorer-open-report" title="Open report" data-dir="' + e.name + '">'
                   + '<i class="fas fa-chart-bar"></i></button>'
@@ -94,8 +92,7 @@
     $(document).on('click', '.explorer-open-report', function (e) {
         e.stopPropagation();
         var dir = $(this).data('dir');
-        // The report dir (conventionally "output") sits inside the
-        // experiment_id-named directory currently being listed.
+        // The report dir ("output") sits inside the experiment_id-named dir.
         var experimentId = currentPath.split('/').filter(Boolean).pop() || dir;
         if (window.ShellTabs) window.ShellTabs.openReportTab(experimentId, experimentId);
     });
@@ -141,32 +138,43 @@
             function () { return !!window.jsyaml; }, cb);
     }
 
-    // Fetching (network) and the modal's own fade-in (CSS transition) finish
-    // in whichever order — if JSONEditor is created while the modal is still
-    // mid-transition, its container measures 0 height and the tree never
-    // recovers. pendingViewerData + the shown.bs.modal handler below make
-    // rendering wait for whichever of the two finishes last.
+    // KNOWN ISSUE: the viewer still doesn't reliably show content on a second
+    // open — not yet fixed. pendingViewerData/_viewerRetryTimer poll the
+    // container's real rendered height instead of trusting Bootstrap's
+    // shown.bs.modal timing, since fetch and the modal's fade-in can finish
+    // in either order.
     var pendingViewerData = null;
-
-    // Created once and reused for every open — JSONEditor's mainMenuBar mode
-    // (search box, dropdowns) attaches its own document-level listeners, and
-    // destroy()/recreate on every cycle risks not all of them being cleaned
-    // up, leaving a stray listener that swallows clicks elsewhere on the
-    // page until a full reload. Reusing one instance avoids that entirely.
+    var _viewerRetryTimer = null;
     var _viewerEditor = null;
 
+    // Destroy + empty the container before building a new instance — JSONEditor
+    // appends directly into it, so stale markup from a previous instance can
+    // make it render underneath or no-op.
+    function destroyViewerEditor() {
+        if (_viewerEditor) {
+            try { _viewerEditor.destroy(); } catch (e) { /* ignore */ }
+            _viewerEditor = null;
+        }
+        $('#viewer-json-container').empty();
+    }
+
     function renderViewerIfReady() {
-        if (!pendingViewerData || !$('#viewer-modal').hasClass('show')) return;
+        clearTimeout(_viewerRetryTimer);
+        if (!pendingViewerData) return;
         var pending = pendingViewerData;
         if (pending.error) {
             $('#viewer-error').text(pending.error).show();
             return;
         }
+        var container = document.getElementById('viewer-json-container');
+        if (!container || container.offsetHeight === 0) {
+            _viewerRetryTimer = setTimeout(renderViewerIfReady, 50);
+            return;
+        }
         ensureJsonEditor(function () {
-            if (!_viewerEditor) {
-                _viewerEditor = new JSONEditor(document.getElementById('viewer-json-container'),
-                    { mode: 'view', mainMenuBar: true });
-            }
+            destroyViewerEditor();
+            container = document.getElementById('viewer-json-container');
+            _viewerEditor = new JSONEditor(container, { mode: 'view', mainMenuBar: true });
             _viewerEditor.set(pending.data);
             _viewerEditor.expandAll();
         });
@@ -177,13 +185,7 @@
         $('#file-name').text(fileName);
         $('.fullview').attr('href', '/files/' + filePath);
         $('#viewer-error').hide().text('');
-        // Defensive: if a previous hide cycle left Bootstrap's modal plugin
-        // data in a stuck _isShown/_isTransitioning state, .modal('show')
-        // silently no-ops — looks exactly like "clicking a file does
-        // nothing" rather than a visibly broken modal. Force a clean instance.
-        $('#viewer-modal').data('bs.modal', null);
-        $('.modal-backdrop').remove();
-        $('body').removeClass('modal-open');
+        destroyViewerEditor(); // clear before showing/fetching, not after
         $('#viewer-modal').modal('show');
 
         fetch('/files/' + filePath)
@@ -213,17 +215,14 @@
 
     $('#viewer-modal').on('hidden.bs.modal', function () {
         pendingViewerData = null;
-        // _viewerEditor is intentionally left alone here — see its
-        // declaration above for why it's never destroyed/recreated.
-        // Defensive: a stray .modal-backdrop (or a lingering .modal-open on
-        // <body>) left behind by a botched hide cycle silently swallows every
-        // click on the page underneath it — which looks like "clicking a
-        // file does nothing" rather than an obviously broken modal.
+        clearTimeout(_viewerRetryTimer);
+        destroyViewerEditor();
+        // Defensive: a stray .modal-backdrop left behind by a bad hide cycle
+        // silently blocks every click on the page underneath it.
         if (!$('.modal.show').length) {
             $('.modal-backdrop').remove();
             $('body').removeClass('modal-open');
         }
-        $(this).data('bs.modal', null);
     });
 
     $('#explorer-search').on('input', function () {
