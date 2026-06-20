@@ -8,7 +8,7 @@ import re
 import json
 import mimetypes
 from pathlib2 import Path
-from fastapi import APIRouter, Request, UploadFile, File
+from fastapi import APIRouter, Request, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse, Response, RedirectResponse, JSONResponse
 
 from ..utils.formatters import get_type, size_fmt, time_humanize, icon_fmt
@@ -86,7 +86,7 @@ def make_file_router(root_path: str, key: str = "") -> APIRouter:
 
         path = _safe_join(p)
         if path is None:
-            return Response(content='Forbidden', status_code=403)
+            raise HTTPException(403, detail='Forbidden')
 
         if os.path.isdir(path):
             # Qibocal report directories browse like any other folder now —
@@ -109,7 +109,7 @@ def make_file_router(root_path: str, key: str = "") -> APIRouter:
                 return FileResponse(path)
             return FileResponse(path, filename=os.path.basename(path))
         else:
-            return Response(content='Not found', status_code=404)
+            raise HTTPException(404, detail=f'File not found: {p}')
 
     @router.get('/api/files_list', name='api_files_list')
     async def api_files_list(request: Request):

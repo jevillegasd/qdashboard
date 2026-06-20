@@ -12,7 +12,7 @@ import shutil
 import yaml
 import traceback as _tb
 from typing import Optional
-from fastapi import APIRouter, Request, Form, File, UploadFile, Query
+from fastapi import APIRouter, Request, Form, File, UploadFile, Query, HTTPException
 from fastapi.responses import FileResponse, Response, StreamingResponse, RedirectResponse
 from starlette.responses import HTMLResponse
 
@@ -81,38 +81,24 @@ def _html_error_response(
     exc: Exception,
     status_code: int = 500,
 ) -> HTMLResponse:
-    """Return an HTML error page.
+    """Render the themed error page for a caught exception (see core.app.render_error_page).
 
-    In debug mode a styled traceback page is rendered so developers can see
-    the full stack without leaving the browser.
+    Prefer `raise HTTPException(...)` where possible — the app-wide handler
+    in core/app.py renders the same page automatically. This is for routes
+    that want to keep handling the request after catching the exception
+    rather than letting it propagate.
     """
+    from ..core.app import render_error_page
     debug = request.app.state.config.get('debug', False)
     trace = _tb.format_exc()
     logger.error("[%s %s] %s: %s\n%s",
                  request.method, request.url.path,
                  type(exc).__name__, exc, trace)
-    if debug:
-        import html as _html
-        safe_trace = _html.escape(trace)
-        safe_msg   = _html.escape(str(exc))
-        safe_type  = _html.escape(type(exc).__name__)
-        content = (
-            '<html><head><title>QDashboard Error</title>'
-            '<style>body{background:#1a1a2e;color:#e0e0e0;font-family:monospace;padding:2rem}'
-            'h2{color:#ff6b6b}pre{background:#0d0d1a;padding:1.2rem;overflow:auto;'
-            'border-left:3px solid #ff6b6b;white-space:pre-wrap}'
-            '.ctx{color:#888;font-size:.85em;margin-bottom:1rem}</style></head><body>'
-            f'<h2>&#9888; {safe_type}</h2>'
-            f'<p class="ctx">{request.method} {request.url}</p>'
-            f'<pre>{safe_trace}</pre>'
-            '</body></html>'
-        )
-    else:
-        content = (
-            f'<html><body><h2>Internal Server Error</h2>'
-            f'<p>{status_code}: {type(exc).__name__}</p></body></html>'
-        )
-    return HTMLResponse(content=content, status_code=status_code)
+    return render_error_page(
+        request, status_code,
+        message=str(exc) if debug else None,
+        trace=trace if debug else None,
+    )
 
 
 def _safe_path_join(base: str, user_path: str) -> str | None:
@@ -237,14 +223,14 @@ async def qqsubmit(request: Request, qpu: Optional[str] = Query(None)):
 
     if not qpu or not _QPU_NAME_RE.match(qpu):
         logger.warning(f"Invalid QPU name rejected: {qpu!r}")
-        return Response(content='Invalid QPU name', status_code=400)
+        raise HTTPException(400, detail='Invalid QPU name')
 
     config = _get_config(request)
     script_path = os.path.realpath(os.path.join(config['root'], "work/qqsubmit.sh"))
     resolved_root = os.path.realpath(config['root'])
     if not script_path.startswith(resolved_root + os.sep) and script_path != resolved_root:
         logger.error(f"Script path escapes root: {script_path}")
-        return Response(content='Forbidden', status_code=403)
+        raise HTTPException(403, detail='Forbidden')
 
     os_process = subprocess.Popen(
         ["bash", script_path, config['home_path'], qpu],
@@ -256,7 +242,7 @@ async def qqsubmit(request: Request, qpu: Optional[str] = Query(None)):
         os_process.kill()
         os_process.communicate()
         logger.error(f"qqsubmit timed out for QPU: {qpu}")
-        return Response(content='Job submission timed out', status_code=504)
+        raise HTTPException(504, detail='Job submission timed out')
     out_string = stdout.decode('utf-8', errors='replace').replace('\n', '<br>')
     logger.info(f"Job submitted to SLURM queue for QPU: {qpu}")
     html = templates.get_template('job_submission.html').render(
@@ -271,10 +257,7 @@ async def latest_report_page(request: Request):
     can open as a shell tab instead of navigating to the full /latest page."""
     last_path = get_latest_report_path()
     if not last_path:
-        return HTMLResponse(
-            content="<html><body style='font-family:sans-serif;color:#888;padding:2rem;'>"
-                     "<p>No reports yet — run an experiment first.</p></body></html>",
-            status_code=404)
+        raise HTTPException(404, detail='No reports yet — run an experiment first.')
     # last_path follows the same data_dir/<platform>/<date>/<experiment_id>/output
     # convention as experiment_report_page's glob match.
     experiment_id = os.path.basename(os.path.dirname(last_path.rstrip('/')))
@@ -1120,8 +1103,7 @@ async def experiment_report_page(request: Request, experiment_id: str):
         import glob as _glob
         matches = _glob.glob(os.path.join(data_dir, '*', '*', experiment_id, 'output'))
         if not matches:
-            return HTMLResponse(content="<html><body><p>Report not found.</p></body></html>",
-                                status_code=404)
+            raise HTTPException(404, detail=f'Report not found: {experiment_id}')
         output_dir = matches[0]
         fragment = get_report_fragment(experiment_id, output_dir)
         # Compute path relative to data_dir — must match the base used by qibocal_cli_action
@@ -1140,13 +1122,13 @@ async def experiment_report_page(request: Request, experiment_id: str):
             qibocal_available=qibocal_ok,
         )
         return HTMLResponse(content=html)
+    except HTTPException:
+        raise
     except FileNotFoundError:
-        return HTMLResponse(content="<html><body><p>Report not available.</p></body></html>",
-                            status_code=404)
+        raise HTTPException(404, detail='Report not available.')
     except Exception as e:
         logger.exception("experiment_report_page error for %s", experiment_id)
-        return HTMLResponse(content=f"<html><body><p>Error: {e}</p></body></html>",
-                            status_code=500)
+        raise HTTPException(500, detail=str(e))
 
 
 # ------------------------------------------------------------------ #

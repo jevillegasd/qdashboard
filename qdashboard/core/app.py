@@ -5,7 +5,7 @@ Core FastAPI application configuration and setup.
 import os
 import traceback as _tb
 from fastapi import FastAPI, Request
-from fastapi.exceptions import HTTPException
+from starlette.exceptions import HTTPException
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -147,26 +147,35 @@ def create_app(config: dict = None) -> FastAPI:
     templates.env.filters["icon_fmt"] = icon_fmt
     templates.env.filters["humanize"] = time_humanize
 
-    # Global exception handler — catches anything not caught by route handlers.
-    # In debug mode the full traceback is returned so issues can be triaged
-    # directly from the browser or API client.
+    # HTTPException covers both raised-by-route-code errors (raise HTTPException(404, ...))
+    # and Starlette's own "no route matched" 404 — one handler for both.
+    @app.exception_handler(HTTPException)
+    async def _http_exception_handler(request: Request, exc: HTTPException):
+        if _wants_json(request):
+            return JSONResponse(content={'error': exc.detail}, status_code=exc.status_code)
+        return render_error_page(request, exc.status_code, message=exc.detail)
+
+    # Catches anything not caught by route handlers or the HTTPException
+    # handler above. In debug mode the full traceback is shown so issues can
+    # be triaged directly from the browser or API client.
     @app.exception_handler(Exception)
-    async def _global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    async def _global_exception_handler(request: Request, exc: Exception):
         trace = _tb.format_exc()
         logger.error("[%s %s] Unhandled %s: %s\n%s",
                      request.method, request.url.path,
                      type(exc).__name__, exc, trace)
         debug = app.state.config.get('debug', False)
-        if debug:
-            body = {
-                'error': str(exc),
-                'exception_type': type(exc).__name__,
-                'traceback': trace,
-                'request': f"{request.method} {request.url}",
-            }
-        else:
-            body = {'error': 'Internal server error'}
-        return JSONResponse(content=body, status_code=500)
+
+        if _wants_json(request):
+            if debug:
+                body = {'error': str(exc), 'exception_type': type(exc).__name__,
+                        'traceback': trace, 'request': f"{request.method} {request.url}"}
+            else:
+                body = {'error': 'Internal server error'}
+            return JSONResponse(content=body, status_code=500)
+
+        return render_error_page(request, 500, message=str(exc) if debug else None,
+                                  trace=trace if debug else None)
 
     logger.debug("App module initialized")
 
