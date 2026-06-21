@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, Response, StreamingResponse, Redirec
 from starlette.responses import HTMLResponse
 
 from ..qpu.monitoring import get_qpu_health, get_available_qpus, get_qibo_versions, get_qpu_details, get_qpu_list, qpu_parameters
-from ..qpu.platforms import get_platforms_path, list_repository_branches, switch_repository_branch, get_current_branch_info, commit_changes, push_changes, stash_changes, list_stashes, apply_latest_stash, discard_changes, get_partition
+from ..qpu.platforms import get_platforms_path, list_repository_branches, switch_repository_branch, get_current_branch_info, commit_changes, generate_commit_message, push_changes, stash_changes, list_stashes, apply_latest_stash, discard_changes, get_partition
 from ..qpu.slurm import get_slurm_status, get_slurm_output
 from ..qpu.topology import qpu_connectivity, infer_topology_from_connectivity, generate_topology_visualization
 from ..experiments.protocols import get_qibocal_protocols, get_protocol_attributes
@@ -452,6 +452,22 @@ async def api_platforms_current(request: Request):
         return _error_response(request, e)
 
 
+@router.get("/api/platforms/commit_message", name="api_platforms_commit_message", tags=["Platforms"],
+            summary="Preview the auto-generated commit message for pending changes")
+async def api_platforms_commit_message(request: Request):
+    """API endpoint to preview the commit message that would be used for the
+    currently pending (uncommitted) changes, without committing anything."""
+    try:
+        config = _get_config(request)
+        platforms_path = get_platforms_path(config['root'])
+        if not platforms_path:
+            return Response(content=json.dumps({'error': 'Platforms directory not available'}),
+                            status_code=404, media_type='application/json')
+        return {'message': generate_commit_message(platforms_path)}
+    except Exception as e:
+        return _error_response(request, e)
+
+
 @router.post("/api/platforms/commit", name="api_platforms_commit", tags=["Platforms"],
              summary="Commit pending changes in the platforms repository")
 async def api_platforms_commit(request: Request):
@@ -463,7 +479,7 @@ async def api_platforms_commit(request: Request):
             return Response(content=json.dumps({'error': 'Platforms directory not available'}),
                             status_code=404, media_type='application/json')
         data = await request.json() if request.headers.get('content-type', '').startswith('application/json') else {}
-        commit_message = data.get('message', 'Update platform configurations (qibolab version detection)')
+        commit_message = data.get('message')
         result = commit_changes(platforms_path, commit_message)
         if not result['success']:
             return Response(content=json.dumps({'error': result.get('error', 'Commit failed')}),

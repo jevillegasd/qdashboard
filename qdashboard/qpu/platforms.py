@@ -687,14 +687,89 @@ def get_current_branch_info(platforms_path):
         return None
 
 
-def commit_changes(platforms_path, commit_message="Update platform configurations"):
+def _changed_files(platforms_path):
+    """Return the list of changed file paths (relative to the repo root)
+    reported by `git status --porcelain`, including staged and unstaged."""
+    status_cmd = ['git', '-C', platforms_path, 'status', '--porcelain']
+    status_result = subprocess.run(status_cmd, check=True, capture_output=True, text=True)
+    files = []
+    for line in status_result.stdout.splitlines():
+        if not line.strip():
+            continue
+        # Porcelain format is "XY path" (or "XY old -> new" for renames).
+        path = line[3:].strip()
+        if ' -> ' in path:
+            path = path.split(' -> ')[-1]
+        files.append(path)
+    return files
+
+
+def generate_commit_message(platforms_path):
+    """
+    Build a commit message describing which platforms changed and what kind
+    of change happened in each: platform.py edits are "configuration",
+    calibration.json edits are "calibration", parameters.json edits are
+    "parameters". Files that don't match one of those names (e.g.
+    versions.json, action_nodes.json) are counted as "other files".
+
+    Returns a string such as:
+        "Update qpu169 (configuration, calibration); qpu176 (parameters)"
+    Returns an empty string if there are no pending changes to commit.
+    """
+    files = _changed_files(platforms_path)
+    if not files:
+        return ""
+
+    kind_by_filename = {
+        'platform.py': 'configuration',
+        'calibration.json': 'calibration',
+        'parameters.json': 'parameters',
+    }
+    kind_order = ['configuration', 'calibration', 'parameters']
+
+    changes_by_platform = {}
+    other_files = []
+    for file_path in files:
+        parts = file_path.split('/')
+        if len(parts) < 2:
+            other_files.append(file_path)
+            continue
+        platform_name, filename = parts[0], parts[-1]
+        kind = kind_by_filename.get(filename)
+        if kind:
+            changes_by_platform.setdefault(platform_name, set()).add(kind)
+        else:
+            other_files.append(file_path)
+
+    platform_summaries = []
+    for platform_name in sorted(changes_by_platform):
+        kinds = changes_by_platform[platform_name]
+        ordered_kinds = [k for k in kind_order if k in kinds]
+        platform_summaries.append(f"{platform_name} ({', '.join(ordered_kinds)})")
+
+    if platform_summaries:
+        message = "Update " + "; ".join(platform_summaries)
+    else:
+        message = "Update platform configurations"
+
+    if other_files:
+        message += f" [+{len(other_files)} other file(s)]"
+
+    return message
+
+
+def commit_changes(platforms_path, commit_message=None):
     """
     Commit all changes in the platforms repository.
-    
+
     Args:
         platforms_path (str): Path to the platforms repository
-        commit_message (str): Commit message to use
-        
+        commit_message (str): Commit message to use. If not provided, a
+            message is generated from the changed files, calling out
+            whether platform configuration (platform.py), calibration
+            (calibration.json) or base parameters (parameters.json) changed
+            for each affected platform.
+
     Returns:
         dict: Result information with commit hash, or error
         {
@@ -707,21 +782,24 @@ def commit_changes(platforms_path, commit_message="Update platform configuration
     if not os.path.exists(os.path.join(platforms_path, '.git')):
         logger.warning(f"Not a git repository: {platforms_path}")
         return {'success': False, 'error': 'Not a git repository'}
-    
+
     try:
         # Check if there are any changes to commit
         status_cmd = ['git', '-C', platforms_path, 'status', '--porcelain']
         status_result = subprocess.run(status_cmd, check=True, capture_output=True, text=True)
-        
+
         if not status_result.stdout.strip():
             logger.info("No changes to commit")
             return {'success': False, 'error': 'No changes to commit'}
-        
+
+        if not commit_message:
+            commit_message = generate_commit_message(platforms_path)
+
         # Add all changes
         add_cmd = ['git', '-C', platforms_path, 'add', '.']
         subprocess.run(add_cmd, check=True, capture_output=True, text=True)
         logger.info("Staged all changes for commit")
-        
+
         # Commit changes
         commit_cmd = ['git', '-C', platforms_path, 'commit', '-m', commit_message]
         commit_result = subprocess.run(commit_cmd, check=True, capture_output=True, text=True)

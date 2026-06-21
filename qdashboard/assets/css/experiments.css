@@ -294,6 +294,50 @@
             border-radius: var(--radius);
         }
 
+        /* ——— Action builder card: pin the YAML/Run/Save footer to the
+           bottom of the panel, scroll only the experiment list/params in
+           between, so the buttons stay visible without scrolling. ——— */
+        .panel-builder .card-body {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        .panel-builder .card-body > .nav-tabs {
+            flex: 0 0 auto;
+        }
+
+        #experiment-tabs-content {
+            flex: 1 1 auto;
+            min-height: 0;
+            position: relative;
+        }
+
+        #experiment-tabs-content .tab-pane.active {
+            height: 100%;
+            overflow-y: auto;
+        }
+
+        #action-builder.tab-pane.active {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .action-builder-scroll {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+        }
+
+        .action-builder-footer {
+            flex: 0 0 auto;
+            margin-top: .75rem;
+            padding-top: .6rem;
+            border-top: var(--border-hairline);
+        }
+
         /* ——— Action card builder: vertical-tab layout ——— */
         /* One tab per added protocol, title on the left, params pane on the right */
         .action-tabs-wrapper {

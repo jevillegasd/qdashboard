@@ -359,10 +359,48 @@ $(document).ready(function() {
     // Load branches on page load
     loadBranches();
 
-    // Git Commit functionality
+    // Git Commit functionality: open a modal with an auto-generated, editable
+    // commit message (summarizing per-platform configuration/calibration/
+    // parameters changes) before actually committing.
     $('#gitCommit').on('click', function() {
+        $('#commitMessageForm').hide();
+        $('#commitMessageEmpty').hide();
+        $('#commitMessageInput').val('');
+        $('#commitMessageLoading').show();
+        $('#commitMessageConfirm').prop('disabled', true);
+        $('#commitMessageModal').modal('show');
+
+        fetch('/api/platforms/commit_message')
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                $('#commitMessageLoading').hide();
+                if (!data.message) {
+                    // Nothing to commit: keep the Commit button disabled.
+                    $('#commitMessageEmpty').show();
+                    return;
+                }
+                $('#commitMessageInput').val(data.message);
+                $('#commitMessageForm').show();
+                $('#commitMessageConfirm').prop('disabled', false);
+            })
+            .catch(error => {
+                console.error('Error generating commit message:', error);
+                $('#commitMessageLoading').hide();
+                $('#commitMessageEmpty').text('Error generating commit message: ' + error.message).show();
+            });
+    });
+
+    $('#commitMessageInput').on('input', function() {
+        $('#commitMessageConfirm').prop('disabled', !$(this).val().trim());
+    });
+
+    $('#commitMessageConfirm').on('click', function() {
         const button = $(this);
         const originalHtml = button.html();
+        const commitMessage = $('#commitMessageInput').val().trim();
 
         button.html('<i class="fas fa-spinner fa-spin"></i>');
         button.prop('disabled', true);
@@ -375,9 +413,7 @@ $(document).ready(function() {
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                message: 'Update platform configurations (qibolab version detection)'
-            })
+            body: JSON.stringify({ message: commitMessage })
         })
         .then(response => response.json())
         .then(data => {
@@ -385,11 +421,13 @@ $(document).ready(function() {
                 throw new Error(data.error);
             }
 
+            $('#commitMessageModal').modal('hide');
+
             // Show success message
             $('#switchAlert')
                 .removeClass('alert-danger')
                 .addClass('alert-success')
-                .html(`<i class="fas fa-check-circle"></i> Successfully committed changes: <strong>${data.commit_hash}</strong>`)
+                .html(`<i class="fas fa-check-circle"></i> Committed <strong>${data.commit_hash}</strong>: ${data.message}`)
                 .show();
 
             // Update branch status if provided
