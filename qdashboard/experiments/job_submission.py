@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import Dict, Any, Tuple, Optional, List
 
 from ..qpu.platforms import get_platforms_path, get_partition
+from ..qpu.monitoring import get_qpu_list
 from ..utils.logger import get_logger
 from ..core.config import get_temp_dir, ensure_directory_exists
 
@@ -291,6 +292,11 @@ def submit_experiment(runcard_path: str = None, runcard_data: Dict[str, Any] = N
                 temp_files_to_cleanup.append(temp_runcard_path)
             
             platform = runcard_data_parsed['platform']
+            if platform not in get_qpu_list():
+                return {
+                    'success': False,
+                    'message': f'Unknown platform "{platform}": not tracked in the platforms repository'
+                }
 
             # Generate experiment ID and create directory
             experiment_id = generate_experiment_id(temp_runcard_path, platform)
@@ -470,7 +476,12 @@ def repeat_experiment(report_path: str, config: Dict[str, Any]) -> Dict[str, Any
                 'success': False,
                 'message': 'No platform specified in runcard'
             }
-        
+        if platform not in get_qpu_list():
+            return {
+                'success': False,
+                'message': f'Unknown platform "{platform}": not tracked in the platforms repository'
+            }
+
         # Generate experiment ID for repeat experiment
         experiment_id = generate_experiment_id(runcard_path, platform)
         experiment_dir = create_experiment_directory(experiment_id, platform, config)

@@ -19,7 +19,7 @@
         <div class="d-flex flex-wrap" style="gap:.35rem;">
             <select id="filter-platform" class="form-control form-control-sm flex-fill">
                 <option value="">All QPUs</option>
-                {% for qpu in qpus %}
+                {% for qpu in history_qpus %}
                 <option value="{{ qpu }}">{{ qpu }}</option>
                 {% endfor %}
             </select>

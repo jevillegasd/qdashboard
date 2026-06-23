@@ -256,26 +256,41 @@ def get_qibo_versions(force_refresh=False, request=None):
 
 
 def get_qpu_list():
-    """Get list of available QPU platforms from the qibolab platforms directory."""
+    """Get list of available QPU platforms tracked in the qibolab platforms git repository.
+
+    Only directories committed to the repository's current HEAD are considered, so
+    untracked or uncommitted directories (e.g. created via the file browser) are excluded.
+    """
     root = os.path.normpath(os.environ.get('HOME'))
     qrc_path = get_platforms_path(root)
     qpus = []
-    
+
     if qrc_path and os.path.exists(qrc_path):
         try:
-            for qpu_name in os.listdir(qrc_path):
+            result = subprocess.run(
+                ['git', '-C', qrc_path, 'ls-tree', '-d', '--name-only', 'HEAD'],
+                capture_output=True, text=True, check=True, timeout=10
+            )
+            for qpu_name in result.stdout.splitlines():
                 if qpu_name.startswith(('_', '.')):
                     continue
                 qpu_path = os.path.join(qrc_path, qpu_name)
-                if os.path.isdir(qpu_path) and 'platform.py' in os.listdir(qpu_path):
+                try:
+                    tracked_files = subprocess.run(
+                        ['git', '-C', qrc_path, 'ls-tree', '--name-only', 'HEAD', qpu_name + '/'],
+                        capture_output=True, text=True, check=True, timeout=10
+                    ).stdout.splitlines()
+                except subprocess.CalledProcessError:
+                    continue
+                if 'platform.py' in [os.path.basename(f) for f in tracked_files]:
                     qpus.append(qpu_name)
-        except OSError:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
             pass
-    
+
     # Fallback to default QPUs if directory doesn't exist or is empty
     if not qpus:
         qpus = ["qpu_dummy"]
-    
+
     return sorted(qpus)
 
 

@@ -171,14 +171,15 @@ async def shell(request: Request):
             protocol_with_attrs['attributes'] = protocol_attrs
             protocols_with_attributes[category].append(protocol_with_attrs)
 
-    # History panel (the distinct-QPUs query, when available, also refines the
-    # `qpus` list shared with the Action Card Builder's QPU selector)
+    # History panel filters: QPUs/protocols that actually appear in recorded history.
+    # Kept separate from `qpus_list` (the Action Card Builder's full platform list).
     history_protocols = []
+    history_qpus = qpus_list
     try:
         from ..db.database import get_db_connection, get_distinct_protocols, get_distinct_qpus
         with get_db_connection(config) as conn:
             history_protocols = get_distinct_protocols(conn)
-            qpus_list = get_distinct_qpus(conn) or qpus_list
+            history_qpus = get_distinct_qpus(conn) or qpus_list
     except Exception:
         pass
 
@@ -205,6 +206,7 @@ async def shell(request: Request):
         is_new_qibolab=is_new_qibolab,
         # History
         history_protocols=history_protocols,
+        history_qpus=history_qpus,
     )
     response = HTMLResponse(content=html, headers=_no_cache_headers())
     if not version_data.get('from_cache', False):
@@ -595,6 +597,13 @@ async def api_protocol_details(protocol_id: str):
         logger.warning(f"Protocol not found: {protocol_id}")
         return Response(content=json.dumps({'error': 'Protocol not found'}),
                         status_code=404, media_type='application/json')
+
+
+@router.get("/api/qpus", name="qpus_api", tags=["QPU"],
+            summary="List available QPU platforms")
+async def qpus_api():
+    """API endpoint to get the list of available QPU platforms."""
+    return {"qpus": get_qpu_list()}
 
 
 @router.get("/api/qpu_parameters/{platform}", name="qpu_parameters_api", tags=["QPU"],
