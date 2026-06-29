@@ -111,7 +111,7 @@ def _get_protocols_direct():
             for name, obj in inspect.getmembers(protocols_module):
                 if (not name.startswith('_') and name != 'Enum' and
                     hasattr(obj, '__class__') and
-                    str(obj.__class__) == "<class 'qibocal.auto.operation.Routine'>"):
+                    str(obj.__class__) == "<class 'qibocal.auto.operation.Protocol'>"):
                     
                     routine_protocols.append({
                         'id': name.lower(),
@@ -138,7 +138,7 @@ def _get_protocols_direct():
                                 for attr_name, attr_obj in inspect.getmembers(imported_module):
                                     if (not attr_name.startswith('_') and 
                                         hasattr(attr_obj, '__class__') and
-                                        str(attr_obj.__class__) == "<class 'qibocal.auto.operation.Routine'>"):
+                                        str(attr_obj.__class__) == "<class 'qibocal.auto.operation.Protocol'>"):
                                         if not any(p['class_name'] == attr_name for p in routine_protocols):
                                             routine_protocols.append({
                                                 'id': attr_name.lower(),
@@ -188,7 +188,7 @@ def discover_protocols():
         for name, obj in inspect.getmembers(protocols_module):
             if (not name.startswith('_') and name != 'Enum' and
                 hasattr(obj, '__class__') and
-                str(obj.__class__) == "<class 'qibocal.auto.operation.Routine'>"):
+                str(obj.__class__) == "<class 'qibocal.auto.operation.Protocol'>"):
                 
                 routine_protocols.append({
                     'id': name.lower(),
@@ -211,7 +211,7 @@ def discover_protocols():
                             for attr_name, attr_obj in inspect.getmembers(imported_module):
                                 if (not attr_name.startswith('_') and 
                                     hasattr(attr_obj, '__class__') and
-                                    str(attr_obj.__class__) == "<class 'qibocal.auto.operation.Routine'>"):
+                                    str(attr_obj.__class__) == "<class 'qibocal.auto.operation.Protocol'>"):
                                     if not any(p['class_name'] == attr_name for p in routine_protocols):
                                         routine_protocols.append({
                                             'id': attr_name.lower(),
