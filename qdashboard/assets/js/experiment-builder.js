@@ -1647,10 +1647,11 @@ function loadExperimentResults(protocolId, protocolName) {
         })
         .then(data => {
             document.getElementById('results-experiment-id').textContent = data.experiment_id || '';
-            // Show open-in-browser link
+            // Show open-in-tab link — opens the report as a shell tab, same as History.
             var openLink = document.getElementById('results-open-link');
-            if (data.report_url) {
-                openLink.href = data.report_url;
+            if (data.experiment_id) {
+                openLink.dataset.experimentId = data.experiment_id;
+                openLink.dataset.label = protocolName || data.experiment_id;
                 openLink.style.display = '';
             } else {
                 openLink.style.display = 'none';
@@ -1666,6 +1667,15 @@ function loadExperimentResults(protocolId, protocolName) {
             _showResultsState('results-not-found');
         });
 }
+
+$('#results-open-link').on('click', function (e) {
+    e.preventDefault();
+    var experimentId = this.dataset.experimentId;
+    if (!experimentId) return;
+    if (window.ShellTabs && typeof window.ShellTabs.openReportTab === 'function') {
+        window.ShellTabs.openReportTab(experimentId, this.dataset.label || experimentId);
+    }
+});
 
 // ——— Live log viewer ———
 var _logPollTimer = null;
@@ -1740,7 +1750,9 @@ function showExperimentLog(experimentId) {
                     if (exp.report_available) {
                         document.getElementById('results-experiment-id').textContent = experimentId;
                         var openLink = document.getElementById('results-open-link');
-                        if (exp.report_url) { openLink.href = exp.report_url; openLink.style.display = ''; }
+                        openLink.dataset.experimentId = experimentId;
+                        openLink.dataset.label = experimentId;
+                        openLink.style.display = '';
                         // Collapse the log body; leave log header visible
                         $('#results-log-body').collapse('hide');
                         // Hide all other state panels
