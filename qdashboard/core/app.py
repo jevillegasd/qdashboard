@@ -2,12 +2,10 @@
 Core FastAPI application configuration and setup.
 """
 
-import html as _html
-import json
 import os
 import traceback as _tb
-from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
+from starlette.exceptions import HTTPException
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -22,6 +20,36 @@ logger = get_logger(__name__)
 
 # Module-level templates instance — imported by route modules
 templates: Jinja2Templates = None  # type: ignore[assignment]
+
+_ERROR_ICONS = {404: 'fa-compass', 403: 'fa-lock', 401: 'fa-key', 400: 'fa-exclamation-circle'}
+_ERROR_TITLES = {400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden',
+                 404: 'Page Not Found', 500: 'Internal Server Error'}
+
+
+def render_error_page(request: Request, status_code: int, message: str = None,
+                       trace: str = None) -> HTMLResponse:
+    """Render the themed error page (templates/error.html) for HTML routes.
+
+    JSON/API routes use their own JSON error shape instead — see the
+    exception handlers below, which branch on the request path before
+    calling this.
+    """
+    title = _ERROR_TITLES.get(status_code, 'Something Went Wrong')
+    html = templates.get_template('error.html').render(
+        request=request,
+        status_code=status_code,
+        title=title,
+        message=message or title,
+        icon=_ERROR_ICONS.get(status_code, 'fa-exclamation-triangle'),
+        trace=trace,
+    )
+    return HTMLResponse(content=html, status_code=status_code)
+
+
+def _wants_json(request: Request) -> bool:
+    """API routes (and anything actually expecting JSON) get a JSON error
+    body instead of the themed HTML page."""
+    return request.url.path.startswith('/api/')
 
 
 def create_app(config: dict = None) -> FastAPI:
@@ -119,26 +147,35 @@ def create_app(config: dict = None) -> FastAPI:
     templates.env.filters["icon_fmt"] = icon_fmt
     templates.env.filters["humanize"] = time_humanize
 
-    # Global exception handler — catches anything not caught by route handlers.
-    # In debug mode the full traceback is returned so issues can be triaged
-    # directly from the browser or API client.
+    # HTTPException covers both raised-by-route-code errors (raise HTTPException(404, ...))
+    # and Starlette's own "no route matched" 404 — one handler for both.
+    @app.exception_handler(HTTPException)
+    async def _http_exception_handler(request: Request, exc: HTTPException):
+        if _wants_json(request):
+            return JSONResponse(content={'error': exc.detail}, status_code=exc.status_code)
+        return render_error_page(request, exc.status_code, message=exc.detail)
+
+    # Catches anything not caught by route handlers or the HTTPException
+    # handler above. In debug mode the full traceback is shown so issues can
+    # be triaged directly from the browser or API client.
     @app.exception_handler(Exception)
-    async def _global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    async def _global_exception_handler(request: Request, exc: Exception):
         trace = _tb.format_exc()
         logger.error("[%s %s] Unhandled %s: %s\n%s",
                      request.method, request.url.path,
                      type(exc).__name__, exc, trace)
         debug = app.state.config.get('debug', False)
-        if debug:
-            body = {
-                'error': str(exc),
-                'exception_type': type(exc).__name__,
-                'traceback': trace,
-                'request': f"{request.method} {request.url}",
-            }
-        else:
-            body = {'error': 'Internal server error'}
-        return JSONResponse(content=body, status_code=500)
+
+        if _wants_json(request):
+            if debug:
+                body = {'error': str(exc), 'exception_type': type(exc).__name__,
+                        'traceback': trace, 'request': f"{request.method} {request.url}"}
+            else:
+                body = {'error': 'Internal server error'}
+            return JSONResponse(content=body, status_code=500)
+
+        return render_error_page(request, 500, message=str(exc) if debug else None,
+                                  trace=trace if debug else None)
 
     logger.debug("App module initialized")
 

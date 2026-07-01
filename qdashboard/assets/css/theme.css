@@ -1,0 +1,366 @@
+/*
+ * QDashboard Design Tokens
+ * ------------------------
+ * VS Code-inspired dark theme: flat panels, hairline borders, a single
+ * accent color, compact spacing. Load this before any page-specific
+ * stylesheet so it establishes the base tokens they build on.
+ */
+
+:root {
+    /* Surfaces */
+    --vsc-bg: #1a1a1a;
+    --vsc-bg-elevated: #2c2c2c;
+    --vsc-bg-header: #383838;
+    --vsc-bg-hover: #333333;
+    --vsc-bg-input: #2a2a2a;
+
+    /* Borders */
+    --vsc-border: #3c3c3c;
+    --vsc-border-strong: #555555;
+
+    /* Text */
+    --vsc-text: #f0f0f0;
+    --vsc-text-muted: #999999;
+    --vsc-text-faint: #6c757d;
+
+    /* Accent (RGB 0,195,137) */
+    --vsc-accent: #00c389;
+    --vsc-accent-hover: #00e09e;
+    --vsc-accent-muted: rgba(0, 195, 137, 0.15);
+
+    /* Status */
+    --vsc-danger: #dc3545;
+    --vsc-warning: #ffc107;
+    --vsc-success: var(--vsc-accent);
+    --vsc-info: #4dabf7;
+
+    /* Spacing scale */
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.5rem;
+
+    /* Shape */
+    --radius: 3px;
+    --radius-sm: 2px;
+    --border-hairline: 1px solid var(--vsc-border);
+
+    /* Shell activity bar width — resizable via the drag handle in shell.js */
+    --activity-bar-width: 4rem;
+    /* Shell side panel (Explorer/Library/History) width — resizable via the
+       drag handle in shell.js */
+    --side-panel-width: 300px;
+}
+
+/* ——— Reusable components ——— */
+
+/* Flat panel: replaces ad hoc bordered/shadowed/gradient cards */
+.vsc-panel {
+    background: var(--vsc-bg-elevated);
+    border: var(--border-hairline);
+    border-radius: var(--radius);
+    box-shadow: none;
+}
+
+/* Single-line hoverable row with a left accent indicator */
+.vsc-list-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-2) var(--space-3);
+    border-left: 3px solid transparent;
+    color: var(--vsc-text);
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.vsc-list-row:hover {
+    background-color: var(--vsc-bg-hover);
+}
+
+.vsc-list-row.active {
+    background-color: var(--vsc-bg-hover);
+    border-left-color: var(--vsc-accent);
+}
+
+/* Flat underline tabs */
+.vsc-tabs {
+    display: flex;
+    border-bottom: var(--border-hairline);
+    gap: 0;
+}
+
+.vsc-tab {
+    padding: var(--space-2) var(--space-3);
+    font-size: 0.8rem;
+    color: var(--vsc-text-muted);
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.vsc-tab:hover {
+    color: var(--vsc-text);
+}
+
+.vsc-tab.active {
+    color: var(--vsc-text);
+    border-bottom-color: var(--vsc-accent);
+}
+
+/* Compact muted count badge */
+.vsc-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    line-height: 1.4;
+    padding: 0 0.4em;
+    border-radius: var(--radius-sm);
+    background: var(--vsc-bg-header);
+    color: var(--vsc-text-muted);
+}
+
+/* ——— Targeted Bootstrap overrides to land the single accent color ——— */
+
+a {
+    color: var(--vsc-accent);
+}
+a:hover {
+    color: var(--vsc-accent-hover);
+}
+
+.btn-primary {
+    background-color: var(--vsc-accent);
+    border-color: var(--vsc-accent);
+    color: #0a0a0a;
+}
+.btn-primary:hover,
+.btn-primary:focus,
+.btn-primary:not(:disabled):not(.disabled):active {
+    background-color: var(--vsc-accent-hover);
+    border-color: var(--vsc-accent-hover);
+    color: #0a0a0a;
+}
+
+.btn-info {
+    background-color: var(--vsc-info);
+    border-color: var(--vsc-info);
+}
+
+.badge-primary {
+    background-color: var(--vsc-accent);
+    color: #0a0a0a;
+}
+
+.badge-info {
+    background-color: var(--vsc-info);
+}
+
+.nav-tabs .nav-link.active {
+    border-color: var(--vsc-border) var(--vsc-border) var(--vsc-bg-elevated);
+    color: var(--vsc-accent);
+}
+
+.form-control:focus,
+.btn:focus,
+.custom-control-input:focus ~ .custom-control-label::before {
+    border-color: var(--vsc-accent) !important;
+    box-shadow: 0 0 0 0.2rem var(--vsc-accent-muted) !important;
+}
+
+.form-check-input:checked,
+.custom-control-input:checked ~ .custom-control-label::before {
+    background-color: var(--vsc-accent) !important;
+    border-color: var(--vsc-accent) !important;
+}
+
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+::-webkit-scrollbar-track {
+    background: var(--vsc-bg);
+}
+::-webkit-scrollbar-thumb {
+    background: var(--vsc-border-strong);
+    border-radius: var(--radius-sm);
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--vsc-text-faint);
+}
+
+/* ——— Shell: side panel ——— */
+.side-panel {
+    position: fixed;
+    top: 0;
+    bottom: 28px;
+    left: var(--activity-bar-width, 4rem);
+    width: var(--side-panel-width, 300px);
+    background: var(--vsc-bg-elevated);
+    border-right: var(--border-hairline);
+    z-index: 900;
+    overflow: hidden;
+}
+
+/* Flex column: header/filters/pagination keep their natural size, the
+   list (.explorer-list/.history-list) is the only part that scrolls. */
+.side-panel-pane {
+    display: none;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+.side-panel-pane.active { display: flex; }
+
+/* Resizable: drag #side-panel-resize-handle (see shell.js) to change
+   --side-panel-width. */
+#side-panel-resize-handle {
+    position: fixed;
+    top: 0;
+    bottom: 28px;
+    left: calc(var(--activity-bar-width, 4rem) + var(--side-panel-width, 300px));
+    width: 4px;
+    cursor: col-resize;
+    z-index: 901;
+    background: transparent;
+}
+#side-panel-resize-handle:hover, #side-panel-resize-handle.resizing {
+    background: var(--vsc-accent);
+}
+
+#wrapper.panel-open #page-content-wrapper {
+    margin-left: calc(var(--activity-bar-width, 4rem) + var(--side-panel-width, 300px));
+}
+
+.explorer-list, .history-list {
+    flex: 1 1 auto;
+    min-height: 0; /* let flex shrink below content size so this scrolls instead of the pane */
+    overflow-y: auto;
+}
+
+/* ——— Shell: tab strip ——— */
+.qd-tabs {
+    display: flex;
+    align-items: center;
+    background: var(--vsc-bg-elevated);
+    border-bottom: var(--border-hairline);
+    height: 36px;
+    overflow-x: auto;
+}
+
+.qd-tabs-list {
+    display: flex;
+    flex: 1;
+    height: 100%;
+}
+
+.qd-tab {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    padding: 0 .6rem;
+    height: 100%;
+    font-size: .8rem;
+    color: var(--vsc-text-muted);
+    border-right: var(--border-hairline);
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    white-space: nowrap;
+    user-select: none;
+}
+
+.qd-tab:hover { color: var(--vsc-text); background: var(--vsc-bg-hover); }
+
+.qd-tab.active {
+    color: var(--vsc-text);
+    background: var(--vsc-bg);
+    border-bottom-color: var(--vsc-accent);
+}
+
+.qd-tab-close {
+    opacity: 0;
+    padding: 0 .15rem;
+    transition: opacity 0.15s ease;
+}
+
+.qd-tab:hover .qd-tab-close, .qd-tab.active .qd-tab-close { opacity: 1; }
+.qd-tab-close:hover { color: var(--vsc-danger); }
+
+.qd-tab-add-btn {
+    background: transparent;
+    border: none;
+    color: var(--vsc-text-muted);
+    height: 36px;
+    width: 36px;
+    flex-shrink: 0;
+}
+.qd-tab-add-btn:hover { color: var(--vsc-text); background: var(--vsc-bg-hover); }
+
+.qd-tab-content {
+    position: relative;
+    height: calc(100vh - 36px - 28px);
+}
+
+/* Absolute-positioned panes (rather than relying on a height:100% cascade
+   through several ancestors) so a tab's content — especially an iframe —
+   always gets a real, non-zero box to render into. */
+.qd-tabpane {
+    display: none;
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    overflow-y: auto;
+}
+.qd-tabpane.active { display: block; }
+.qd-tabpane-report { overflow: hidden; }
+.qd-tabpane-report iframe {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: none;
+}
+
+/* While dragging a resize handle (shell.js), iframes must not capture mouse
+   events — otherwise the drag "loses" the cursor the moment it crosses one. */
+.qd-resizing iframe {
+    pointer-events: none;
+}
+
+.action-builder-workspace { height: 100%; }
+.action-builder-workspace .card { height: 100%; }
+
+/* ——— Shell: status bar ——— */
+.qd-status-bar {
+    position: fixed;
+    bottom: 0;
+    left: var(--activity-bar-width, 4rem);
+    right: 0;
+    height: 28px;
+    background: var(--vsc-accent);
+    color: #0a0a0a;
+    font-size: .72rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 .75rem;
+    z-index: 950;
+}
+
+.qd-status-bar .version-item { margin-right: .9rem; }
+.qd-status-bar .version-name { color: rgba(0,0,0,.6); }
+.qd-status-bar .version-number { color: #0a0a0a; font-weight: 600; }
+.qd-status-bar .version-error, .qd-status-bar .version-not-installed { color: rgba(0,0,0,.55); }
+.qd-status-bar-right a { color: #0a0a0a; text-decoration: underline; }
+
+/* ——— History panel badges (moved from the retired history.html page) ——— */
+.badge-pending   { background: #6c757d; }
+.badge-running   { background: #fd7e14; }
+.badge-completed { background: #198754; }
+.badge-failed    { background: #dc3545; }
+.badge-fit-pass  { background: #198754; }
+.badge-fit-partial { background: #ffc107; color: #111; }
+.badge-fit-fail  { background: #dc3545; }
+.badge-fit-unknown { background: #6c757d; }
+.history-row { font-size: .8rem; }

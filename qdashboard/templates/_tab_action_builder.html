@@ -1,0 +1,194 @@
+<div class="row no-gutters action-builder-workspace">
+        <!-- Left Panel: Action Card Builder-->
+        <div class="col-lg-7 col-md-7 panel-builder p-0">
+            <div class="card">
+                <div class="panel-header card-header">
+                    <div class="d-flex align-items-center justify-content-between" style="gap:.4rem;">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-sliders-h mr-1"></i>
+                            <span class="font-weight-semibold">Configuration</span>
+                        </div>
+                        <div class="d-flex align-items-center" style="gap:.4rem;">
+                            <select class="form-control form-control-sm" id="qpu-select"
+                                    style="max-width:140px" onchange="loadQpuData()">
+                                {% for qpu in qpus %}
+                                <option value="{{ qpu }}" {% if loop.first %}selected{% endif %}>{{ qpu }}</option>
+                                {% endfor %}
+                            </select>
+                            <select multiple id="qubit-select" style="display:none"></select>
+                            <div class="dropdown" id="qubit-dropdown">
+                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button"
+                                        id="qubit-dropdown-btn" data-toggle="dropdown"
+                                        aria-haspopup="true" aria-expanded="false"
+                                        style="font-size:.8rem; white-space:nowrap; max-width:150px;">
+                                    <i class="fas fa-microchip mr-1"></i><span id="qubit-dropdown-label">Qubits</span>
+                                </button>
+                                <div class="dropdown-menu p-2" id="qubit-dropdown-menu"
+                                     style="min-width:150px; max-height:260px; overflow-y:auto;"
+                                     aria-labelledby="qubit-dropdown-btn">
+                                    <!-- Checkboxes populated dynamically -->
+                                </div>
+                            </div>
+                            <div class="form-check mb-0 ml-1" style="white-space:nowrap;">
+                                <input class="form-check-input" type="checkbox" id="update-platform-checkbox" checked>
+                                <label class="form-check-label text-light small" for="update-platform-checkbox">
+                                    Update platform
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <ul class="nav nav-tabs" id="experiment-tabs" role="tablist">
+                        <li class="nav-item">
+                            <a class="nav-link active" id="action-builder-tab" data-toggle="tab" href="#action-builder" role="tab" aria-controls="action-builder" aria-selected="true">
+                                <i class="fas fa-tasks"></i> Action Card Builder
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" id="qpu-config-tab" data-toggle="tab" href="#qpu-config" role="tab" aria-controls="qpu-config" aria-selected="false">
+                                <i class="fas fa-cogs"></i> QPU Configuration
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" id="qpu-calibration-tab" data-toggle="tab" href="#qpu-calibration" role="tab" aria-controls="qpu-calibration" aria-selected="false">
+                                <i class="fas fa-drafting-compass"></i> QPU Calibration
+                            </a>
+                        </li>
+                    </ul>
+                    <div class="tab-content" id="experiment-tabs-content">
+                        <!-- Action Card Builder Tab -->
+                        <div class="tab-pane fade show active" id="action-builder" role="tabpanel" aria-labelledby="action-builder-tab">
+                            {% if is_new_qibolab %}
+                            <div class="action-builder-scroll">
+                                <div class="mt-2">
+                                    <div id="action-card-builder" class="action-card-builder">
+                                        <div class="drop-zone-empty" id="empty-state">
+                                            <div>
+                                                <i class="fas fa-plus-circle fa-3x mb-3"></i>
+                                                <p>Drag experiments here to build your action card</p>
+                                            </div>
+                                        </div>
+                                        <div class="action-tabs-wrapper" id="action-tabs-wrapper" style="display:none;">
+                                            <div class="action-tabs-list" id="action-tabs-list"></div>
+                                            <div class="action-tabs-content" id="action-tabs-content"></div>
+                                        </div>
+                                    </div>
+                                    <!-- Qubit parameter overrides (collapsed by default) -->
+                                    <div id="qubit-parameters" class="mt-2"></div>
+                                </div>
+                            </div>
+                            <div class="action-builder-footer d-flex align-items-center flex-wrap" style="gap:.5rem;">
+                                <button class="btn btn-primary btn-sm" id="generate-yaml-btn" disabled>
+                                    <i class="fas fa-cogs"></i> YAML
+                                </button>
+                                <button class="btn btn-success btn-sm" id="run-experiment-btn" disabled>
+                                    <i class="fas fa-play"></i> Run
+                                </button>
+                                <button class="btn btn-info btn-sm" id="save-action-node-btn" disabled>
+                                    <i class="fas fa-save"></i> Save Node
+                                </button>
+                            </div>
+                            {% else %}
+                            <div class="alert alert-warning mt-3" role="alert">
+                                <h4 class="alert-heading">Feature Not Available</h4>
+                                <p>The experiment builder requires <strong>qibolab version > 0.2.0</strong>. Your current version is {{ qibo_versions.qibolab }}.</p>
+                                <hr>
+                                <p class="mb-0">Please upgrade qibolab to use this feature.</p>
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <!-- QPU Configuration Tab -->
+                        <div class="tab-pane fade" id="qpu-config" role="tabpanel" aria-labelledby="qpu-config-tab">
+                            <div class="d-flex justify-content-end mt-2 mb-1">
+                                <button class="btn btn-sm btn-primary" id="save-parameters-btn">
+                                    <i class="fas fa-save mr-1"></i> Save Parameters
+                                </button>
+                            </div>
+                            <div id="qpu-config-editor" style="height:500px;"></div>
+                        </div>
+
+                        <!-- QPU Calibration Tab -->
+                        <div class="tab-pane fade" id="qpu-calibration" role="tabpanel" aria-labelledby="qpu-calibration-tab">
+                            <div id="qpu-calibration-tables" class="mt-3">
+                                <!-- Calibration tables will be rendered here by JavaScript -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+        <div id="panel-builder-handle" class="panel-builder-resize-handle" title="Drag to resize"></div>
+
+        <!-- #center panel -->
+
+        <!-- Right Panel: Results Viewer -->
+        <div class="col-lg-5 col-md-5 panel-results p-0">
+            <div class="card h-100">
+                <div class="panel-header card-header d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center">
+                        <i class="fas fa-chart-bar mr-1"></i>
+                        <span class="font-weight-semibold">Results</span>
+                        <small id="results-experiment-label" class="text-muted ml-2">Select an experiment</small>
+                    </div>
+                    <div class="d-flex align-items-center">
+                        <span id="results-experiment-id" class="badge badge-secondary mr-1"></span>
+                        <a id="results-open-link" href="#" title="Open in new tab"
+                           style="display:none; color:#aaa; font-size:.85rem;">
+                            <i class="fas fa-external-link-alt"></i>
+                        </a>
+                    </div>
+                </div>
+                <div id="results-panel-content" class="card-body p-2 overflow-auto">
+                    <div id="results-empty-state" class="text-center p-4 text-muted">
+                        <i class="fas fa-terminal fa-2x mb-2 d-block"></i>
+                        <p class="mb-0 small">Run an experiment to see live logs<br>or click <i class="fas fa-chart-bar"></i> to load last result</p>
+                    </div>
+                    <div id="results-log-viewer" style="display:none;">
+                        <div class="d-flex justify-content-between align-items-center mb-1 results-log-header"
+                             style="cursor:pointer;"
+                             data-toggle="collapse" data-target="#results-log-body"
+                             aria-expanded="true" aria-controls="results-log-body">
+                            <small class="text-muted"><i class="fas fa-terminal mr-1"></i> SLURM Log</small>
+                            <div class="d-flex align-items-center" style="gap:.4rem;">
+                                <span id="results-log-status" class="badge badge-warning">Running</span>
+                                <i class="fas fa-chevron-down results-log-chevron" style="font-size:.7rem; color:#666; transition:transform .2s;"></i>
+                            </div>
+                        </div>
+                        <!-- Error/traceback summary (hidden until an exception is detected) -->
+                        <div id="results-error-summary" style="display:none;" class="results-error-summary mb-1">
+                            <div class="results-error-header d-flex justify-content-between align-items-center px-2 py-1"
+                                 style="cursor:pointer;"
+                                 data-toggle="collapse" data-target="#results-error-body"
+                                 aria-expanded="true" aria-controls="results-error-body">
+                                <small>
+                                    <i class="fas fa-exclamation-triangle mr-1 text-warning"></i>
+                                    <span id="results-error-type" class="text-warning font-weight-bold"></span>
+                                    <span id="results-error-message" class="text-muted ml-1" style="font-size:.7rem;"></span>
+                                </small>
+                                <i class="fas fa-chevron-down results-error-chevron" style="font-size:.65rem; color:#888; transition:transform .2s;"></i>
+                            </div>
+                            <div class="collapse show" id="results-error-body">
+                                <pre id="results-error-traceback" class="error-traceback"></pre>
+                            </div>
+                        </div>
+                        <div class="collapse show" id="results-log-body">
+                            <pre id="results-log-content" class="log-viewer mb-1">Waiting for logs…</pre>
+                        </div>
+                    </div>
+                    <div id="results-loading" style="display:none;" class="text-center p-4 text-muted">
+                        <i class="fas fa-spinner fa-spin fa-2x"></i>
+                        <p class="mt-2">Loading report…</p>
+                    </div>
+                    <div id="results-not-found" style="display:none;" class="text-center p-4 text-muted">
+                        <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
+                        <p>No previous results found for this<br>experiment, QPU and qubit selection.</p>
+                    </div>
+                    <div id="results-report-container" style="display:none;"></div>
+                </div>
+            </div>
+        </div>
+</div>
+

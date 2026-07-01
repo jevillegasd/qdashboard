@@ -12,19 +12,18 @@ import shutil
 import yaml
 import traceback as _tb
 from typing import Optional
-from fastapi import APIRouter, Request, Form, File, UploadFile, Query
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi import APIRouter, Request, Form, File, UploadFile, Query, HTTPException
+from fastapi.responses import FileResponse, Response, StreamingResponse, RedirectResponse
 from starlette.responses import HTMLResponse
 
 from ..qpu.monitoring import get_qpu_health, get_available_qpus, get_qibo_versions, get_qpu_details, get_qpu_list, qpu_parameters
-from ..qpu.platforms import get_platforms_path, list_repository_branches, switch_repository_branch, get_current_branch_info, commit_changes, push_changes, stash_changes, list_stashes, apply_latest_stash, discard_changes, get_partition
-from ..qpu.slurm import get_slurm_status, get_slurm_output, parse_slurm_log_for_errors, slurm_log_path
+from ..qpu.platforms import get_platforms_path, list_repository_branches, switch_repository_branch, get_current_branch_info, commit_changes, generate_commit_message, push_changes, stash_changes, list_stashes, apply_latest_stash, discard_changes, get_partition
+from ..qpu.slurm import get_slurm_status, get_slurm_output
 from ..qpu.topology import qpu_connectivity, infer_topology_from_connectivity, generate_topology_visualization
 from ..experiments.protocols import get_qibocal_protocols, get_protocol_attributes
 from ..experiments import submit_experiment, repeat_experiment, get_experiment_status, list_user_experiments
 from ..experiments.job_submission import find_latest_experiment
-from ..web.reports import (report_viewer, get_latest_report_path, get_report_fragment,
-                            get_full_report_html, check_qibocal_availability)
+from ..web.reports import get_latest_report_path, get_report_fragment, check_qibocal_availability
 from ..utils.formatters import yaml_response, json_response
 from qdashboard.utils.logger import get_logger
 from packaging.version import parse as parse_version
@@ -82,38 +81,24 @@ def _html_error_response(
     exc: Exception,
     status_code: int = 500,
 ) -> HTMLResponse:
-    """Return an HTML error page.
+    """Render the themed error page for a caught exception (see core.app.render_error_page).
 
-    In debug mode a styled traceback page is rendered so developers can see
-    the full stack without leaving the browser.
+    Prefer `raise HTTPException(...)` where possible — the app-wide handler
+    in core/app.py renders the same page automatically. This is for routes
+    that want to keep handling the request after catching the exception
+    rather than letting it propagate.
     """
+    from ..core.app import render_error_page
     debug = request.app.state.config.get('debug', False)
     trace = _tb.format_exc()
     logger.error("[%s %s] %s: %s\n%s",
                  request.method, request.url.path,
                  type(exc).__name__, exc, trace)
-    if debug:
-        import html as _html
-        safe_trace = _html.escape(trace)
-        safe_msg   = _html.escape(str(exc))
-        safe_type  = _html.escape(type(exc).__name__)
-        content = (
-            '<html><head><title>QDashboard Error</title>'
-            '<style>body{background:#1a1a2e;color:#e0e0e0;font-family:monospace;padding:2rem}'
-            'h2{color:#ff6b6b}pre{background:#0d0d1a;padding:1.2rem;overflow:auto;'
-            'border-left:3px solid #ff6b6b;white-space:pre-wrap}'
-            '.ctx{color:#888;font-size:.85em;margin-bottom:1rem}</style></head><body>'
-            f'<h2>&#9888; {safe_type}</h2>'
-            f'<p class="ctx">{request.method} {request.url}</p>'
-            f'<pre>{safe_trace}</pre>'
-            '</body></html>'
-        )
-    else:
-        content = (
-            f'<html><body><h2>Internal Server Error</h2>'
-            f'<p>{status_code}: {type(exc).__name__}</p></body></html>'
-        )
-    return HTMLResponse(content=content, status_code=status_code)
+    return render_error_page(
+        request, status_code,
+        message=str(exc) if debug else None,
+        trace=trace if debug else None,
+    )
 
 
 def _safe_path_join(base: str, user_path: str) -> str | None:
@@ -145,26 +130,83 @@ def register_routes(app, config):
     return app
 
 
-@router.get("/", name="dashboard", include_in_schema=False)
-async def dashboard(request: Request):
-    """Main dashboard route with QPU health and SLURM status."""
+@router.get("/", name="shell", include_in_schema=False)
+@router.get("/experiments", name="experiments", include_in_schema=False)
+async def shell(request: Request):
+    """VS Code-style app shell: activity bar + side panel + tab strip.
+
+    Gathers the data for every singleton tab/panel (Slurm Monitor, QPU Status,
+    Action Card Builder, Explorer, Experiment Library, History) in one go,
+    since shell.html renders all of them once and toggles visibility in JS
+    rather than fetching each on demand.
+    """
     from ..core.app import templates
 
+    version_data = get_qibo_versions(request=request)
+
+    # Slurm Monitor tab
     qpu_health = get_qpu_health()
     available_qpus = get_available_qpus()
-    version_data = get_qibo_versions(request=request)
     slurm_queue_status = get_slurm_status()
     last_slurm_log = get_slurm_output()
 
-    logger.info("Dashboard loaded with QPU health and SLURM status")
+    # QPU Status tab
+    config = _get_config(request)
+    qpu_details = get_qpu_details()
+    platforms_path = get_platforms_path(config['root'])
+    git_branches_info = list_repository_branches(platforms_path) if platforms_path else None
+    git_current_branch_info = get_current_branch_info(platforms_path) if platforms_path else None
 
-    html = templates.get_template('dashboard.html').render(
+    # Action Card Builder tab + Experiment Library panel
+    protocols = get_qibocal_protocols()
+    qpus_list = get_qpu_list()
+    qibolab_version = version_data['versions'].get('qibolab', '0.0.0')
+    is_new_qibolab = parse_version(qibolab_version) > parse_version('0.2.0')
+    protocols_with_attributes = {}
+    for category, protocol_list in protocols.items():
+        protocols_with_attributes[category] = []
+        for protocol in protocol_list:
+            protocol_attrs = get_protocol_attributes(protocol)
+            protocol_with_attrs = protocol.copy()
+            protocol_with_attrs['attributes'] = protocol_attrs
+            protocols_with_attributes[category].append(protocol_with_attrs)
+
+    # History panel filters: QPUs/protocols that actually appear in recorded history.
+    # Kept separate from `qpus_list` (the Action Card Builder's full platform list).
+    history_protocols = []
+    history_qpus = qpus_list
+    try:
+        from ..db.database import get_db_connection, get_distinct_protocols, get_distinct_qpus
+        with get_db_connection(config) as conn:
+            history_protocols = get_distinct_protocols(conn)
+            history_qpus = get_distinct_qpus(conn) or qpus_list
+    except Exception:
+        pass
+
+    logger.info("Shell loaded (Slurm/QPU/Action-builder tabs + Explorer/Library/History panels)")
+
+    html = templates.get_template('shell.html').render(
         request=request,
+        qibo_versions=version_data['versions'],
+        # Slurm Monitor
         qpu_health=qpu_health,
         available_qpus=available_qpus,
-        qibo_versions=version_data['versions'],
         slurm_queue_status=slurm_queue_status,
         last_slurm_log=last_slurm_log,
+        # QPU Status
+        qpu_details=qpu_details,
+        git_branch=git_current_branch_info['branch'] if git_current_branch_info else None,
+        git_commit=git_current_branch_info['commit'] if git_current_branch_info else None,
+        platforms_path=platforms_path,
+        branches_info=git_branches_info,
+        current_branch_info=git_current_branch_info,
+        # Action Card Builder + Experiment Library
+        protocols=protocols_with_attributes,
+        qpus=qpus_list,
+        is_new_qibolab=is_new_qibolab,
+        # History
+        history_protocols=history_protocols,
+        history_qpus=history_qpus,
     )
     response = HTMLResponse(content=html, headers=_no_cache_headers())
     if not version_data.get('from_cache', False):
@@ -183,14 +225,14 @@ async def qqsubmit(request: Request, qpu: Optional[str] = Query(None)):
 
     if not qpu or not _QPU_NAME_RE.match(qpu):
         logger.warning(f"Invalid QPU name rejected: {qpu!r}")
-        return Response(content='Invalid QPU name', status_code=400)
+        raise HTTPException(400, detail='Invalid QPU name')
 
     config = _get_config(request)
     script_path = os.path.realpath(os.path.join(config['root'], "work/qqsubmit.sh"))
     resolved_root = os.path.realpath(config['root'])
     if not script_path.startswith(resolved_root + os.sep) and script_path != resolved_root:
         logger.error(f"Script path escapes root: {script_path}")
-        return Response(content='Forbidden', status_code=403)
+        raise HTTPException(403, detail='Forbidden')
 
     os_process = subprocess.Popen(
         ["bash", script_path, config['home_path'], qpu],
@@ -202,7 +244,7 @@ async def qqsubmit(request: Request, qpu: Optional[str] = Query(None)):
         os_process.kill()
         os_process.communicate()
         logger.error(f"qqsubmit timed out for QPU: {qpu}")
-        return Response(content='Job submission timed out', status_code=504)
+        raise HTTPException(504, detail='Job submission timed out')
     out_string = stdout.decode('utf-8', errors='replace').replace('\n', '<br>')
     logger.info(f"Job submitted to SLURM queue for QPU: {qpu}")
     html = templates.get_template('job_submission.html').render(
@@ -210,73 +252,18 @@ async def qqsubmit(request: Request, qpu: Optional[str] = Query(None)):
     return HTMLResponse(content=html)
 
 
-@router.get("/latest", name="latest", include_in_schema=False)
-async def latest(request: Request):
-    """View the latest report."""
-    from ..core.app import templates
-
-    config = _get_config(request)
+@router.get("/latest_report_page", name="latest_report_page", include_in_schema=False)
+async def latest_report_page(request: Request):
+    """Resolve the latest report to an experiment_id and hand off to the
+    iframe-friendly /experiment_report_page/{id} route, so "Latest Report"
+    can open as a shell tab instead of navigating to the full /latest page."""
     last_path = get_latest_report_path()
-    version_data = get_qibo_versions(request=request)
-
-    def _not_found_response(last_path):
-        slurm_queue_status = get_slurm_status()
-        last_slurm_log = get_slurm_output()
-        has_error, error_message = parse_slurm_log_for_errors()
-        html = templates.get_template('latest_not_found.html').render(
-            request=request,
-            has_error=has_error,
-            error_message=error_message,
-            last_path=last_path,
-            slurm_queue_status=slurm_queue_status,
-            last_slurm_log=last_slurm_log,
-            qibo_versions=version_data['versions'],
-        )
-        response = HTMLResponse(content=html)
-        if not version_data.get('from_cache', False):
-            response.set_cookie('qibo_versions', version_data['cookie_data'],
-                                max_age=24 * 60 * 60, httponly=True, secure=False)
-        return response
-
     if not last_path:
-        last_path = config.get('home_path', os.path.expanduser('~'))
-        logger.warning(f"Last report not found, using default path: {last_path}")
-        return _not_found_response(last_path)
-
-    try:
-        data_dir = config.get('data_dir', os.path.join(config['root'], 'data'))
-        res = report_viewer(last_path, data_dir, request, version_data['versions'], access_mode="latest")
-        logger.info(f"Latest report viewed: {last_path}")
-        return res
-    except FileNotFoundError:
-        last_path = "/" + last_path.replace(data_dir, "").lstrip("/")
-        logger.warning(f"Report not found: {last_path}")
-        return _not_found_response(last_path)
-    except Exception as e:
-        return _html_error_response(request, e)
-
-
-@router.get("/report_assets/{filename:path}", name="report_assets", include_in_schema=False)
-async def report_assets(request: Request, filename: str):
-    """Serve assets from the latest report directory."""
-    config = _get_config(request)
-    try:
-        latest_path = get_latest_report_path()
-        if latest_path:
-            latest_path = os.path.realpath(latest_path)
-            asset_path = os.path.realpath(os.path.join(latest_path, filename))
-
-            if os.path.commonpath([latest_path, asset_path]) != latest_path:
-                logger.warning(f"Attempted path traversal for asset: {filename}")
-                return Response(content='Asset not found', status_code=404)
-
-            if os.path.exists(asset_path):
-                logger.info(f"Serving asset: {asset_path}")
-                return FileResponse(asset_path)
-        logger.warning(f"Asset not found: {filename}")
-        return Response(content='Asset not found', status_code=404)
-    except Exception as e:
-        return _html_error_response(request, e)
+        raise HTTPException(404, detail='No reports yet — run an experiment first.')
+    # last_path follows the same data_dir/<platform>/<date>/<experiment_id>/output
+    # convention as experiment_report_page's glob match.
+    experiment_id = os.path.basename(os.path.dirname(last_path.rstrip('/')))
+    return RedirectResponse(url=f"/experiment_report_page/{experiment_id}", status_code=307)
 
 
 @router.post("/cancel_job", name="cancel_job", tags=["SLURM"],
@@ -381,32 +368,8 @@ async def api_slurm_stream(request: Request):
 
 @router.get("/qpus", name="qpus", include_in_schema=False)
 async def qpus(request: Request):
-    """QPU status and monitoring page."""
-    from ..core.app import templates
-
-    config = _get_config(request)
-    qpu_details = get_qpu_details()
-    version_data = get_qibo_versions(request=request)
-    platforms_path = get_platforms_path(config['root'])
-    git_branches_info = list_repository_branches(platforms_path) if platforms_path else None
-    git_current_branch_info = get_current_branch_info(platforms_path) if platforms_path else None
-
-    logger.info("QPU status page loaded")
-    html = templates.get_template('qpus.html').render(
-        request=request,
-        qpus=qpu_details,
-        git_branch=git_current_branch_info['branch'] if git_current_branch_info else None,
-        git_commit=git_current_branch_info['commit'] if git_current_branch_info else None,
-        platforms_path=platforms_path,
-        branches_info=git_branches_info,
-        current_branch_info=git_current_branch_info,
-        qibo_versions=version_data['versions'],
-    )
-    response = HTMLResponse(content=html)
-    if not version_data.get('from_cache', False):
-        response.set_cookie('qibo_versions', version_data['cookie_data'],
-                            max_age=24 * 60 * 60, httponly=True, secure=False)
-    return response
+    """QPU Status is now a tab inside the shell — redirect there, opening it."""
+    return RedirectResponse(url="/?open=qpu_status", status_code=307)
 
 
 @router.get("/api/platforms/branches", name="api_platforms_branches", tags=["Platforms"],
@@ -491,6 +454,22 @@ async def api_platforms_current(request: Request):
         return _error_response(request, e)
 
 
+@router.get("/api/platforms/commit_message", name="api_platforms_commit_message", tags=["Platforms"],
+            summary="Preview the auto-generated commit message for pending changes")
+async def api_platforms_commit_message(request: Request):
+    """API endpoint to preview the commit message that would be used for the
+    currently pending (uncommitted) changes, without committing anything."""
+    try:
+        config = _get_config(request)
+        platforms_path = get_platforms_path(config['root'])
+        if not platforms_path:
+            return Response(content=json.dumps({'error': 'Platforms directory not available'}),
+                            status_code=404, media_type='application/json')
+        return {'message': generate_commit_message(platforms_path)}
+    except Exception as e:
+        return _error_response(request, e)
+
+
 @router.post("/api/platforms/commit", name="api_platforms_commit", tags=["Platforms"],
              summary="Commit pending changes in the platforms repository")
 async def api_platforms_commit(request: Request):
@@ -502,7 +481,7 @@ async def api_platforms_commit(request: Request):
             return Response(content=json.dumps({'error': 'Platforms directory not available'}),
                             status_code=404, media_type='application/json')
         data = await request.json() if request.headers.get('content-type', '').startswith('application/json') else {}
-        commit_message = data.get('message', 'Update platform configurations (qibolab version detection)')
+        commit_message = data.get('message')
         result = commit_changes(platforms_path, commit_message)
         if not result['success']:
             return Response(content=json.dumps({'error': result.get('error', 'Commit failed')}),
@@ -620,39 +599,11 @@ async def api_protocol_details(protocol_id: str):
                         status_code=404, media_type='application/json')
 
 
-@router.get("/experiments", name="experiments", include_in_schema=False)
-async def experiments(request: Request):
-    """Experiment builder page."""
-    from ..core.app import templates
-
-    protocols = get_qibocal_protocols()
-    qpus_list = get_qpu_list()
-    version_data = get_qibo_versions(request=request)
-    qibolab_version = version_data['versions'].get('qibolab', '0.0.0')
-    is_new_qibolab = parse_version(qibolab_version) > parse_version('0.2.0')
-
-    protocols_with_attributes = {}
-    for category, protocol_list in protocols.items():
-        protocols_with_attributes[category] = []
-        for protocol in protocol_list:
-            protocol_attrs = get_protocol_attributes(protocol)
-            protocol_with_attrs = protocol.copy()
-            protocol_with_attrs['attributes'] = protocol_attrs
-            protocols_with_attributes[category].append(protocol_with_attrs)
-
-    logger.info("Experiment builder page loaded")
-    html = templates.get_template('experiments.html').render(
-        request=request,
-        protocols=protocols_with_attributes,
-        qpus=qpus_list,
-        qibo_versions=version_data['versions'],
-        is_new_qibolab=is_new_qibolab,
-    )
-    response = HTMLResponse(content=html)
-    if not version_data.get('from_cache', False):
-        response.set_cookie('qibo_versions', version_data['cookie_data'],
-                            max_age=24 * 60 * 60, httponly=True, secure=False)
-    return response
+@router.get("/api/qpus", name="qpus_api", tags=["QPU"],
+            summary="List available QPU platforms")
+async def qpus_api():
+    """API endpoint to get the list of available QPU platforms."""
+    return {"qpus": get_qpu_list()}
 
 
 @router.get("/api/qpu_parameters/{platform}", name="qpu_parameters_api", tags=["QPU"],
@@ -1177,8 +1128,7 @@ async def experiment_report_page(request: Request, experiment_id: str):
         import glob as _glob
         matches = _glob.glob(os.path.join(data_dir, '*', '*', experiment_id, 'output'))
         if not matches:
-            return HTMLResponse(content="<html><body><p>Report not found.</p></body></html>",
-                                status_code=404)
+            raise HTTPException(404, detail=f'Report not found: {experiment_id}')
         output_dir = matches[0]
         fragment = get_report_fragment(experiment_id, output_dir)
         # Compute path relative to data_dir — must match the base used by qibocal_cli_action
@@ -1197,13 +1147,13 @@ async def experiment_report_page(request: Request, experiment_id: str):
             qibocal_available=qibocal_ok,
         )
         return HTMLResponse(content=html)
+    except HTTPException:
+        raise
     except FileNotFoundError:
-        return HTMLResponse(content="<html><body><p>Report not ready yet.</p></body></html>",
-                            status_code=404)
+        raise HTTPException(404, detail='Report not available.')
     except Exception as e:
         logger.exception("experiment_report_page error for %s", experiment_id)
-        return HTMLResponse(content=f"<html><body><p>Error: {e}</p></body></html>",
-                            status_code=500)
+        raise HTTPException(500, detail=str(e))
 
 
 # ------------------------------------------------------------------ #
@@ -1289,30 +1239,8 @@ async def api_experiment_log(request: Request, experiment_id: str):
 
 @router.get("/history", name="history", include_in_schema=False)
 async def history_page(request: Request):
-    """Experiment history browser page."""
-    from ..core.app import templates
-    try:
-        config = _get_config(request)
-        version_data = get_qibo_versions(request=request)
-        qpus = get_qpu_list()
-        # Fetch distinct protocols from DB for filter dropdowns
-        protocols_list = []
-        try:
-            from ..db.database import get_db_connection, get_distinct_protocols, get_distinct_qpus
-            with get_db_connection(config) as conn:
-                protocols_list = get_distinct_protocols(conn)
-                qpus = get_distinct_qpus(conn) or qpus
-        except Exception:
-            pass
-        html = templates.get_template('history.html').render(
-            request=request,
-            qibo_versions=version_data['versions'],
-            qpus=qpus,
-            protocols=protocols_list,
-        )
-        return HTMLResponse(content=html)
-    except Exception as e:
-        return _html_error_response(request, e)
+    """History is now a side panel inside the shell — redirect there, opening it."""
+    return RedirectResponse(url="/?panel=history", status_code=307)
 
 
 @router.get("/api/history", name="api_history_list", tags=["Experiments"],
@@ -1331,6 +1259,7 @@ async def api_history_list(
     """Return paginated experiment history rows from the DB."""
     try:
         config = _get_config(request)
+        data_dir = config.get('data_dir') or os.path.join(config.get('root', ''), 'data')
         from ..db.database import get_db_connection, query_runs, count_runs
         offset = (page - 1) * per_page
         with get_db_connection(config) as conn:
@@ -1339,6 +1268,19 @@ async def api_history_list(
                               date_to=date_to, limit=per_page, offset=offset)
             total = count_runs(conn, platform=platform, protocol=protocol,
                                status=status, fit=fit, date_from=date_from, date_to=date_to)
+        # explorer_path is the experiment dir (parent of "output") relative to
+        # data_dir, for the Explorer panel's "open directory" link — computed
+        # here so the raw absolute output_dir never has to reach the client.
+        for row in rows:
+            output_dir = row.get('output_dir')
+            if output_dir:
+                try:
+                    row['explorer_path'] = os.path.relpath(os.path.dirname(output_dir), data_dir)
+                except ValueError:
+                    row['explorer_path'] = None
+            else:
+                row['explorer_path'] = None
+        rows = [_sanitize_exp(row) for row in rows]
         return {
             'runs': rows,
             'total': total,

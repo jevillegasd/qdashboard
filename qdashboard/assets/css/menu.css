@@ -16,25 +16,39 @@
 /* 1. Sidebar Wrapper */
 #sidebar-wrapper {
     height: 100vh;
-    width: 4rem; /* Collapsed width to show only icons */
+    width: var(--activity-bar-width, 4rem);
     position: fixed;
     top: 0;
     left: 0; /* Always visible */
     z-index: 1000;
-    -webkit-transition: width .3s ease-out;
-    -moz-transition: width .3s ease-out;
-    -o-transition: width .3s ease-out;
-    transition: width .3s ease-out;
-    background-color: #2c2c2c;
-    border-right: 1px solid #444;
+    background-color: var(--vsc-bg-elevated);
+    border-right: 1px solid var(--vsc-border);
     display: flex;
     flex-direction: column;
     overflow: hidden; /* Hide overflowing content when collapsed */
 }
 
-/* Expanded state on hover */
-#sidebar-wrapper:hover {
-    width: 15rem;
+/* Resizable: drag #sidebar-resize-handle (see shell.js) to change
+   --activity-bar-width. No hover-expand — that would overlap the side
+   panel docked immediately to its right. */
+/* #sidebar-resize-handle {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: var(--activity-bar-width, 4rem);
+    width: 4px;
+    cursor: col-resize;
+    z-index: 1001;
+    background: transparent;
+}
+#sidebar-resize-handle:hover, #sidebar-resize-handle.resizing {
+    background: var(--vsc-accent);
+} */
+
+/* Once widened past icon-only width, reveal text labels permanently. */
+.activity-bar-wide #sidebar-wrapper .menu-text,
+.activity-bar-wide #sidebar-wrapper .sidebar-heading {
+    opacity: 1;
 }
 
 /* 1.1. Navigation Container */
@@ -50,7 +64,7 @@
     font-size: 1.2rem;
     font-weight: 500; /* Added for emphasis */
     color: #fff;
-    border-bottom: 1px solid #444; /* Added for separation */
+    border-bottom: 1px solid var(--vsc-border); /* Added for separation */
     white-space: nowrap; /* Prevent text wrapping */
     overflow: hidden; /* Hide text when collapsed */
     transition: opacity 0.3s ease;
@@ -67,21 +81,28 @@
 
 /* 3. List Group Items */
 #sidebar-wrapper .list-group-item {
-    background-color: #2c2c2c;
+    background-color: var(--vsc-bg-elevated);
     color: #ccc;
     border: none;
-    padding: 1rem 1.25rem; /* Standardized padding */
+    border-left: 3px solid transparent;
+    padding: 1rem calc(1.25rem - 3px); /* Standardized padding, minus accent bar width */
     font-weight: 500;
     white-space: nowrap; /* Prevent text wrapping */
     overflow: hidden; /* Hide overflowing text */
     display: flex;
     align-items: center;
-    transition: all 0.3s ease;
+    transition: all 0.2s ease;
 }
 
-#sidebar-wrapper .list-group-item:hover,
-#sidebar-wrapper .list-group-item.active { /* Added .active for current page */
-    background-color: #383838;
+#sidebar-wrapper .list-group-item:hover {
+    background-color: var(--vsc-bg-hover);
+    color: #fff;
+    text-decoration: none;
+}
+
+#sidebar-wrapper .list-group-item.active { /* Current page */
+    background-color: var(--vsc-bg-hover);
+    border-left-color: var(--vsc-accent);
     color: #fff;
     text-decoration: none;
 }
@@ -98,15 +119,12 @@
     justify-content: flex-start;
 }
 
-/* Text part of menu items */
+/* Text part of menu items — hidden at icon-only width, shown once the
+   activity bar is resized wide enough (see .activity-bar-wide above). */
 #sidebar-wrapper .list-group-item .menu-text {
     opacity: 0;
-    transition: opacity 0.3s ease;
-}
-
-/* Show text on hover */
-#sidebar-wrapper:hover .list-group-item .menu-text {
-    opacity: 1;
+    margin-left: 0.5rem;
+    transition: opacity 0.15s ease;
 }
 
 /* 3.1. Sidebar Footer for Package Versions */
@@ -115,8 +133,8 @@
     bottom: 0;
     left: 0;
     right: 0;
-    background-color: #2c2c2c;
-    border-top: 1px solid #444;
+    background-color: var(--vsc-bg-elevated);
+    border-top: 1px solid var(--vsc-border);
     padding: 0.75rem 1.25rem;
     font-size: 0.75rem;
     color: #999;
@@ -193,15 +211,14 @@
 #page-content-wrapper {
     width: 100%;
     min-height: 100vh;
-    margin-left: 4rem; /* Account for collapsed sidebar */
-    transition: margin-left 0.3s ease;
+    margin-left: var(--activity-bar-width, 4rem);
 }
 
 #page-content-wrapper .navbar {
     padding: 0.75rem 1.25rem;
-    background-color: #2c2c2c;
+    background-color: var(--vsc-bg-elevated);
     min-height: 60px;
-    border-bottom: 0px solid #2c2c2c;
+    border-bottom: 0px solid var(--vsc-bg-elevated);
 }
 
 #page-content-wrapper .container-fluid {
@@ -227,27 +244,13 @@
 /* 7. Page Content Positioning */
 /* Updated to work with always-visible sidebar */
 
-@media (min-width: 768px) {
-    #sidebar-wrapper {
-        width: 4rem; /* Collapsed width on desktop */
-    }
-
-    #sidebar-wrapper:hover {
-        width: 15rem; /* Expanded width on hover */
-    }
-
-    #page-content-wrapper {
-        margin-left: 4rem; /* Account for collapsed sidebar */
-    }
-}
-
 @media (max-width: 767px) {
     #sidebar-wrapper {
-        width: 4rem; /* Keep collapsed on mobile */
+        width: var(--activity-bar-width, 4rem);
         height: 100vh;
     }
-    
+
     #page-content-wrapper {
-        margin-left: 4rem; /* Consistent margin on mobile */
+        margin-left: var(--activity-bar-width, 4rem);
     }
 }

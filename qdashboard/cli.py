@@ -190,21 +190,15 @@ def main(argv: Optional[List[str]] = None) -> None:
     Args:
         argv: Command line arguments (defaults to sys.argv)
     """
-    # Load .env before building config so env vars are available
-    _load_env()
+    _load_env()  # before get_default_config(), so its env vars are available
 
-    # Parse command line arguments
     parser = create_parser()
     args = parser.parse_args(argv)
-    
-    # Get configuration
     config = get_default_config(args)
 
-    # Ensure required directories exist (first-run setup)
     for d in ('qd_root', 'data_dir', 'logs_dir', 'temp_dir'):
         ensure_directory_exists(config[d])
 
-    # Validate configuration
     try:
         validate_config(config)
     except Exception as e:
@@ -218,7 +212,6 @@ def main(argv: Optional[List[str]] = None) -> None:
         from .web.file_browser import make_file_router
         from .qpu.platforms import get_platforms_path
 
-        # Ensure qibolab platforms directory is available
         logger.info('QDashboard - CLI - Quantum Computing Dashboard')
         logger.info('Initializing QPU platforms...')
 
@@ -229,20 +222,13 @@ def main(argv: Optional[List[str]] = None) -> None:
         except Exception as e:
             logger.warning(f'Error setting up QPU platforms: {e}')
 
-        # Set config before creating app
         set_config(config)
-
-        # Create FastAPI application (also calls set_config internally)
         app = create_app(config)
-
-        # Register main routes
         register_routes(app, config)
 
-        # Register file browser router — serve the data directory
         file_router = make_file_router(config['data_dir'], config.get('key', ''))
         app.include_router(file_router)
 
-        # Print startup information
         logger.info('QDashboard server starting...')
         logger.info(f'Server running on: http://{config["host"]}:{config["port"]}')
         logger.info(f'Serving directory: {config["root"]}')
@@ -256,10 +242,9 @@ def main(argv: Optional[List[str]] = None) -> None:
         if 'debug' not in config:
             config['debug'] = False
 
-        # Start the Uvicorn ASGI server via the Server API so we can ensure
-        # Ctrl+C always triggers a clean shutdown even when a third-party library
-        # (e.g. qibolab) has replaced the SIGINT signal handler with one that
-        # raises RuntimeError instead of KeyboardInterrupt.
+        # Use the Server API (not uvicorn.run) so SIGINT/SIGTERM/SIGHUP all
+        # reliably trigger shutdown — SIGHUP is what sshd sends on disconnect
+        # for SSH-launched sessions, and uvicorn doesn't handle it itself.
         import signal as _signal
 
         uv_cfg = uvicorn.Config(
@@ -272,28 +257,36 @@ def main(argv: Optional[List[str]] = None) -> None:
         )
         server = uvicorn.Server(uv_cfg)
 
-        # Monkey-patch signal.signal so that whenever any library installs a
-        # SIGINT handler we wrap it: our wrapper sets server.should_exit first,
-        # then calls the library handler (swallowing any RuntimeError from it).
+        _shutdown_signals = {_signal.SIGINT, _signal.SIGTERM}
+        if hasattr(_signal, 'SIGHUP'):
+            _shutdown_signals.add(_signal.SIGHUP)
+
+        # Wrap any handler installed for these signals (e.g. by qibolab) so
+        # server.should_exit is always set first, regardless of what the
+        # wrapped handler does.
         _real_signal = _signal.signal
 
-        def _intercept_signal(sig, handler):
-            if sig == _signal.SIGINT and callable(handler):
-                _lib_handler = handler
-
-                def _wrapped(s, f):
-                    server.should_exit = True
+        def _make_wrapped(sig, lib_handler):
+            def _wrapped(s, f):
+                server.should_exit = True
+                if callable(lib_handler):
                     try:
-                        _lib_handler(s, f)
+                        lib_handler(s, f)
                     except (SystemExit, KeyboardInterrupt):
                         raise
                     except Exception:
                         pass  # swallow qibolab's RuntimeError
+            return _wrapped
 
-                return _real_signal(sig, _wrapped)
+        def _intercept_signal(sig, handler):
+            if sig in _shutdown_signals:
+                return _real_signal(sig, _make_wrapped(sig, handler))
             return _real_signal(sig, handler)
 
         _signal.signal = _intercept_signal
+        # uvicorn never installs a SIGHUP handler itself, so install one directly.
+        if hasattr(_signal, 'SIGHUP'):
+            _signal.signal(_signal.SIGHUP, None)
         try:
             server.run()
         finally:

@@ -1,0 +1,62 @@
+<div class="panel-header card-header d-flex align-items-center justify-content-between">
+    <div class="d-flex align-items-center">
+        <i class="fas fa-history mr-1"></i>
+        <span class="font-weight-semibold">History</span>
+    </div>
+    <span class="text-muted small" id="history-count-label"></span>
+</div>
+
+<div class="category-header" data-toggle="collapse" data-target="#history-filters-collapse"
+     aria-expanded="false" aria-controls="history-filters-collapse">
+    <div class="d-flex align-items-center">
+        <i class="fas fa-chevron-down category-icon"></i>
+        <span class="category-title ml-1"><i class="fas fa-filter mr-1"></i>Filters</span>
+    </div>
+    <span class="category-count" id="history-active-filters-count"></span>
+</div>
+<div class="collapse" id="history-filters-collapse">
+    <div class="p-2">
+        <div class="d-flex flex-wrap" style="gap:.35rem;">
+            <select id="filter-platform" class="form-control form-control-sm flex-fill">
+                <option value="">All QPUs</option>
+                {% for qpu in history_qpus %}
+                <option value="{{ qpu }}">{{ qpu }}</option>
+                {% endfor %}
+            </select>
+            <select id="filter-protocol" class="form-control form-control-sm flex-fill">
+                <option value="">All Protocols</option>
+                {% for p in history_protocols %}
+                <option value="{{ p.id }}">{{ p.name or p.id }}</option>
+                {% endfor %}
+            </select>
+            <select id="filter-status" class="form-control form-control-sm flex-fill">
+                <option value="">All Statuses</option>
+                <option value="pending">Pending</option>
+                <option value="running">Running</option>
+                <option value="completed">Completed</option>
+                <option value="failed">Failed</option>
+            </select>
+            <select id="filter-fit" class="form-control form-control-sm flex-fill">
+                <option value="">All Fits</option>
+                <option value="pass">Pass</option>
+                <option value="partial">Partial</option>
+                <option value="fail">Fail</option>
+            </select>
+            <input type="date" id="filter-date-from" class="form-control form-control-sm flex-fill" placeholder="From">
+            <input type="date" id="filter-date-to" class="form-control form-control-sm flex-fill" placeholder="To">
+            <button class="btn btn-outline-secondary btn-sm flex-fill" id="btn-reset-filters">
+                <i class="fas fa-times"></i> Reset
+            </button>
+        </div>
+    </div>
+</div>
+
+<div id="history-list" class="history-list">
+    <div class="text-center text-muted py-4">
+        <i class="fas fa-spinner fa-spin"></i> Loading…
+    </div>
+</div>
+
+<nav class="px-2 pb-2">
+    <ul class="pagination pagination-sm justify-content-center mb-0" id="history-pagination"></ul>
+</nav>

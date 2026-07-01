@@ -1,493 +1,3 @@
-<!DOCTYPE html>
-<!--
-QDashboard - Quantum Computing Dashboard
-Extended with quantum computing specific features:
-- Real-time QPU monitoring and package version tracking
-- SLURM integration and job queue management
-- Enhanced report rendering with Plotly support
--->
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Experiment Builder - QDashboard</title>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
-    <link rel="stylesheet" href="{{url_for('assets', path='css/dashboard.css')}}">
-    <link rel="stylesheet" href="{{url_for('assets', path='css/menu.css')}}">
-    <link rel="stylesheet" href="{{url_for('assets', path='css/experiments.css')}}">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;700&display=swap" rel="stylesheet">
-    
-    <style>
-        /* Better to put everything in assets/css */
-    </style>
-</head>
-<body>
-    <div class="d-flex" id="wrapper">
-        <!-- Sidebar -->
-        <div id="sidebar-wrapper">
-            <div class="sidebar-heading">QDashboard</div>
-            <div class="sidebar-nav">
-                <div class="list-group list-group-flush">
-                    <a href="/" class="list-group-item list-group-item-action" id="nav-dashboard"><i class="fas fa-tachometer-alt"></i><span class="menu-text"> Dashboard</span></a>
-                    <a href="/files" class="list-group-item list-group-item-action" id="nav-files"><i class="fas fa-folder"></i><span class="menu-text"> File Browser</span></a>
-                    <a href="/latest" class="list-group-item list-group-item-action" id="nav-latest"><i class="fas fa-file-alt"></i><span class="menu-text"> Report Viewer</span></a>
-                    <a href="/qpus" class="list-group-item list-group-item-action" id="nav-qpus"><i class="fas fa-microchip"></i><span class="menu-text"> QPU Status</span></a>
-                    <a href="/experiments" class="list-group-item list-group-item-action active" id="nav-experiments"><i class="fas fa-flask"></i><span class="menu-text"> Experiments</span></a>
-                    <a href="/history" class="list-group-item list-group-item-action" id="nav-history"><i class="fas fa-history"></i><span class="menu-text"> History</span></a>
-                </div>
-            </div>
-            
-            <!-- Package Versions Footer -->
-            <div class="sidebar-footer-versions">
-                <div class="version-title"><i class="fas fa-code"></i> Package Versions</div>
-                {% for package, version in qibo_versions.items() %}
-                    <div class="version-item">
-                        <span class="version-name">{{ package.title() }}:</span>
-                        {% if version == "Error" %}
-                            <span class="version-error">Error</span>
-                        {% elif version == "Not installed" %}
-                            <span class="version-not-installed">Not installed</span>
-                        {% else %}
-                            <span class="version-number">{{ version }}</span>
-                        {% endif %}
-                    </div>
-                {% endfor %}
-            </div>
-        </div>
-
-        <!-- Page Content -->
-        <div id="page-content-wrapper">
-            <!-- <nav class="navbar navbar-expand-lg navbar-dark">
-            PLACEHOLDER FOR A NAVIGATION BAR ONE DAY
-            </nav> -->
-
-            <div class="container-fluid">
-                <h1 class="page-title">Experiment Builder</h1>
-
-                <!-- Notification card (replaces all alert() popups) -->
-                <div id="notification-card" class="alert alert-dismissible mb-3"
-                     role="alert" style="display:none; transition: opacity 0.8s ease-out;">
-                    <span id="notification-icon"></span>
-                    <span id="notification-msg"></span>
-                    <button type="button" class="close" aria-label="Close"
-                            onclick="hideNotification();">
-                        <span aria-hidden="true">&times;</span>
-                    </button>
-                </div>
-
-    <div class="row experiment-workspace">
-        <!-- Left Panel: Experiment Library -->
-        <div class="col-lg-3 col-md-3 panel-library p-0">
-            <div class="card">
-                <div class="panel-header card-header d-flex align-items-center justify-content-between">
-                    <div class="d-flex align-items-center flex-shrink-0 mr-2">
-                        <i class="fas fa-book mr-1"></i>
-                        <span class="font-weight-semibold">Experiment Library</span>
-                    </div>
-                    <input type="text" class="form-control form-control-sm" placeholder="Search…" id="experiment-search"
-                           style="max-width:130px;">
-                </div>
-                <div class="card-body p-1">
-                    
-                    <div id="experiment-library" class="experiment-library">
-                        {% for category, experiments in protocols.items() %}
-                        <div class="protocol-category">
-                            <div class="category-header" data-toggle="collapse" 
-                                 data-target="#collapse-{{ category|replace(' ', '-')|lower }}" 
-                                 aria-expanded="false" 
-                                 aria-controls="collapse-{{ category|replace(' ', '-')|lower }}">
-                                <div class="d-flex align-items-center">
-                                    <span class="category-title">{{ category }}</span>
-                                    <span class="category-count ml-2">{{ experiments|length }}</span>
-                                </div>
-                                <div class="category-icon">
-                                    <i class="fas fa-chevron-down"></i>
-                                </div>
-                            </div>
-                            <div class="collapse category-content" id="collapse-{{ category|replace(' ', '-')|lower }}">
-                                <div class="card-body p-2">
-                                    {% for experiment in experiments %}
-                                    <div class="experiment-wrapper mb-2">
-                                        <div class="experiment-card p-2" 
-                                             draggable="true" 
-                                             data-experiment-id="{{ experiment.id }}"
-                                             data-experiment-name="{{ experiment.name }}"
-                                             data-category="{{ category }}"
-                                             data-target="#attrs-{{ experiment.id }}"
-                                             aria-expanded="false"
-                                             style="cursor: pointer;">
-                                            <div class="d-flex justify-content-between align-items-center">
-                                                <div class="d-flex align-items-center flex-grow-1">
-                                                    <i class="fas fa-flask mr-2"></i>{{ experiment.name }}
-                                                </div>
-                                                <div class="d-flex align-items-center">
-                                                    {% if experiment.attributes and experiment.attributes.description %}
-                                                    <button class="btn-doc-info mr-1"
-                                                            data-toggle="popover"
-                                                            data-trigger="hover focus"
-                                                            data-placement="right"
-                                                            data-html="true"
-                                                            title="<strong>{{ experiment.name }}</strong>"
-                                                            data-content="{{ experiment.attributes.description | e }}"
-                                                            onclick="event.stopPropagation();">
-                                                        <i class="fas fa-info-circle"></i>
-                                                    </button>
-                                                    {% endif %}
-                                                    <button class="btn-result-load mr-1"
-                                                            title="View last result"
-                                                            onclick="event.stopPropagation(); loadExperimentResults('{{ experiment.id }}', '{{ experiment.name }}');">
-                                                        <i class="fas fa-chart-bar"></i>
-                                                    </button>
-                                                    <i class="fas fa-chevron-down"></i>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        <!-- Protocol Attributes Section -->
-                                        <div class="collapse" id="attrs-{{ experiment.id }}">
-                                            <div class="card card-body mt-1 bg-light">
-                                                <!-- Tabs Navigation -->
-                                                <ul class="nav nav-tabs nav-tabs-sm" id="tabs-{{ experiment.id }}" role="tablist">
-                                                    <li class="nav-item">
-                                                        <a class="nav-link active" id="inputs-tab-{{ experiment.id }}" data-toggle="tab" 
-                                                           href="#inputs-{{ experiment.id }}" role="tab" aria-controls="inputs-{{ experiment.id }}" 
-                                                           aria-selected="true">
-                                                            <i class="fas fa-sign-in-alt mr-1"></i> Inputs
-                                                            {% if experiment.attributes.inputs %}
-                                                                <span class="badge badge-primary ml-1">{{ experiment.attributes.inputs|length }}</span>
-                                                            {% endif %}
-                                                        </a>
-                                                    </li>
-                                                    <li class="nav-item">
-                                                        <a class="nav-link" id="results-tab-{{ experiment.id }}" data-toggle="tab" 
-                                                           href="#results-{{ experiment.id }}" role="tab" aria-controls="results-{{ experiment.id }}" 
-                                                           aria-selected="false">
-                                                            <i class="fas fa-chart-line mr-1"></i> Results
-                                                            {% if experiment.attributes.results %}
-                                                                <span class="badge badge-success ml-1">{{ experiment.attributes.results|length }}</span>
-                                                            {% endif %}
-                                                        </a>
-                                                    </li>
-                                                    <li class="nav-item">
-                                                        <a class="nav-link" id="data-tab-{{ experiment.id }}" data-toggle="tab" 
-                                                           href="#data-{{ experiment.id }}" role="tab" aria-controls="data-{{ experiment.id }}" 
-                                                           aria-selected="false">
-                                                            <i class="fas fa-database mr-1"></i> Data
-                                                            {% if experiment.attributes.data %}
-                                                                <span class="badge badge-info ml-1">{{ experiment.attributes.data|length }}</span>
-                                                            {% endif %}
-                                                        </a>
-                                                    </li>
-                                                </ul>
-                                                
-                                                <!-- Tabs Content -->
-                                                <div class="tab-content mt-3" id="tabContent-{{ experiment.id }}">
-                                                    <!-- Inputs Tab -->
-                                                    <div class="tab-pane fade show active" id="inputs-{{ experiment.id }}" 
-                                                         role="tabpanel" aria-labelledby="inputs-tab-{{ experiment.id }}">
-                                                        {% if experiment.attributes.inputs %}
-                                                            <div class="row">
-                                                                {% for key, value in experiment.attributes.inputs.items() %}
-                                                                <div class="col-md-6 mb-2">
-                                                                    <div class="attribute-item">
-                                                                        <code class="attribute-name">{{ key }}</code>
-                                                                        <div class="attribute-type text-muted">{{ value }}</div>
-                                                                    </div>
-                                                                </div>
-                                                                {% endfor %}
-                                                            </div>
-                                                        {% else %}
-                                                            <div class="text-muted text-center py-3">
-                                                                <i class="fas fa-info-circle"></i> No input parameters defined for this protocol
-                                                            </div>
-                                                        {% endif %}
-                                                    </div>
-                                                    
-                                                    <!-- Results Tab -->
-                                                    <div class="tab-pane fade" id="results-{{ experiment.id }}" 
-                                                         role="tabpanel" aria-labelledby="results-tab-{{ experiment.id }}">
-                                                        {% if experiment.attributes.results %}
-                                                            <div class="row">
-                                                                {% for key, value in experiment.attributes.results.items() %}
-                                                                <div class="col-md-6 mb-2">
-                                                                    <div class="attribute-item">
-                                                                        <code class="attribute-name">{{ key }}</code>
-                                                                        <div class="attribute-type text-muted">{{ value }}</div>
-                                                                    </div>
-                                                                </div>
-                                                                {% endfor %}
-                                                            </div>
-                                                        {% else %}
-                                                            <div class="text-muted text-center py-3">
-                                                                <i class="fas fa-info-circle"></i> No result fields defined for this protocol
-                                                            </div>
-                                                        {% endif %}
-                                                    </div>
-                                                    
-                                                    <!-- Data Tab -->
-                                                    <div class="tab-pane fade" id="data-{{ experiment.id }}" 
-                                                         role="tabpanel" aria-labelledby="data-tab-{{ experiment.id }}">
-                                                        {% if experiment.attributes.data %}
-                                                            <div class="row">
-                                                                {% for key, value in experiment.attributes.data.items() %}
-                                                                <div class="col-md-6 mb-2">
-                                                                    <div class="attribute-item">
-                                                                        <code class="attribute-name">{{ key }}</code>
-                                                                        <div class="attribute-type text-muted">{{ value }}</div>
-                                                                    </div>
-                                                                </div>
-                                                                {% endfor %}
-                                                            </div>
-                                                        {% else %}
-                                                            <div class="text-muted text-center py-3">
-                                                                <i class="fas fa-info-circle"></i> No data fields defined for this protocol
-                                                            </div>
-                                                        {% endif %}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    {% endfor %}
-                                </div>
-                            </div>
-                        </div>
-                        {% endfor %}
-
-                        <!-- Action Nodes Section -->
-                        <div class="protocol-category" id="action-nodes-section">
-                            <div class="category-header" data-toggle="collapse"
-                                 data-target="#collapse-action-nodes"
-                                 aria-expanded="false"
-                                 aria-controls="collapse-action-nodes">
-                                <div class="d-flex align-items-center">
-                                    <span class="category-title"><i class="fas fa-project-diagram mr-1"></i>Action Nodes</span>
-                                    <span class="category-count ml-2" id="action-nodes-count">0</span>
-                                </div>
-                                <div class="category-icon">
-                                    <i class="fas fa-chevron-down"></i>
-                                </div>
-                            </div>
-                            <div class="collapse category-content" id="collapse-action-nodes">
-                                <div class="p-2">
-                                    <div id="action-nodes-list"></div>
-                                    <p id="no-action-nodes-msg" class="text-muted small text-center py-2 mb-0"
-                                       style="display:none">
-                                        <i class="fas fa-info-circle mr-1"></i>No nodes saved yet.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Center Panel: Builder + Config -->
-        <div class="col-lg-4 col-md-4 panel-builder p-0">
-            <div class="card">
-                <div class="panel-header card-header">
-                    <div class="d-flex align-items-center justify-content-between" style="gap:.4rem;">
-                        <div class="d-flex align-items-center">
-                            <i class="fas fa-sliders-h mr-1"></i>
-                            <span class="font-weight-semibold">Configuration</span>
-                        </div>
-                        <div class="d-flex align-items-center" style="gap:.4rem;">
-                            <select class="form-control form-control-sm" id="qpu-select"
-                                    style="max-width:140px" onchange="loadQpuData()">
-                                {% for qpu in qpus %}
-                                <option value="{{ qpu }}" {% if loop.first %}selected{% endif %}>{{ qpu }}</option>
-                                {% endfor %}
-                            </select>
-                            <select multiple id="qubit-select" style="display:none"></select>
-                            <div class="dropdown" id="qubit-dropdown">
-                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button"
-                                        id="qubit-dropdown-btn" data-toggle="dropdown"
-                                        aria-haspopup="true" aria-expanded="false"
-                                        style="font-size:.8rem; white-space:nowrap; max-width:150px;">
-                                    <i class="fas fa-microchip mr-1"></i><span id="qubit-dropdown-label">Qubits</span>
-                                </button>
-                                <div class="dropdown-menu p-2" id="qubit-dropdown-menu"
-                                     style="min-width:150px; max-height:260px; overflow-y:auto;"
-                                     aria-labelledby="qubit-dropdown-btn">
-                                    <!-- Checkboxes populated dynamically -->
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <ul class="nav nav-tabs" id="experiment-tabs" role="tablist">
-                        <li class="nav-item">
-                            <a class="nav-link active" id="action-builder-tab" data-toggle="tab" href="#action-builder" role="tab" aria-controls="action-builder" aria-selected="true">
-                                <i class="fas fa-tasks"></i> Action Card Builder
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" id="qpu-config-tab" data-toggle="tab" href="#qpu-config" role="tab" aria-controls="qpu-config" aria-selected="false">
-                                <i class="fas fa-cogs"></i> QPU Configuration
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" id="qpu-calibration-tab" data-toggle="tab" href="#qpu-calibration" role="tab" aria-controls="qpu-calibration" aria-selected="false">
-                                <i class="fas fa-drafting-compass"></i> QPU Calibration
-                            </a>
-                        </li>
-                    </ul>
-                    <div class="tab-content" id="experiment-tabs-content">
-                        <!-- Action Card Builder Tab -->
-                        <div class="tab-pane fade show active" id="action-builder" role="tabpanel" aria-labelledby="action-builder-tab">
-                            {% if is_new_qibolab %}
-                            <div class="mt-2">
-                                <div id="action-card-builder" class="action-card-builder">
-                                    <div class="drop-zone-empty" id="empty-state">
-                                        <div>
-                                            <i class="fas fa-plus-circle fa-3x mb-3"></i>
-                                            <p>Drag experiments here to build your action card</p>
-                                        </div>
-                                    </div>
-                                </div>
-                                <!-- Qubit parameter overrides (collapsed by default) -->
-                                <div id="qubit-parameters" class="mt-2"></div>
-                                <div class="mt-3 d-flex align-items-center flex-wrap" style="gap:.5rem;">
-                                    <button class="btn btn-primary btn-sm" id="generate-yaml-btn" disabled>
-                                        <i class="fas fa-cogs"></i> YAML
-                                    </button>
-                                    <button class="btn btn-success btn-sm" id="run-experiment-btn" disabled>
-                                        <i class="fas fa-play"></i> Run
-                                    </button>
-                                    <button class="btn btn-info btn-sm" id="save-action-node-btn" disabled>
-                                        <i class="fas fa-save"></i> Save Node
-                                    </button>
-                                    <div class="form-check mb-0 ml-2" style="white-space:nowrap;">
-                                        <input class="form-check-input" type="checkbox" id="update-platform-checkbox" checked>
-                                        <label class="form-check-label text-light small" for="update-platform-checkbox">
-                                            Update platform
-                                        </label>
-                                    </div>
-                                </div>
-                            </div>
-                            {% else %}
-                            <div class="alert alert-warning mt-3" role="alert">
-                                <h4 class="alert-heading">Feature Not Available</h4>
-                                <p>The experiment builder requires <strong>qibolab version > 0.2.0</strong>. Your current version is {{ qibo_versions.qibolab }}.</p>
-                                <hr>
-                                <p class="mb-0">Please upgrade qibolab to use this feature.</p>
-                            </div>
-                            {% endif %}
-                        </div>
-
-                        <!-- QPU Configuration Tab -->
-                        <div class="tab-pane fade" id="qpu-config" role="tabpanel" aria-labelledby="qpu-config-tab">
-                            <div class="d-flex justify-content-end mt-2 mb-1">
-                                <button class="btn btn-sm btn-primary" id="save-parameters-btn">
-                                    <i class="fas fa-save mr-1"></i> Save Parameters
-                                </button>
-                            </div>
-                            <div id="qpu-config-editor" style="height:500px;"></div>
-                        </div>
-
-                        <!-- QPU Calibration Tab -->
-                        <div class="tab-pane fade" id="qpu-calibration" role="tabpanel" aria-labelledby="qpu-calibration-tab">
-                            <div id="qpu-calibration-tables" class="mt-3">
-                                <!-- Calibration tables will be rendered here by JavaScript -->
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-        </div>
-        <!-- #center panel -->
-
-        <!-- Right Panel: Results Viewer -->
-        <div class="col-lg-5 col-md-5 panel-results p-0">
-            <div class="card h-100">
-                <div class="panel-header card-header d-flex justify-content-between align-items-center">
-                    <div class="d-flex align-items-center">
-                        <i class="fas fa-chart-bar mr-1"></i>
-                        <span class="font-weight-semibold">Results</span>
-                        <small id="results-experiment-label" class="text-muted ml-2">Select an experiment</small>
-                    </div>
-                    <div class="d-flex align-items-center">
-                        <span id="results-experiment-id" class="badge badge-secondary mr-1"></span>
-                        <a id="results-open-link" href="#" target="_blank" title="Open in file browser"
-                           style="display:none; color:#aaa; font-size:.85rem;">
-                            <i class="fas fa-external-link-alt"></i>
-                        </a>
-                    </div>
-                </div>
-                <div id="results-panel-content" class="card-body p-2 overflow-auto">
-                    <div id="results-empty-state" class="text-center p-4 text-muted">
-                        <i class="fas fa-terminal fa-2x mb-2 d-block"></i>
-                        <p class="mb-0 small">Run an experiment to see live logs<br>or click <i class="fas fa-chart-bar"></i> to load last result</p>
-                    </div>
-                    <div id="results-log-viewer" style="display:none;">
-                        <div class="d-flex justify-content-between align-items-center mb-1 results-log-header"
-                             style="cursor:pointer;"
-                             data-toggle="collapse" data-target="#results-log-body"
-                             aria-expanded="true" aria-controls="results-log-body">
-                            <small class="text-muted"><i class="fas fa-terminal mr-1"></i> SLURM Log</small>
-                            <div class="d-flex align-items-center" style="gap:.4rem;">
-                                <span id="results-log-status" class="badge badge-warning">Running</span>
-                                <i class="fas fa-chevron-down results-log-chevron" style="font-size:.7rem; color:#666; transition:transform .2s;"></i>
-                            </div>
-                        </div>
-                        <!-- Error/traceback summary (hidden until an exception is detected) -->
-                        <div id="results-error-summary" style="display:none;" class="results-error-summary mb-1">
-                            <div class="results-error-header d-flex justify-content-between align-items-center px-2 py-1"
-                                 style="cursor:pointer;"
-                                 data-toggle="collapse" data-target="#results-error-body"
-                                 aria-expanded="true" aria-controls="results-error-body">
-                                <small>
-                                    <i class="fas fa-exclamation-triangle mr-1 text-warning"></i>
-                                    <span id="results-error-type" class="text-warning font-weight-bold"></span>
-                                    <span id="results-error-message" class="text-muted ml-1" style="font-size:.7rem;"></span>
-                                </small>
-                                <i class="fas fa-chevron-down results-error-chevron" style="font-size:.65rem; color:#888; transition:transform .2s;"></i>
-                            </div>
-                            <div class="collapse show" id="results-error-body">
-                                <pre id="results-error-traceback" class="error-traceback"></pre>
-                            </div>
-                        </div>
-                        <div class="collapse show" id="results-log-body">
-                            <pre id="results-log-content" class="log-viewer mb-1">Waiting for logs…</pre>
-                        </div>
-                    </div>
-                    <div id="results-loading" style="display:none;" class="text-center p-4 text-muted">
-                        <i class="fas fa-spinner fa-spin fa-2x"></i>
-                        <p class="mt-2">Loading report…</p>
-                    </div>
-                    <div id="results-not-found" style="display:none;" class="text-center p-4 text-muted">
-                        <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
-                        <p>No previous results found for this<br>experiment, QPU and qubit selection.</p>
-                    </div>
-                    <div id="results-report-container" style="display:none;"></div>
-                </div>
-            </div>
-        </div>
-        <!-- #results panel -->
-
-    </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Footer -->
-    <footer class="text-center text-muted py-3" style="font-size: 0.8rem; background-color: #1a1a1a;">
-            <div class="container">
-                TII QDashboard - Quantum Computing Dashboard built for the <a href="https://github.com/qiboteam/qibo">qibo</a> framework.
-            </div>
-    </footer>
-
-    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
-    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
-
-    <!-- Menu Toggle Script - REMOVED (using hover menu now) -->
-    <script>
     // Menu toggle functionality removed - using hover menu
     $("#menu-toggle").click(function(e) {
         e.preventDefault();
@@ -1310,39 +820,45 @@ Extended with quantum computing specific features:
     function addExperimentToActionCard(experiment, savedValues) {
         savedValues = savedValues || {};
         const emptyState = document.getElementById('empty-state');
-        const actionBuilder = document.getElementById('action-card-builder');
+        const tabsWrapper = document.getElementById('action-tabs-wrapper');
+        const tabsList = document.getElementById('action-tabs-list');
+        const tabsContent = document.getElementById('action-tabs-content');
 
-        // Remove empty state if present
-        if (emptyState) {
-            emptyState.remove();
-        }
+        // Swap empty state for the vertical-tab layout
+        if (emptyState) emptyState.style.display = 'none';
+        tabsWrapper.style.display = 'flex';
 
         // Load saved defaults from cookies, overridden by values from a loaded action node
         const savedDefaults = { ...getProtocolDefaults(experiment.id), ...(savedValues.parameters || {}) };
 
-        // Create action item
+        // Create the tab button (protocol title on the left, with a remove icon)
+        const tabBtn = document.createElement('button');
+        tabBtn.type = 'button';
+        tabBtn.className = 'action-tab-btn';
+        tabBtn.dataset.experimentId = experiment.id;
+        tabBtn.innerHTML = `
+            <span class="action-tab-label"><i class="fas fa-flask"></i>${experiment.name}</span>
+            <span class="action-tab-remove" title="Remove"><i class="fas fa-times"></i></span>
+        `;
+        tabBtn.addEventListener('click', function(e) {
+            if (e.target.closest('.action-tab-remove')) {
+                e.stopPropagation();
+                removeActionItem(experiment.id);
+            } else {
+                activateActionTab(experiment.id);
+            }
+        });
+        tabsList.appendChild(tabBtn);
+
+        // Create the content pane for this protocol's parameters
         const actionItem = document.createElement('div');
-        actionItem.className = 'action-item';
+        actionItem.className = 'action-item action-tab-pane';
         actionItem.dataset.experimentId = experiment.id;
         actionItem.dataset.experimentName = experiment.name;
         actionItem.dataset.experimentAttributes = JSON.stringify(experiment.attributes || {});
+        actionItem.innerHTML = generateInputFields(experiment, savedDefaults);
+        tabsContent.appendChild(actionItem);
 
-        // Generate dynamic input fields based on protocol attributes
-        const inputFieldsHtml = generateInputFields(experiment, savedDefaults);
-
-        actionItem.innerHTML = `
-            <div class="action-item-header">
-                <h5>${experiment.name}</h5>
-                <button class="btn btn-sm btn-danger" onclick="removeActionItem(this)">
-                    <i class="fas fa-trash"></i>
-                </button>
-            </div>
-            <div class="action-item-body mt-3">
-                ${inputFieldsHtml}
-            </div>
-        `;
-
-        actionBuilder.appendChild(actionItem);
         ExperimentBuilder.actionCard.items.push(experiment);
 
         // Update target qubit dropdowns for the new action item
@@ -1363,35 +879,47 @@ Extended with quantum computing specific features:
             if (updateCheckbox) updateCheckbox.checked = savedValues.update;
         }
 
+        // Newly added protocol becomes the active tab
+        activateActionTab(experiment.id);
+
         // Enable buttons and save node button
         document.getElementById('generate-yaml-btn').disabled = false;
         document.getElementById('run-experiment-btn').disabled = false;
         document.getElementById('save-action-node-btn').disabled = false;
     }
 
-    function removeActionItem(button) {
-        const actionItem = button.closest('.action-item');
-        const experimentId = actionItem.dataset.experimentId;
-        actionItem.remove();
+    // Switch the visible protocol pane in the action card builder
+    function activateActionTab(experimentId) {
+        document.querySelectorAll('.action-tab-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.experimentId === experimentId);
+        });
+        document.querySelectorAll('.action-tab-pane').forEach(pane => {
+            pane.classList.toggle('active', pane.dataset.experimentId === experimentId);
+        });
+    }
+
+    function removeActionItem(experimentId) {
+        const tabBtn = document.querySelector(`.action-tab-btn[data-experiment-id="${experimentId}"]`);
+        const actionItem = document.querySelector(`.action-tab-pane[data-experiment-id="${experimentId}"]`);
+        const wasActive = !!(actionItem && actionItem.classList.contains('active'));
+
+        if (tabBtn) tabBtn.remove();
+        if (actionItem) actionItem.remove();
 
         // Remove from action card items array
         ExperimentBuilder.actionCard.items = ExperimentBuilder.actionCard.items.filter(item => item.id !== experimentId);
-        
+
         // If no more action items, show empty state and disable buttons
-        const remaining = document.querySelectorAll('.action-item');
+        const remaining = document.querySelectorAll('.action-tab-btn');
         if (remaining.length === 0) {
-            const actionBuilder = document.getElementById('action-card-builder');
-            actionBuilder.innerHTML = `
-                <div class="drop-zone-empty" id="empty-state">
-                    <div>
-                        <i class="fas fa-plus-circle fa-3x mb-3"></i>
-                        <p>Drag experiments here to build your action card</p>
-                    </div>
-                </div>
-            `;
+            document.getElementById('action-tabs-wrapper').style.display = 'none';
+            const emptyState = document.getElementById('empty-state');
+            if (emptyState) emptyState.style.display = '';
             document.getElementById('generate-yaml-btn').disabled = true;
             document.getElementById('run-experiment-btn').disabled = true;
             document.getElementById('save-action-node-btn').disabled = true;
+        } else if (wasActive) {
+            activateActionTab(remaining[0].dataset.experimentId);
         }
     }
 
@@ -1659,16 +1187,11 @@ Extended with quantum computing specific features:
 
     // Helper function to clear the action card
     function clearActionCard() {
-        const actionBuilder = document.getElementById('action-card-builder');
-        actionBuilder.innerHTML = `
-            <div class="drop-zone-empty" id="empty-state">
-                <div>
-                    <i class="fas fa-plus-circle fa-3x mb-3"></i>
-                    <p>Drag experiments here to build your action card</p>
-                </div>
-            </div>
-        `;
-        
+        document.getElementById('action-tabs-list').innerHTML = '';
+        document.getElementById('action-tabs-content').innerHTML = '';
+        document.getElementById('action-tabs-wrapper').style.display = 'none';
+        document.getElementById('empty-state').style.display = '';
+
         // Clear the state
         ExperimentBuilder.actionCard.items = [];
         
@@ -1795,9 +1318,7 @@ Extended with quantum computing specific features:
         const nodeData = ExperimentBuilder.actionCard.savedNodes[nodeName];
         if (nodeData) {
             // Clear current action card
-            const actionBuilder = document.getElementById('action-card-builder');
-            actionBuilder.innerHTML = '';
-            ExperimentBuilder.actionCard.items = [];
+            clearActionCard();
 
             // Load experiments from the node, restoring parameters/targets/update flag
             nodeData.action_card.forEach(savedItem => {
@@ -2126,10 +1647,11 @@ function loadExperimentResults(protocolId, protocolName) {
         })
         .then(data => {
             document.getElementById('results-experiment-id').textContent = data.experiment_id || '';
-            // Show open-in-browser link
+            // Show open-in-tab link — opens the report as a shell tab, same as History.
             var openLink = document.getElementById('results-open-link');
-            if (data.report_url) {
-                openLink.href = data.report_url;
+            if (data.experiment_id) {
+                openLink.dataset.experimentId = data.experiment_id;
+                openLink.dataset.label = protocolName || data.experiment_id;
                 openLink.style.display = '';
             } else {
                 openLink.style.display = 'none';
@@ -2145,6 +1667,15 @@ function loadExperimentResults(protocolId, protocolName) {
             _showResultsState('results-not-found');
         });
 }
+
+$('#results-open-link').on('click', function (e) {
+    e.preventDefault();
+    var experimentId = this.dataset.experimentId;
+    if (!experimentId) return;
+    if (window.ShellTabs && typeof window.ShellTabs.openReportTab === 'function') {
+        window.ShellTabs.openReportTab(experimentId, this.dataset.label || experimentId);
+    }
+});
 
 // ——— Live log viewer ———
 var _logPollTimer = null;
@@ -2219,7 +1750,9 @@ function showExperimentLog(experimentId) {
                     if (exp.report_available) {
                         document.getElementById('results-experiment-id').textContent = experimentId;
                         var openLink = document.getElementById('results-open-link');
-                        if (exp.report_url) { openLink.href = exp.report_url; openLink.style.display = ''; }
+                        openLink.dataset.experimentId = experimentId;
+                        openLink.dataset.label = experimentId;
+                        openLink.style.display = '';
                         // Collapse the log body; leave log header visible
                         $('#results-log-body').collapse('hide');
                         // Hide all other state panels
@@ -2246,6 +1779,45 @@ function showExperimentLog(experimentId) {
     poll();
     _logPollTimer = setInterval(poll, 4000);
 }
-</script>
-</body>
-</html>
+
+function makeResizable(handleId, cssVar, storageKey, min, max, widthFromEvent, onResize) {
+        function setWidth(px) {
+            px = Math.max(min, Math.min(max, px));
+            document.documentElement.style.setProperty(cssVar, px + 'px');
+            if (onResize) onResize(px);
+            return px;
+        }
+
+        var saved = parseInt(loadState(storageKey, null), 10);
+        if (!isNaN(saved)) setWidth(saved);
+
+        var handle = document.getElementById(handleId);
+        if (!handle) return;
+        var dragging = false;
+
+        handle.addEventListener('mousedown', function (e) {
+            dragging = true;
+            handle.classList.add('resizing');
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+        });
+        document.addEventListener('mousemove', function (e) {
+            if (!dragging) return;
+            setWidth(widthFromEvent(e));
+        });
+        document.addEventListener('mouseup', function () {
+            if (!dragging) return;
+            dragging = false;
+            handle.classList.remove('resizing');
+            document.body.style.userSelect = '';
+            var current = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(cssVar));
+            saveState(storageKey, current || min);
+        });
+    }
+
+makeResizable('panel-builder-resize-handle', '--panel-builder-width', 'qd_panel_builder_width',
+    180, 600,
+    function (e) {
+        var panel = document.getElementById('panel-builder');
+        return e.clientX - panel.getBoundingClientRect().left;
+    });

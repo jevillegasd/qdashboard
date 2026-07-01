@@ -1,0 +1,68 @@
+<div class="panel-header card-header d-flex align-items-center justify-content-between">
+    <div class="d-flex align-items-center">
+        <i class="fas fa-folder mr-1"></i>
+        <span class="font-weight-semibold">Explorer</span>
+    </div>
+    <div>
+        <button class="btn-doc-info" id="explorer-toggle-dotfiles" title="Toggle hidden files">
+            <i class="fas fa-eye-slash"></i>
+        </button>
+        <button class="btn-doc-info" id="explorer-upload-btn" title="Upload files" data-toggle="modal" data-target="#uploader-modal">
+            <i class="fas fa-upload"></i>
+        </button>
+    </div>
+</div>
+
+<div class="p-2">
+    <ol class="breadcrumb bg-transparent mb-2 p-0" id="explorer-breadcrumb" style="font-size:.78rem; flex-wrap:nowrap; overflow-x:auto; white-space:nowrap;">
+        <li class="breadcrumb-item"><a href="#" data-path=""><i class="fa fa-fw fa-home"></i></a></li>
+    </ol>
+    <input type="text" id="explorer-search" class="form-control form-control-sm mb-2" placeholder="Filter files…">
+</div>
+
+<div id="explorer-list" class="explorer-list">
+    <div class="text-center text-muted py-4">
+        <i class="fas fa-spinner fa-spin"></i> Loading…
+    </div>
+</div>
+
+<!-- Viewer Modal: interactive collapsible tree for .json/.yaml/.yml files -->
+<div class="modal fade" id="viewer-modal" tabindex="-1" role="dialog" aria-labelledby="file-name" aria-hidden="true">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content bg-dark text-white">
+      <div class="modal-header">
+        <h4 class="modal-title text-left" id="file-name">&nbsp;</h4>
+        <button type="button" class="close text-white" data-dismiss="modal" aria-hidden="true">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="viewer-error" class="text-danger small mb-2" style="display:none;"></div>
+        <div id="viewer-json-container" style="height:65vh;"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+        <div class="btn-group ml-auto">
+          <a href="#" class="btn btn-info fullview" download><i class="fas fa-download"></i> Download</a>
+          <a href="#" class="btn btn-primary fullview" target="_blank"><i class="fas fa-external-link-alt"></i> Open Raw</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="modal fade" id="uploader-modal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content bg-dark text-white">
+      <div class="modal-header">
+        <h4 class="modal-title"><i class="fas fa-upload"></i> Upload Files</h4>
+        <button type="button" class="close text-white" data-dismiss="modal" aria-hidden="true">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="upload-files" method="post" enctype="multipart/form-data">
+            <input type="file" name="files[]" id="filer_input" multiple="multiple">
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="close-uploader" class="btn btn-secondary" data-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>

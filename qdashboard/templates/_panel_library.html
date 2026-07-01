@@ -1,0 +1,202 @@
+                <div class="panel-header card-header scm-header d-flex align-items-center justify-content-between">
+                    <div class="d-flex align-items-center flex-shrink-0 mr-2">
+                        <span class="font-weight-semibold scm-title">Experiment Library</span>
+                    </div>
+                    <div class="scm-header-actions">
+                        <button class="btn-doc-info" id="library-refresh-btn" title="Refresh protocol list">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                        <button class="btn-doc-info" id="library-collapse-all-btn" title="Collapse all">
+                            <i class="fas fa-compress-arrows-alt"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="scm-input-row">
+                    <input type="text" class="form-control form-control-sm scm-filter-input" placeholder="Filter protocols…" id="experiment-search">
+                </div>
+                    <div id="experiment-library" class="experiment-library">
+                        {% for category, experiments in protocols.items() %}
+                        <div class="protocol-category">
+                            <div class="category-header" data-toggle="collapse"
+                                 data-target="#collapse-{{ category|replace(' ', '-')|lower }}"
+                                 aria-expanded="false"
+                                 aria-controls="collapse-{{ category|replace(' ', '-')|lower }}">
+                                <div class="d-flex align-items-center">
+                                    <i class="fas fa-chevron-down category-icon"></i>
+                                    <span class="category-title ml-1">{{ category }}</span>
+                                </div>
+                                <span class="category-count">{{ experiments|length }}</span>
+                            </div>
+                            <div class="collapse category-content" id="collapse-{{ category|replace(' ', '-')|lower }}">
+                                <div class="card-body p-2">
+                                    {% for experiment in experiments %}
+                                    <div class="experiment-wrapper">
+                                        <div class="experiment-card"
+                                             draggable="true"
+                                             data-experiment-id="{{ experiment.id }}"
+                                             data-experiment-name="{{ experiment.name }}"
+                                             data-category="{{ category }}"
+                                             data-target="#attrs-{{ experiment.id }}"
+                                             aria-expanded="false"
+                                             style="cursor: pointer;">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <div class="d-flex align-items-center flex-grow-1 text-truncate">
+                                                    <i class="fas fa-flask mr-2"></i><span class="text-truncate">{{ experiment.name }}</span>
+                                                </div>
+                                                <div class="experiment-card-actions d-flex align-items-center">
+                                                    {% if experiment.attributes and experiment.attributes.description %}
+                                                    <button class="btn-doc-info mr-1"
+                                                            data-toggle="popover"
+                                                            data-trigger="hover focus"
+                                                            data-placement="right"
+                                                            data-html="true"
+                                                            title="<strong>{{ experiment.name }}</strong>"
+                                                            data-content="{{ experiment.attributes.description | e }}"
+                                                            onclick="event.stopPropagation();">
+                                                        <i class="fas fa-info-circle"></i>
+                                                    </button>
+                                                    {% endif %}
+                                                    <button class="btn-result-load mr-1"
+                                                            title="View last result"
+                                                            onclick="event.stopPropagation(); loadExperimentResults('{{ experiment.id }}', '{{ experiment.name }}');">
+                                                        <i class="fas fa-chart-bar"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Protocol Attributes Section -->
+                                        <div class="collapse" id="attrs-{{ experiment.id }}">
+                                            <div class="experiment-attributes mt-1">
+                                                <!-- Tabs Navigation -->
+                                                <ul class="nav vsc-tabs" id="tabs-{{ experiment.id }}" role="tablist">
+                                                    <li class="nav-item">
+                                                        <a class="nav-link vsc-tab active" id="inputs-tab-{{ experiment.id }}" data-toggle="tab"
+                                                           href="#inputs-{{ experiment.id }}" role="tab" aria-controls="inputs-{{ experiment.id }}"
+                                                           aria-selected="true">
+                                                            <i class="fas fa-sign-in-alt mr-1"></i> Inputs
+                                                            {% if experiment.attributes.inputs %}
+                                                                <span class="vsc-badge ml-1">{{ experiment.attributes.inputs|length }}</span>
+                                                            {% endif %}
+                                                        </a>
+                                                    </li>
+                                                    <li class="nav-item">
+                                                        <a class="nav-link vsc-tab" id="results-tab-{{ experiment.id }}" data-toggle="tab"
+                                                           href="#results-{{ experiment.id }}" role="tab" aria-controls="results-{{ experiment.id }}"
+                                                           aria-selected="false">
+                                                            <i class="fas fa-chart-line mr-1"></i> Results
+                                                            {% if experiment.attributes.results %}
+                                                                <span class="vsc-badge ml-1">{{ experiment.attributes.results|length }}</span>
+                                                            {% endif %}
+                                                        </a>
+                                                    </li>
+                                                    <li class="nav-item">
+                                                        <a class="nav-link vsc-tab" id="data-tab-{{ experiment.id }}" data-toggle="tab"
+                                                           href="#data-{{ experiment.id }}" role="tab" aria-controls="data-{{ experiment.id }}"
+                                                           aria-selected="false">
+                                                            <i class="fas fa-database mr-1"></i> Data
+                                                            {% if experiment.attributes.data %}
+                                                                <span class="vsc-badge ml-1">{{ experiment.attributes.data|length }}</span>
+                                                            {% endif %}
+                                                        </a>
+                                                    </li>
+                                                </ul>
+
+                                                <!-- Tabs Content -->
+                                                <div class="tab-content mt-3" id="tabContent-{{ experiment.id }}">
+                                                    <!-- Inputs Tab -->
+                                                    <div class="tab-pane fade show active" id="inputs-{{ experiment.id }}" 
+                                                         role="tabpanel" aria-labelledby="inputs-tab-{{ experiment.id }}">
+                                                        {% if experiment.attributes.inputs %}
+                                                            <div class="row">
+                                                                {% for key, value in experiment.attributes.inputs.items() %}
+                                                                <div class="col-md-6 mb-2">
+                                                                    <div class="attribute-item">
+                                                                        <code class="attribute-name">{{ key }}</code>
+                                                                        <div class="attribute-type">{{ value }}</div>
+                                                                    </div>
+                                                                </div>
+                                                                {% endfor %}
+                                                            </div>
+                                                        {% else %}
+                                                            <div class="text-muted text-center py-3">
+                                                                <i class="fas fa-info-circle"></i> No input parameters defined for this protocol
+                                                            </div>
+                                                        {% endif %}
+                                                    </div>
+                                                    
+                                                    <!-- Results Tab -->
+                                                    <div class="tab-pane fade" id="results-{{ experiment.id }}" 
+                                                         role="tabpanel" aria-labelledby="results-tab-{{ experiment.id }}">
+                                                        {% if experiment.attributes.results %}
+                                                            <div class="row">
+                                                                {% for key, value in experiment.attributes.results.items() %}
+                                                                <div class="col-md-6 mb-2">
+                                                                    <div class="attribute-item">
+                                                                        <code class="attribute-name">{{ key }}</code>
+                                                                        <div class="attribute-type">{{ value }}</div>
+                                                                    </div>
+                                                                </div>
+                                                                {% endfor %}
+                                                            </div>
+                                                        {% else %}
+                                                            <div class="text-muted text-center py-3">
+                                                                <i class="fas fa-info-circle"></i> No result fields defined for this protocol
+                                                            </div>
+                                                        {% endif %}
+                                                    </div>
+                                                    
+                                                    <!-- Data Tab -->
+                                                    <div class="tab-pane fade" id="data-{{ experiment.id }}" 
+                                                         role="tabpanel" aria-labelledby="data-tab-{{ experiment.id }}">
+                                                        {% if experiment.attributes.data %}
+                                                            <div class="row">
+                                                                {% for key, value in experiment.attributes.data.items() %}
+                                                                <div class="col-md-6 mb-2">
+                                                                    <div class="attribute-item">
+                                                                        <code class="attribute-name">{{ key }}</code>
+                                                                        <div class="attribute-type">{{ value }}</div>
+                                                                    </div>
+                                                                </div>
+                                                                {% endfor %}
+                                                            </div>
+                                                        {% else %}
+                                                            <div class="text-muted text-center py-3">
+                                                                <i class="fas fa-info-circle"></i> No data fields defined for this protocol
+                                                            </div>
+                                                        {% endif %}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+
+                        <!-- Action Nodes Section -->
+                        <div class="protocol-category" id="action-nodes-section">
+                            <div class="category-header" data-toggle="collapse"
+                                 data-target="#collapse-action-nodes"
+                                 aria-expanded="false"
+                                 aria-controls="collapse-action-nodes">
+                                <div class="d-flex align-items-center">
+                                    <i class="fas fa-chevron-down category-icon"></i>
+                                    <span class="category-title ml-1"><i class="fas fa-project-diagram mr-1"></i>Action Nodes</span>
+                                </div>
+                                <span class="category-count" id="action-nodes-count">0</span>
+                            </div>
+                            <div class="collapse category-content" id="collapse-action-nodes">
+                                <div class="p-2">
+                                    <div id="action-nodes-list"></div>
+                                    <p id="no-action-nodes-msg" class="text-muted small text-center py-2 mb-0"
+                                       style="display:none">
+                                        <i class="fas fa-info-circle mr-1"></i>No nodes saved yet.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>

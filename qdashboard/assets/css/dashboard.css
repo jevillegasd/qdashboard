@@ -1,7 +1,7 @@
 body {
     overflow-x: hidden;
-    background-color: #1a1a1a;
-    color: #f0f0f0;
+    background-color: var(--vsc-bg);
+    color: var(--vsc-text);
     font-family: 'IBM Plex Sans', sans-serif;
     font-size: 0.875rem; /* Smaller, more compact size */
 }
@@ -58,28 +58,28 @@ to ensure consistency across all pages.
 
 #page-content-wrapper {
     min-width: 100vw;
-    background-color: #1a1a1a;
+    background-color: var(--vsc-bg);
     margin-left: 4rem; /* Account for collapsed sidebar */
     transition: margin-left 0.3s ease;
 }
 
 /* Ensure main content area has consistent background */
 .container-fluid {
-    background-color: #1a1a1a;
+    background-color: var(--vsc-bg);
 }
 
 .table-responsive {
-    background-color: #1a1a1a !important;
+    background-color: var(--vsc-bg) !important;
 }
 
 .table-dark {
-    background-color: #2c2c2c !important;
+    background-color: var(--vsc-bg-elevated) !important;
 }
 
 .table-dark td, .table-dark th {
-    background-color: #2c2c2c !important;
-    color: #f0f0f0 !important;
-    border-color: #444 !important;
+    background-color: var(--vsc-bg-elevated) !important;
+    color: var(--vsc-text) !important;
+    border-color: var(--vsc-border) !important;
 }
 
 @media (min-width: 768px) {
@@ -91,28 +91,31 @@ to ensure consistency across all pages.
 }
 
 .navbar {
-    background-color: #2c2c2c !important;
-    border-bottom: 1px solid #444 !important;
+    background-color: var(--vsc-bg-elevated) !important;
+    border-bottom: 1px solid var(--vsc-border) !important;
 }
 
 .card {
-    border: 1px solid #2d2d2d;
+    background-color: var(--vsc-bg-elevated);
+    border: 1px solid var(--vsc-border);
+    border-radius: var(--radius);
+    box-shadow: none;
 }
 
 .card-header {
-    background-color: #383838;
-    color: #f0f0f0;
-    border-bottom: 1px solid #444;
+    background-color: var(--vsc-bg-header);
+    color: var(--vsc-text);
+    border-bottom: 1px solid var(--vsc-border);
 }
 
 .card-body {
-     background-color: #2c2c2c;
+     background-color: var(--vsc-bg-elevated);
 }
 
 .log-box {
     background-color: #222;
-    border: 1px solid #444;
-    color: #f0f0f0;
+    border: 1px solid var(--vsc-border);
+    color: var(--vsc-text);
     padding: 10px;
     height: 300px;
     overflow-y: scroll;
@@ -125,9 +128,8 @@ to ensure consistency across all pages.
 }
 
 .card-link:hover .card {
-    transform: translateY(-5px);
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    border-color: var(--vsc-border-strong);
+    transition: border-color 0.2s ease;
 }
 
 .bg-ibm-blue {
@@ -350,9 +352,9 @@ to ensure consistency across all pages.
 
 .form-control:focus {
     background-color: #383838 !important;
-    border-color: #0043ce !important;
+    border-color: var(--vsc-accent) !important;
     color: #fff !important;
-    box-shadow: 0 0 0 0.2rem rgba(0, 67, 206, 0.25) !important;
+    box-shadow: 0 0 0 0.2rem var(--vsc-accent-muted) !important;
 }
 
 .form-control::placeholder {
@@ -642,91 +644,10 @@ to ensure consistency across all pages.
 }
 
 
-/* Collapsible Category Styles */
-.protocol-category {
-    margin-bottom: 15px;
-    border-radius: 8px;
-    background: linear-gradient(135deg, #2a2a2a, #333);
-    border: 1px solid #444;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-    overflow: hidden;
-}
+/* Experiment library / action-card-builder component styles (.protocol-category,
+   .category-*, .experiment-card, .action-item, .action-card-builder,
+   .drop-zone-empty) live in experiments.css to keep a single source of truth. */
 
-.category-header {
-    background: linear-gradient(135deg, #3a3a3a, #444);
-    border: none;
-    color: #f0f0f0;
-    padding: 12px 16px;
-    text-align: left;
-    text-decoration: none;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    border-radius: 8px 8px 0 0;
-}
-
-.category-header:hover {
-    background: linear-gradient(135deg, #4a4a4a, #555);
-    color: #fff;
-    text-decoration: none;
-}
-
-.category-header:focus {
-    box-shadow: 0 0 0 0.2rem rgba(108, 117, 125, 0.25);
-    outline: none;
-}
-
-.category-title {
-    font-weight: 600;
-    font-size: 1rem;
-    margin-bottom: 0;
-    color: #f0f0f0;
-}
-
-.category-count {
-    font-size: 0.8rem;
-    color: #007bff;
-    font-weight: 500;
-    margin-left: 8px;
-}
-
-.category-icon {
-    color: #6c757d;
-    transition: transform 0.3s ease;
-}
-
-.category-content {
-    background: #1a1a1a;
-    border-top: 1px solid #444;
-    padding: 0;
-}
-
-/* Experiment Card*/
-
-.experiment-card {
-    cursor: grab;
-    transition: background-color 0.2s ease;
-    border: 1px solid #444;
-    background-color: #2c2c2c;
-}
-.experiment-card:hover {
-    background-color: #3a3a3a;
-}
-.action-item {
-    border: 1px solid #444;
-    background-color: #2c2c2c;
-    padding: 1rem;
-    margin-bottom: 1rem;
-    border-radius: 0.25rem;
-}
-.action-item-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    cursor: pointer;
-}
 .config-panel .form-group {
     margin-bottom: 1.5rem;
 }
@@ -737,21 +658,6 @@ to ensure consistency across all pages.
 .experiment-library {
     max-height: 800px;
     overflow-y: auto;
-}
-.action-card-builder {
-    min-height: 400px;
-    border: 2px dashed #444;
-    background-color: #1a1a1a;
-    padding: 1rem;
-    border-radius: 0.25rem;
-}
-.drop-zone-empty {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 200px;
-    color: #666;
-    text-align: center;
 }
 .action-node-item {
     border: 1px solid #444;
@@ -858,9 +764,9 @@ to ensure consistency across all pages.
 }
 
 .qibocal-btn.btn-outline-primary:not(:disabled):hover {
-    background-color: rgba(0, 123, 255, 0.1);
-    border-color: #007bff;
-    color: #007bff;
+    background-color: var(--vsc-accent-muted);
+    border-color: var(--vsc-accent);
+    color: var(--vsc-accent);
 }
 
 .qibocal-btn.btn-outline-success:not(:disabled):hover {
