@@ -690,8 +690,19 @@
     word-break: break-all;
 }
 
+/* Let the report iframe's height:100% resolve by giving the panel body a
+   flex column with a definite-height chain down to the report container,
+   mirroring .panel-builder .card-body / .action-builder-scroll below. */
+#results-panel-content {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
 #results-report-container {
     font-size: 0.85rem;
+    flex: 1 1 auto;
+    min-height: 0;
 }
 
 /* Doc info & result buttons in library */
