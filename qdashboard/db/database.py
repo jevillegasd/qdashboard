@@ -320,13 +320,18 @@ def _extract_protocol_info(runcard_data: Dict) -> tuple:
     if not actions:
         return "unknown", "Unknown", []
 
+    # Runcard-level targets apply to any action that doesn't override them
+    global_targets = runcard_data.get("targets") or []
+    if not isinstance(global_targets, (list, tuple)):
+        global_targets = [global_targets]
+
     seen_ids: list = []
     all_qubits: set = set()
     for action in _iter_actions(actions):
         aid = action.get("id", "unknown")
         if aid not in seen_ids:
             seen_ids.append(aid)
-        targets = action.get("targets") or action.get("qubits") or []
+        targets = action.get("targets") or action.get("qubits") or global_targets
         if isinstance(targets, (list, tuple)):
             all_qubits.update(str(q) for q in targets)
         elif targets:

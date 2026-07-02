@@ -32,6 +32,12 @@
         return '<span class="badge badge-fit-unknown">—</span>';
     }
 
+    function fmtQubits(qubits) {
+        if (!qubits || !qubits.length) return '—';
+        var joined = qubits.join(',');
+        return joined.length > 18 ? joined.slice(0, 16) + '…' : joined;
+    }
+
     function loadHistory(page) {
         currentPage = page || 1;
         var params = {
@@ -82,8 +88,8 @@
                 + statusBadge(r.status) + fitBadge(r.overall_fit_success)
                 + '<span class="text-truncate small">' + (r.protocol_name || r.protocol_id || '—') + '</span>'
                 + '</div>'
-                + '<div class="text-muted" style="font-size:.68rem;">'
-                + (r.qpu_name || '—') + ' · ' + fmtDate(r.submitted_at) + ' · ' + fmtExec(r.execution_time_seconds)
+                + '<div class="text-muted" style="font-size:.68rem;" title="Qubits: ' + (r.target_qubits || []).join(', ') + '">'
+                + (r.qpu_name || '—') + ' · <i class="fas fa-microchip"></i> ' + fmtQubits(r.target_qubits) + ' · ' + fmtDate(r.submitted_at) + ' · ' + fmtExec(r.execution_time_seconds)
                 + '</div>'
                 + '</div>'
                 + '<div class="text-nowrap">' + explorerBtn + reportBtn + refreshBtn + '</div>'

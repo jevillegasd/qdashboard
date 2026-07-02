@@ -138,10 +138,10 @@ def _categorize_protocols(routine_protocols) -> dict:
         
         # Categorize based on protocol name patterns
         if any(keyword in class_name or keyword in module_name 
-               for keyword in ['spectroscopy', 'resonator_spectroscopy', 'qubit_spectroscopy']):
+               for keyword in ['spectroscopy', 'resonator_spectroscopy', 'qubit_spectroscopy', 'punchout']):
             categorized["Spectroscopy"].append(protocol)
         elif any(keyword in class_name or keyword in module_name 
-                 for keyword in ['readout', 'classification', 'single_shot', 'state_discrimination']):
+                 for keyword in ['readout', 'classification', 'single_shot', 'state_discrimination', ]):
             categorized["Readout"].append(protocol)
         elif any(keyword in class_name or keyword in module_name 
                  for keyword in ['coherence', 't1', 't2', 'spin_echo', 'ramsey']):

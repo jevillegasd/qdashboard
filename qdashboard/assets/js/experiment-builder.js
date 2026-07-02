@@ -811,11 +811,64 @@
         dropZone.addEventListener('drop', function(e) {
             e.preventDefault();
             this.style.backgroundColor = '#1a1a1a';
-            
+
+            // Ignore reorder drags that escaped the tab list's own drop handler
+            // (e.g. released over the parameter pane instead of the tab rail).
+            if (e.dataTransfer.types.includes('application/x-action-tab-id')) return;
+
             const data = JSON.parse(e.dataTransfer.getData('text/plain'));
             addExperimentToActionCard(data);
         });
+
+        // Reordering of already-added protocols within the action card builder
+        const tabsList = document.getElementById('action-tabs-list');
+
+        tabsList.addEventListener('dragover', function(e) {
+            const dragging = tabsList.querySelector('.action-tab-btn.dragging');
+            if (!dragging) return; // not a reorder drag (e.g. dragging a new protocol from the palette)
+            e.preventDefault();
+            e.stopPropagation();
+            const afterElement = getTabDragAfterElement(tabsList, e.clientY);
+            if (afterElement == null) {
+                tabsList.appendChild(dragging);
+            } else if (afterElement !== dragging) {
+                tabsList.insertBefore(dragging, afterElement);
+            }
+        });
+
+        tabsList.addEventListener('drop', function(e) {
+            if (!tabsList.querySelector('.action-tab-btn.dragging')) return;
+            e.preventDefault();
+            e.stopPropagation();
+        });
     });
+
+    // Returns the tab button that the dragged tab should be inserted before,
+    // based on the vertical midpoint of each button, or null to append at the end.
+    function getTabDragAfterElement(container, y) {
+        const candidates = [...container.querySelectorAll('.action-tab-btn:not(.dragging)')];
+        return candidates.reduce((closest, child) => {
+            const box = child.getBoundingClientRect();
+            const offset = y - box.top - box.height / 2;
+            if (offset < 0 && offset > closest.offset) {
+                return { offset, element: child };
+            }
+            return closest;
+        }, { offset: Number.NEGATIVE_INFINITY, element: null }).element;
+    }
+
+    // Reorders the .action-tab-pane elements and the state array to match the
+    // current drag-reordered .action-tab-btn order in #action-tabs-list.
+    function syncActionTabOrder() {
+        const order = Array.from(document.querySelectorAll('#action-tabs-list .action-tab-btn'))
+            .map(btn => btn.dataset.experimentId);
+        const tabsContent = document.getElementById('action-tabs-content');
+        order.forEach(id => {
+            const pane = tabsContent.querySelector(`.action-tab-pane[data-experiment-id="${id}"]`);
+            if (pane) tabsContent.appendChild(pane);
+        });
+        ExperimentBuilder.actionCard.items.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+    }
 
     function addExperimentToActionCard(experiment, savedValues) {
         savedValues = savedValues || {};
@@ -835,8 +888,10 @@
         const tabBtn = document.createElement('button');
         tabBtn.type = 'button';
         tabBtn.className = 'action-tab-btn';
+        tabBtn.draggable = true;
         tabBtn.dataset.experimentId = experiment.id;
         tabBtn.innerHTML = `
+            <span class="action-tab-drag-handle" title="Drag to reorder"><i class="fas fa-grip-vertical"></i></span>
             <span class="action-tab-label"><i class="fas fa-flask"></i>${experiment.name}</span>
             <span class="action-tab-remove" title="Remove"><i class="fas fa-times"></i></span>
         `;
@@ -847,6 +902,22 @@
             } else {
                 activateActionTab(experiment.id);
             }
+        });
+        tabBtn.addEventListener('dragstart', function(e) {
+            e.stopPropagation();
+            e.dataTransfer.effectAllowed = 'move';
+            // Distinct MIME type so a reorder drag can never be mistaken for a
+            // new-protocol drop (which expects JSON on 'text/plain') if it's
+            // released outside the tab list, e.g. over the parameter pane.
+            e.dataTransfer.setData('application/x-action-tab-id', experiment.id);
+            e.dataTransfer.setData('text/plain', experiment.id);
+            // Defer so the drag image is captured before the class changes appearance
+            setTimeout(() => tabBtn.classList.add('dragging'), 0);
+        });
+        tabBtn.addEventListener('dragend', function(e) {
+            e.stopPropagation();
+            tabBtn.classList.remove('dragging');
+            syncActionTabOrder();
         });
         tabsList.appendChild(tabBtn);
 
