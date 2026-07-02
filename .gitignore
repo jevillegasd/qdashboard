@@ -64,3 +64,4 @@ Thumbs.db
 config.local.yaml
 activate_dev.sh
 qdashboard/tests/
+ping_electronics.sh
