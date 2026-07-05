@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from ..utils.formatters import size_fmt, time_desc, data_fmt, icon_fmt, time_humanize
 from qdashboard.utils.logger import get_logger
 from .config import DEFAULT_PORT, DEFAULT_HOST, DEFAULT_QD_ROOT, set_config
+from ..remote.connection import SSHConnectionManager
 
 
 logger = get_logger(__name__)
@@ -123,6 +124,9 @@ def create_app(config: dict = None) -> FastAPI:
     # Store config in app state for access via request.app.state.config
     app.state.config = config or {}
 
+    # Attach the SSH connection manager (used in remote execution mode)
+    app.state.ssh_manager = SSHConnectionManager()
+
     # Startup: initialise experiment history DB in a thread-pool executor
     # so it does not block the event loop. Errors are non-fatal.
     @app.on_event("startup")
@@ -135,6 +139,20 @@ def create_app(config: dict = None) -> FastAPI:
             await loop.run_in_executor(None, _init_db, _cfg)
         except Exception as _exc:
             logger.warning(f"DB init failed (non-fatal): {_exc}")
+
+    @app.on_event("startup")
+    async def _startup_background_sync():
+        """Start the background experiment-sync loop when remote + auto_sync is on."""
+        import asyncio
+        asyncio.ensure_future(_background_sync_loop(app))
+
+    @app.on_event("shutdown")
+    async def _shutdown_ssh():
+        """Disconnect the SSH manager cleanly on server shutdown."""
+        try:
+            await app.state.ssh_manager.disconnect()
+        except Exception:
+            pass
 
     # Mount static files at /assets
     app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
@@ -236,3 +254,98 @@ def get_config():
     """Get application configuration from environment variables."""
     from .config import get_config as _get_config
     return _get_config()
+
+
+async def _background_sync_loop(app) -> None:
+    """Periodically poll remote SLURM and sync completed experiments to local storage.
+
+    Runs as a fire-and-forget asyncio task for the lifetime of the server.
+    Only active when execution_mode is ``remote_*`` and ``auto_sync`` is True.
+    Errors are caught and logged; the loop always continues.
+    """
+    import asyncio
+
+    while True:
+        try:
+            from .config import get_remote_settings, get_qd_root, get_data_dir
+            settings = get_remote_settings()
+
+            if not settings.is_remote() or not settings.auto_sync:
+                await asyncio.sleep(settings.sync_interval or 30)
+                continue
+
+            ssh_manager = app.state.ssh_manager
+            if not ssh_manager.is_connected():
+                await asyncio.sleep(settings.sync_interval)
+                continue
+
+            # Query local DB for pending/running remote experiments
+            try:
+                from ..db.database import get_db_connection, query_runs
+                config = app.state.config
+                data_dir = config.get('data_dir') or get_data_dir()
+
+                with get_db_connection(config) as conn:
+                    pending = query_runs(
+                        conn,
+                        status=['pending', 'running'],
+                        limit=100,
+                    )
+
+                for exp in pending:
+                    job_id = exp.get('slurm_job_id')
+                    experiment_id = exp.get('experiment_id')
+                    if not job_id or not experiment_id:
+                        continue
+
+                    # Check SLURM state on remote
+                    from ..remote.executor import RemoteSlurmClient, RemoteExecutor
+                    slurm = RemoteSlurmClient(RemoteExecutor(ssh_manager))
+                    state = await slurm.check_job_status(job_id)
+
+                    if state in RemoteSlurmClient.ACTIVE_STATES:
+                        continue  # still running
+
+                    # Job finished — resolve platform/date from experiment_id
+                    platform = exp.get('platform') or exp.get('qpu_name', '')
+                    # experiment_id format: YYYYMMDD-<hex>
+                    date_str = experiment_id.split('-')[0] if '-' in experiment_id else ''
+
+                    if not platform or not date_str:
+                        continue
+
+                    from ..remote.file_sync import sync_experiment_from_remote
+                    files = await sync_experiment_from_remote(
+                        experiment_id, platform, date_str,
+                        settings, ssh_manager, data_dir,
+                    )
+
+                    if files:
+                        # Update DB status
+                        output_meta = __import__('os').path.join(
+                            data_dir, platform, date_str, experiment_id, 'output', 'meta.json'
+                        )
+                        new_status = 'completed' if __import__('os').path.exists(output_meta) else 'failed'
+                        with get_db_connection(config) as conn:
+                            from ..db.database import upsert_experiment_run
+                            upsert_experiment_run(conn, {
+                                'experiment_id': experiment_id,
+                                'status': new_status,
+                                'report_available': new_status == 'completed',
+                            })
+                        logger.info(
+                            "Auto-sync: %s → %s (%d files)",
+                            experiment_id, new_status, len(files),
+                        )
+            except Exception as _inner:
+                logger.debug("Background sync inner error (non-fatal): %s", _inner)
+
+        except Exception as _outer:
+            logger.debug("Background sync outer error (non-fatal): %s", _outer)
+
+        try:
+            from .config import get_remote_settings as _gs
+            interval = _gs().sync_interval or 30
+        except Exception:
+            interval = 30
+        await asyncio.sleep(interval)

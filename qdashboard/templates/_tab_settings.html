@@ -1,0 +1,263 @@
+<!-- Settings Tab: Remote Execution Configuration -->
+<div class="settings-tab container-fluid py-3">
+
+    <!-- Header row with connection status -->
+    <div class="row mb-3">
+        <div class="col-12 d-flex align-items-center justify-content-between">
+            <h5 class="mb-0"><i class="fas fa-cog"></i> Execution Settings</h5>
+            <div id="settings-connection-status" class="d-flex align-items-center">
+                <span id="settings-conn-badge" class="badge badge-secondary mr-2">
+                    <i class="fas fa-circle mr-1"></i> Disconnected
+                </span>
+                <button class="btn btn-sm btn-outline-success mr-1" id="btn-ssh-connect" title="Connect SSH">
+                    <i class="fas fa-plug"></i> Connect
+                </button>
+                <button class="btn btn-sm btn-outline-danger" id="btn-ssh-disconnect" title="Disconnect SSH">
+                    <i class="fas fa-times"></i> Disconnect
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+
+        <!-- Left column: Execution mode + Remote server + Auth + ProxyJump -->
+        <div class="col-lg-6">
+
+            <!-- Execution Mode -->
+            <div class="card mb-3">
+                <div class="card-header">
+                    <i class="fas fa-play-circle"></i> Execution Mode
+                </div>
+                <div class="card-body">
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="radio" name="executionMode"
+                               id="mode-local-slurm" value="local_slurm">
+                        <label class="form-check-label" for="mode-local-slurm">
+                            <strong>Local + SLURM</strong>
+                            <small class="d-block text-muted">Submit via sbatch on this machine (original mode)</small>
+                        </label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="radio" name="executionMode"
+                               id="mode-local-direct" value="local_direct">
+                        <label class="form-check-label" for="mode-local-direct">
+                            <strong>Local + Direct</strong>
+                            <small class="d-block text-muted">Run <code>qq run</code> directly on this machine (no sbatch)</small>
+                        </label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="radio" name="executionMode"
+                               id="mode-remote-slurm" value="remote_slurm">
+                        <label class="form-check-label" for="mode-remote-slurm">
+                            <strong>Remote + SLURM</strong>
+                            <small class="d-block text-muted">SSH to cluster, submit via sbatch there</small>
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="executionMode"
+                               id="mode-remote-direct" value="remote_direct">
+                        <label class="form-check-label" for="mode-remote-direct">
+                            <strong>Remote + Direct</strong>
+                            <small class="d-block text-muted">SSH to remote, run <code>qq run</code> directly there</small>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Remote Server (shown only for remote modes) -->
+            <div class="card mb-3" id="settings-remote-server-card">
+                <div class="card-header">
+                    <i class="fas fa-server"></i> Remote Server
+                </div>
+                <div class="card-body">
+                    <div class="form-row">
+                        <div class="form-group col-md-8">
+                            <label for="remote-host">Host / IP</label>
+                            <input type="text" class="form-control form-control-sm" id="remote-host"
+                                   placeholder="cluster.example.com">
+                        </div>
+                        <div class="form-group col-md-4">
+                            <label for="remote-port">Port</label>
+                            <input type="number" class="form-control form-control-sm" id="remote-port"
+                                   value="22" min="1" max="65535">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="remote-user">Username</label>
+                        <input type="text" class="form-control form-control-sm" id="remote-user"
+                               placeholder="your-username">
+                    </div>
+                    <div class="form-group">
+                        <label for="remote-root">Remote working root</label>
+                        <input type="text" class="form-control form-control-sm" id="remote-root"
+                               placeholder="~/.qdashboard">
+                        <small class="form-text text-muted">Base directory on the remote machine where experiments are stored.</small>
+                    </div>
+                    <div class="form-group mb-0">
+                        <label for="remote-environment">Remote Python environment path</label>
+                        <input type="text" class="form-control form-control-sm" id="remote-environment"
+                               placeholder="~/envs/qibocal  (leave blank to use active shell env)">
+                        <small class="form-text text-muted">venv or conda env containing <code>qq</code> / qibocal.</small>
+                    </div>
+                    <div class="form-group mt-2 mb-0">
+                        <label for="remote-platforms-path">Remote QIBOLAB_PLATFORMS path
+                            <small class="text-muted">(optional)</small>
+                        </label>
+                        <input type="text" class="form-control form-control-sm" id="remote-platforms-path"
+                               placeholder="~/qibolab_platforms_qrc  (leave blank to reuse local path)">
+                    </div>
+                </div>
+            </div>
+
+            <!-- SSH Authentication (shown only for remote modes) -->
+            <div class="card mb-3" id="settings-ssh-auth-card">
+                <div class="card-header">
+                    <i class="fas fa-key"></i> SSH Authentication
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label for="ssh-key-path">Private key file (local path)</label>
+                        <input type="text" class="form-control form-control-sm" id="ssh-key-path"
+                               placeholder="~/.ssh/id_rsa  (leave blank to use agent only)">
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="use-ssh-agent" checked>
+                        <label class="form-check-label" for="use-ssh-agent">
+                            Use SSH agent (<code>ssh-agent</code> / pageant)
+                        </label>
+                    </div>
+                    <div class="form-group mb-0">
+                        <label for="proxy-jump">ProxyJump host</label>
+                        <div class="input-group input-group-sm">
+                            <input type="text" class="form-control" id="proxy-jump"
+                                   placeholder="user@jumphost.example.com  (leave blank for direct)">
+                            <div class="input-group-append">
+                                <button class="btn btn-outline-secondary" type="button"
+                                        id="btn-proxy-from-config" title="Pick from SSH config">
+                                    <i class="fas fa-list"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <small class="form-text text-muted">Same syntax as OpenSSH <code>ProxyJump</code>.</small>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Right column: Sync settings + SSH config editor -->
+        <div class="col-lg-6">
+
+            <!-- Sync Settings -->
+            <div class="card mb-3" id="settings-sync-card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-sync-alt"></i> Data Sync</span>
+                    <div id="settings-sync-status-badge"></div>
+                </div>
+                <div class="card-body">
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="auto-sync">
+                        <label class="form-check-label" for="auto-sync">
+                            Auto-sync completed experiments in background
+                        </label>
+                    </div>
+                    <div class="form-row align-items-center mb-3">
+                        <div class="col-auto">
+                            <label for="sync-interval" class="col-form-label col-form-label-sm">Poll interval</label>
+                        </div>
+                        <div class="col-auto">
+                            <input type="number" class="form-control form-control-sm" id="sync-interval"
+                                   value="30" min="5" max="3600" style="width:80px">
+                        </div>
+                        <div class="col-auto">
+                            <span class="text-muted small">seconds</span>
+                        </div>
+                    </div>
+                    <div class="d-flex">
+                        <button class="btn btn-sm btn-outline-primary mr-2" id="btn-sync-all">
+                            <i class="fas fa-cloud-download-alt"></i> Sync All Now
+                        </button>
+                        <span id="sync-all-result" class="small text-muted align-self-center"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SSH Config -->
+            <div class="card mb-3">
+                <div class="card-header">
+                    <i class="fas fa-file-code"></i> SSH Config (<code>~/.ssh/config</code>)
+                </div>
+                <div class="card-body p-0">
+                    <ul class="nav nav-tabs px-3 pt-2" id="ssh-config-tabs">
+                        <li class="nav-item">
+                            <a class="nav-link active" id="tab-known-hosts-link"
+                               data-toggle="tab" href="#tab-known-hosts">Known Hosts</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" id="tab-ssh-editor-link"
+                               data-toggle="tab" href="#tab-ssh-editor">Editor</a>
+                        </li>
+                    </ul>
+                    <div class="tab-content p-3">
+
+                        <!-- Known Hosts tab -->
+                        <div class="tab-pane fade show active" id="tab-known-hosts">
+                            <div id="known-hosts-table-wrapper">
+                                <p class="text-muted small mb-2">
+                                    Click <em>Use</em> to populate the Remote Server fields with that entry.
+                                </p>
+                                <div class="table-responsive" style="max-height:260px;overflow-y:auto;">
+                                    <table class="table table-dark table-sm table-hover mb-0" id="known-hosts-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Alias</th>
+                                                <th>Hostname</th>
+                                                <th>User</th>
+                                                <th>Port</th>
+                                                <th>ProxyJump</th>
+                                                <th></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="known-hosts-tbody">
+                                            <tr><td colspan="6" class="text-center text-muted small">Loading…</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Raw editor tab -->
+                        <div class="tab-pane fade" id="tab-ssh-editor">
+                            <textarea id="ssh-config-raw" class="form-control form-control-sm"
+                                      rows="12" style="font-family:monospace;font-size:12px;resize:vertical;"
+                                      placeholder="Loading ~/.ssh/config …"></textarea>
+                            <div class="mt-2 d-flex align-items-center">
+                                <button class="btn btn-sm btn-outline-warning mr-2" id="btn-save-ssh-config">
+                                    <i class="fas fa-save"></i> Save ~/.ssh/config
+                                </button>
+                                <small class="text-muted" id="ssh-config-save-result"></small>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Save / Cancel row -->
+    <div class="row">
+        <div class="col-12 d-flex align-items-center">
+            <button class="btn btn-primary mr-2" id="btn-save-settings">
+                <i class="fas fa-save"></i> Save Settings
+            </button>
+            <button class="btn btn-secondary mr-3" id="btn-reload-settings">
+                <i class="fas fa-undo"></i> Reload
+            </button>
+            <span id="settings-save-result" class="small"></span>
+        </div>
+    </div>
+
+</div>

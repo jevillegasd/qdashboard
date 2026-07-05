@@ -11,7 +11,8 @@
     var TAB_DEFS = {
         slurm:          { label: 'Slurm Monitor',     icon: 'fa-tasks' },
         qpu_status:     { label: 'QPU Status',        icon: 'fa-microchip' },
-        action_builder: { label: 'Action Card Builder', icon: 'fa-flask' }
+        action_builder: { label: 'Action Card Builder', icon: 'fa-flask' },
+        settings:       { label: 'Settings',          icon: 'fa-cog' }
     };
 
     var TABS_KEY = 'qd_shell_tabs';
@@ -23,6 +24,9 @@
         slurm: {
             onOpen: function () { if (window.initializeDashboardCommon) window.initializeDashboardCommon(); },
             onClose: function () { if (window.stopAutoRefresh) window.stopAutoRefresh(); }
+        },
+        settings: {
+            onOpen: function () { if (window.initSettingsPanel) window.initSettingsPanel(); }
         }
     };
 

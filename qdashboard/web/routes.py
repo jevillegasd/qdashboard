@@ -902,9 +902,9 @@ async def submit_experiment_route(request: Request,
 
 
 @router.post("/api/submit_experiment_data", name="submit_experiment_data_route", tags=["Experiments"],
-             summary="Submit a new experiment to SLURM using a JSON runcard payload")
+             summary="Submit a new experiment using a JSON runcard payload")
 async def submit_experiment_data_route(request: Request):
-    """Submit a new experiment to SLURM using runcard data (JSON body)."""
+    """Submit a new experiment; routes to remote/direct/local-SLURM based on current settings."""
     try:
         config = _get_config(request)
         if not request.headers.get('content-type', '').startswith('application/json'):
@@ -926,10 +926,36 @@ async def submit_experiment_data_route(request: Request):
             return Response(content=json.dumps({'success': False,
                             'message': 'Missing required field: platform'}),
                             status_code=400, media_type='application/json')
-        result = submit_experiment(runcard_data=runcard_data, config=config, environment=environment,
-                                   auto_update=auto_update)
+
+        # Route to the appropriate execution path based on settings
+        from ..core.config import get_remote_settings
+        settings = get_remote_settings()
+
+        if settings.is_remote():
+            from ..experiments.job_submission import submit_experiment_remote
+            result = await submit_experiment_remote(
+                runcard_data=runcard_data,
+                config=config,
+                settings=settings,
+                ssh_manager=request.app.state.ssh_manager,
+                environment=environment,
+                auto_update=auto_update,
+            )
+        elif settings.execution_mode == 'local_direct':
+            from ..experiments.job_submission import submit_experiment_direct
+            result = submit_experiment_direct(
+                runcard_data=runcard_data,
+                config=config,
+                environment=environment,
+                auto_update=auto_update,
+            )
+        else:
+            # Default: local_slurm (existing behaviour)
+            result = submit_experiment(runcard_data=runcard_data, config=config,
+                                       environment=environment, auto_update=auto_update)
+
         if result['success']:
-            logger.info(f"New experiment submitted with data: {result['experiment_id']}")
+            logger.info(f"Experiment submitted ({settings.execution_mode}): {result['experiment_id']}")
             return _sanitize_exp(result)
         return Response(content=json.dumps(_sanitize_exp(result)), status_code=400,
                         media_type='application/json')
@@ -1202,6 +1228,218 @@ def _extract_traceback(text: str, re_mod) -> dict:
                 'error_message': m.group(2).strip(),
                 'traceback': f'{m.group(1)}: {m.group(2).strip()}'}
     return {'found': False, 'error_type': '', 'error_message': '', 'traceback': ''}
+
+
+# =========================================================================== #
+# Settings API                                                                 #
+# =========================================================================== #
+
+def _get_remote_settings(request: Request):
+    """Load remote settings using the qd_root from app config."""
+    from ..remote.settings import load_remote_settings
+    qd_root = _get_config(request).get('qd_root', '~/.qdashboard')
+    return load_remote_settings(qd_root)
+
+
+def _save_remote_settings(request: Request, settings):
+    """Persist remote settings using qd_root from app config."""
+    from ..remote.settings import save_remote_settings
+    qd_root = _get_config(request).get('qd_root', '~/.qdashboard')
+    save_remote_settings(settings, qd_root)
+
+
+@router.get("/api/settings/remote", tags=["Settings"],
+            summary="Get remote execution settings")
+async def get_remote_settings_route(request: Request):
+    """Return the current remote execution settings as JSON."""
+    try:
+        settings = _get_remote_settings(request)
+        return settings.to_dict()
+    except Exception as e:
+        return _error_response(request, e)
+
+
+@router.put("/api/settings/remote", tags=["Settings"],
+            summary="Update remote execution settings")
+async def put_remote_settings_route(request: Request):
+    """Save remote execution settings.  Returns the updated settings dict."""
+    try:
+        from ..remote.settings import RemoteSettings, EXECUTION_MODES
+        data = await request.json()
+        settings = RemoteSettings.from_dict(data)
+        _save_remote_settings(request, settings)
+        logger.info("Remote settings updated: execution_mode=%s", settings.execution_mode)
+        return settings.to_dict()
+    except Exception as e:
+        return _error_response(request, e)
+
+
+@router.get("/api/settings/ssh_config", tags=["Settings"],
+            summary="Get parsed SSH config hosts and raw file content")
+async def get_ssh_config_route(request: Request):
+    """Return parsed Host entries and raw content from ``~/.ssh/config``."""
+    try:
+        from ..remote.ssh_config import parse_ssh_config, read_ssh_config_raw
+        entries = [e.to_dict() for e in parse_ssh_config()]
+        raw = read_ssh_config_raw()
+        return {'entries': entries, 'raw': raw}
+    except Exception as e:
+        return _error_response(request, e)
+
+
+@router.put("/api/settings/ssh_config", tags=["Settings"],
+            summary="Write raw content to ~/.ssh/config")
+async def put_ssh_config_route(request: Request):
+    """Overwrite ``~/.ssh/config`` with the supplied content (backup created)."""
+    try:
+        from ..remote.ssh_config import write_ssh_config_raw
+        data = await request.json()
+        content = data.get('content', '')
+        write_ssh_config_raw(content)
+        return {'success': True, 'message': 'SSH config saved (backup written to ~/.ssh/config.bak)'}
+    except Exception as e:
+        return _error_response(request, e)
+
+
+# =========================================================================== #
+# Remote connection API                                                        #
+# =========================================================================== #
+
+@router.post("/api/remote/connect", tags=["Remote"],
+             summary="Open SSH connection to the remote host")
+async def remote_connect_route(request: Request):
+    """Connect to the remote host defined in the current settings."""
+    try:
+        settings = _get_remote_settings(request)
+        if not settings.is_remote():
+            return {'success': False, 'message': 'Current execution mode is not remote.'}
+        if not settings.remote_host:
+            return {'success': False, 'message': 'No remote host configured.'}
+        ssh_manager = request.app.state.ssh_manager
+        await ssh_manager.connect(settings)
+        return {'success': True, 'message': f'Connected to {settings.remote_host}',
+                **ssh_manager.status_dict()}
+    except Exception as e:
+        return _error_response(request, e, {'success': False, 'message': str(e)})
+
+
+@router.post("/api/remote/disconnect", tags=["Remote"],
+             summary="Close the SSH connection")
+async def remote_disconnect_route(request: Request):
+    """Disconnect from the remote host."""
+    try:
+        ssh_manager = request.app.state.ssh_manager
+        await ssh_manager.disconnect()
+        return {'success': True, 'message': 'Disconnected.'}
+    except Exception as e:
+        return _error_response(request, e)
+
+
+@router.get("/api/remote/status", tags=["Remote"],
+            summary="Get SSH connection status")
+async def remote_status_route(request: Request):
+    """Return connection status and settings summary."""
+    try:
+        ssh_manager = request.app.state.ssh_manager
+        settings = _get_remote_settings(request)
+        return {
+            **ssh_manager.status_dict(),
+            'execution_mode': settings.execution_mode,
+            'auto_sync': settings.auto_sync,
+            'sync_interval': settings.sync_interval,
+        }
+    except Exception as e:
+        return _error_response(request, e)
+
+
+# =========================================================================== #
+# Data sync API                                                                #
+# =========================================================================== #
+
+@router.post("/api/remote/sync/{experiment_id}", tags=["Remote"],
+             summary="Sync a single experiment from the remote to local storage")
+async def remote_sync_experiment(request: Request, experiment_id: str):
+    """Pull output/, runcard.yml, and metadata for *experiment_id* from remote."""
+    try:
+        from ..remote.file_sync import sync_experiment_from_remote
+        config = _get_config(request)
+        settings = _get_remote_settings(request)
+        ssh_manager = request.app.state.ssh_manager
+        data_dir = config.get('data_dir', '')
+
+        if not ssh_manager.is_connected():
+            return {'success': False, 'message': 'Not connected to remote host.'}
+
+        # Resolve platform/date from local DB or experiment_id prefix
+        platform = ''
+        date_str = experiment_id.split('-')[0] if '-' in experiment_id else ''
+        try:
+            from ..db.database import get_db_connection, query_runs
+            with get_db_connection(config) as conn:
+                rows = query_runs(conn, limit=1000)
+                for row in rows:
+                    if row.get('experiment_id') == experiment_id:
+                        platform = row.get('qpu_name') or row.get('platform') or ''
+                        break
+        except Exception:
+            pass
+
+        if not platform or not date_str:
+            return {'success': False, 'message': 'Cannot determine platform/date for this experiment.'}
+
+        files = await sync_experiment_from_remote(
+            experiment_id, platform, date_str, settings, ssh_manager, data_dir
+        )
+        return {'success': True, 'files_synced': len(files), 'experiment_id': experiment_id}
+    except Exception as e:
+        return _error_response(request, e)
+
+
+@router.post("/api/remote/sync_all", tags=["Remote"],
+             summary="Sync all completed remote experiments to local storage")
+async def remote_sync_all(request: Request):
+    """Scan the remote data directory and pull any completed experiments."""
+    try:
+        from ..remote.file_sync import sync_all_completed
+        config = _get_config(request)
+        settings = _get_remote_settings(request)
+        ssh_manager = request.app.state.ssh_manager
+        data_dir = config.get('data_dir', '')
+
+        if not ssh_manager.is_connected():
+            return {'success': False, 'message': 'Not connected to remote host.'}
+
+        result = await sync_all_completed(settings, ssh_manager, data_dir)
+        return {'success': True, **result}
+    except Exception as e:
+        return _error_response(request, e)
+
+
+@router.get("/api/remote/sync_status", tags=["Remote"],
+            summary="Get sync status summary")
+async def remote_sync_status(request: Request):
+    """Return count of pending experiments awaiting sync and connection status."""
+    try:
+        config = _get_config(request)
+        settings = _get_remote_settings(request)
+        ssh_manager = request.app.state.ssh_manager
+        pending_count = 0
+        try:
+            from ..db.database import get_db_connection, query_runs, count_runs
+            with get_db_connection(config) as conn:
+                pending_count = count_runs(conn, status=['pending', 'running'])
+        except Exception:
+            pass
+        return {
+            'connected': ssh_manager.is_connected(),
+            'execution_mode': settings.execution_mode,
+            'pending_experiments': pending_count,
+            'auto_sync': settings.auto_sync,
+            'sync_interval': settings.sync_interval,
+        }
+    except Exception as e:
+        return _error_response(request, e)
+
 
 
 @router.get("/api/experiment_log/{experiment_id}", name="api_experiment_log",
