@@ -105,7 +105,14 @@
                             <small class="text-muted">(optional)</small>
                         </label>
                         <input type="text" class="form-control form-control-sm" id="remote-platforms-path"
-                               placeholder="~/qibolab_platforms_qrc  (leave blank to reuse local path)">
+                               placeholder="~/qibolab_platforms_qrc  (blank = auto-detect)">
+                        <small class="form-text text-muted">
+                            Path to <code>qibolab_platforms_qrc</code> on the remote host. All platform git
+                            operations (branch switch, commit, stash, push) and edits run there — never
+                            locally. A read-only local mirror is kept in sync automatically for QPU
+                            monitoring/topology. Leave blank to auto-detect the remote's own
+                            <code>$QIBOLAB_PLATFORMS</code>, falling back to <code>~/qibolab_platforms_qrc</code>.
+                        </small>
                     </div>
                 </div>
             </div>

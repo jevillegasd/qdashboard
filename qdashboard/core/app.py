@@ -279,6 +279,16 @@ async def _background_sync_loop(app) -> None:
                 await asyncio.sleep(settings.sync_interval)
                 continue
 
+            # Keep the local read-only platforms mirror in sync with the
+            # remote qibolab_platforms_qrc directory (QPU monitoring,
+            # topology, and partition lookups all read from this mirror).
+            try:
+                from ..remote.platforms_git import sync_platforms_mirror
+                mirror_dir = os.path.join(get_qd_root(), 'platforms_mirror')
+                await sync_platforms_mirror(settings, ssh_manager, mirror_dir)
+            except Exception as _mirror_err:
+                logger.debug("Background platforms mirror sync error (non-fatal): %s", _mirror_err)
+
             # Query local DB for pending/running remote experiments
             try:
                 from ..db.database import get_db_connection, query_runs

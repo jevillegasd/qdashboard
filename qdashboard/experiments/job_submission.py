@@ -947,11 +947,8 @@ async def submit_experiment_remote(
         # 5. Determine SLURM partition and remote platforms path              #
         # ------------------------------------------------------------------ #
         partition = runcard_data.get('partition') or get_partition(platform) or 'default'
-        remote_platforms_base = (
-            _rexpand(settings.remote_platforms_path)
-            if settings.remote_platforms_path
-            else (get_platforms_path(config.get('root', '')) or '')
-        )
+        from ..remote.platforms_git import resolve_remote_platforms_path
+        remote_platforms_base = await resolve_remote_platforms_path(settings, ssh_manager)
 
         # ------------------------------------------------------------------ #
         # 6. Submit via sbatch or direct exec                                 #

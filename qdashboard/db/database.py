@@ -16,7 +16,7 @@ import json
 import os
 import sqlite3
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from qdashboard.utils.logger import get_logger
 
@@ -183,7 +183,7 @@ def upsert_experiment_run(conn: sqlite3.Connection, data: Dict[str, Any]) -> Non
 # Queries                                                             #
 # ------------------------------------------------------------------ #
 
-def _build_where(platform: str, protocol: str, status: str,
+def _build_where(platform: str, protocol: str, status: Union[str, List[str]],
                  fit: str, date_from: str, date_to: str):
     clauses, params = [], []
     if platform:
@@ -193,8 +193,13 @@ def _build_where(platform: str, protocol: str, status: str,
         clauses.append("r.protocol_id = ?")
         params.append(protocol)
     if status:
-        clauses.append("r.status = ?")
-        params.append(status)
+        if isinstance(status, (list, tuple, set)):
+            statuses = list(status)
+            clauses.append(f"r.status IN ({','.join('?' * len(statuses))})")
+            params.extend(statuses)
+        else:
+            clauses.append("r.status = ?")
+            params.append(status)
     if fit == "pass":
         clauses.append("r.overall_fit_success = 1")
     elif fit == "fail":
@@ -232,7 +237,7 @@ def query_runs(
     conn: sqlite3.Connection,
     platform: str = "",
     protocol: str = "",
-    status: str = "",
+    status: Union[str, List[str]] = "",
     fit: str = "",
     date_from: str = "",
     date_to: str = "",
@@ -249,7 +254,7 @@ def count_runs(
     conn: sqlite3.Connection,
     platform: str = "",
     protocol: str = "",
-    status: str = "",
+    status: Union[str, List[str]] = "",
     fit: str = "",
     date_from: str = "",
     date_to: str = "",

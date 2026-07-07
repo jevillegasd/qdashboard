@@ -9,6 +9,7 @@ history queries, and DB operations work entirely locally.
 
 import asyncio
 import os
+import shutil
 from typing import List, Tuple
 
 from ..utils.logger import get_logger
@@ -37,9 +38,14 @@ def _expand_remote(path: str, remote_home: str) -> str:
 
 
 async def _sftp_download_dir(
-    sftp, remote_dir: str, local_dir: str
+    sftp, remote_dir: str, local_dir: str, mirror: bool = False
 ) -> List[str]:
     """Recursively download *remote_dir* into *local_dir* via SFTP.
+
+    When *mirror* is True, local entries with no corresponding remote entry
+    are deleted afterwards, so *local_dir* ends up an exact copy of
+    *remote_dir* (used for the read-only platforms mirror, where stale
+    files/directories left behind by a remote branch switch must not linger).
 
     Returns the list of local paths written.
     """
@@ -58,16 +64,18 @@ async def _sftp_download_dir(
         logger.debug("Cannot list remote dir %s: %s", remote_dir, exc)
         return copied
 
+    remote_names = set()
     for entry in entries:
         name = entry.filename
         if name in (".", ".."):
             continue
+        remote_names.add(name)
         remote_path = f"{remote_dir}/{name}"
         local_path = os.path.join(local_dir, name)
 
         # Directory — recurse
         if entry.attrs.type == asyncssh.FILEXFER_TYPE_DIRECTORY:
-            sub = await _sftp_download_dir(sftp, remote_path, local_path)
+            sub = await _sftp_download_dir(sftp, remote_path, local_path, mirror=mirror)
             copied.extend(sub)
         else:
             try:
@@ -77,6 +85,19 @@ async def _sftp_download_dir(
                 logger.warning(
                     "SFTP get failed for %s → %s: %s", remote_path, local_path, exc
                 )
+
+    if mirror:
+        for name in os.listdir(local_dir):
+            if name in remote_names:
+                continue
+            stale_path = os.path.join(local_dir, name)
+            try:
+                if os.path.isdir(stale_path):
+                    shutil.rmtree(stale_path)
+                else:
+                    os.remove(stale_path)
+            except OSError as exc:
+                logger.warning("Failed to remove stale mirror entry %s: %s", stale_path, exc)
 
     return copied
 

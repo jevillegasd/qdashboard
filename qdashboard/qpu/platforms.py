@@ -154,17 +154,34 @@ def update_platforms_repository(platforms_path):
 def get_platforms_path(root_path=None):
     """
     Get the path to the qibolab platforms directory.
-    
-    This is a convenience function that calls ensure_platforms_directory()
-    and handles some errors.
-    
+
+    When the current execution mode is ``remote_*``, this returns the local
+    read-only mirror of the remote host's platforms directory instead of the
+    local ``QIBOLAB_PLATFORMS`` clone — the mirror is kept in sync by
+    :func:`qdashboard.remote.platforms_git.sync_platforms_mirror` and is what
+    every reader (QPU monitoring, topology, partition lookup) should see while
+    connected to a remote host, since git operations only ever run there.
+
+    Otherwise, this is a convenience function that calls
+    ensure_platforms_directory() and handles some errors.
+
     Args:
         root_path (str, optional): Root directory where to create platforms dir.
                                  Defaults to user home directory.
-    
+
     Returns:
         str: Path to platforms directory, or None if unable to ensure it exists
     """
+    try:
+        from ..core.config import get_qd_root, get_remote_settings
+        settings = get_remote_settings()
+        if settings.is_remote():
+            mirror_dir = os.path.join(get_qd_root(), 'platforms_mirror')
+            os.makedirs(mirror_dir, exist_ok=True)
+            return mirror_dir
+    except Exception as e:
+        logger.debug(f"Could not check remote settings for platforms path: {e}")
+
     try:
         return ensure_platforms_directory(root_path)
     except Exception as e:

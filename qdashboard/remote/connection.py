@@ -62,6 +62,11 @@ class SSHConnectionManager:
         self._connected_at: Optional[float] = None
         self._is_connected: bool = False
         self._lock: asyncio.Lock = asyncio.Lock()
+        # Separate from `_lock` (which guards close+create inside connect()/
+        # disconnect()) — this one coalesces concurrent auto-reconnect
+        # attempts from run()/get_sftp() so two overlapping callers don't
+        # each tear down and replace the connection out from under the other.
+        self._reconnect_lock: asyncio.Lock = asyncio.Lock()
 
     # ------------------------------------------------------------------ #
     # Public API                                                           #
@@ -160,6 +165,30 @@ class SSHConnectionManager:
             await self._close_connections()
             logger.info("SSH connection closed")
 
+    async def _ensure_connected(self) -> None:
+        """Reconnect if needed, coalescing concurrent reconnect attempts.
+
+        Multiple coroutines (background sync, route handlers, job
+        submission) share one manager. Without coalescing, two callers that
+        both observe ``is_connected() == False`` at the same time would each
+        call :meth:`connect`, and the second one's close-and-reopen would
+        yank the connection out from under the first — every in-flight
+        remote operation then fails with a "connection is closing" style
+        error. The double-checked lock here ensures only one of them
+        actually reconnects; the rest just wait and reuse the result.
+        """
+        if self.is_connected():
+            return
+        async with self._reconnect_lock:
+            if self.is_connected():
+                return
+            if self._settings is None:
+                raise SSHConnectionError(
+                    "Not connected to remote host.  Call connect() first."
+                )
+            logger.debug("SSH connection lost; attempting reconnect…")
+            await self.connect(self._settings)
+
     async def run(
         self, cmd: str, timeout: int = 30
     ) -> Tuple[str, str, int]:
@@ -171,15 +200,7 @@ class SSHConnectionManager:
         Raises:
             :class:`SSHConnectionError`: If not connected or the command fails.
         """
-        if not self.is_connected():
-            if self._settings is not None:
-                # Attempt auto-reconnect
-                logger.debug("SSH connection lost; attempting reconnect…")
-                await self.connect(self._settings)
-            else:
-                raise SSHConnectionError(
-                    "Not connected to remote host.  Call connect() first."
-                )
+        await self._ensure_connected()
 
         try:
             result = await asyncio.wait_for(
@@ -196,8 +217,14 @@ class SSHConnectionManager:
                 f"Remote command timed out after {timeout}s: {cmd!r}"
             )
         except Exception as exc:
-            self._is_connected = False
-            self._connection = None
+            # Only tear down the *shared* connection state if the connection
+            # itself is actually dead — a single rejected channel (e.g. the
+            # server's MaxSessions cap) is a transient, per-call failure and
+            # must not make every other concurrent caller think the whole
+            # connection is gone.
+            if self._connection is None or self._connection.is_closed():
+                self._is_connected = False
+                self._connection = None
             raise SSHConnectionError(f"Remote command failed: {exc}") from exc
 
     async def get_sftp(self) -> "asyncssh.SFTPClient":  # type: ignore[name-defined]
@@ -206,12 +233,14 @@ class SSHConnectionManager:
         The caller is responsible for closing the SFTP client (use as async
         context manager: ``async with await manager.get_sftp() as sftp: ...``).
         """
-        if not self.is_connected():
-            if self._settings is not None:
-                await self.connect(self._settings)
-            else:
-                raise SSHConnectionError("Not connected.")
-        return await self._connection.start_sftp_client()
+        await self._ensure_connected()
+        try:
+            return await self._connection.start_sftp_client()
+        except Exception as exc:
+            if self._connection is None or self._connection.is_closed():
+                self._is_connected = False
+                self._connection = None
+            raise SSHConnectionError(f"Failed to open SFTP session: {exc}") from exc
 
     def status_dict(self) -> dict:
         """Return a JSON-serialisable connection status summary."""
