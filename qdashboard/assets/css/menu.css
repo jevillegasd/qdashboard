@@ -61,7 +61,7 @@
 /* 2. Sidebar Heading */
 #sidebar-wrapper .sidebar-heading {
     padding: 0.875rem 1.25rem;
-    font-size: 1.2rem;
+    font-size: var(--font-size-lg);
     font-weight: 500; /* Added for emphasis */
     color: #fff;
     border-bottom: 1px solid var(--vsc-border); /* Added for separation */
@@ -136,7 +136,7 @@
     background-color: var(--vsc-bg-elevated);
     border-top: 1px solid var(--vsc-border);
     padding: 0.75rem 1.25rem;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     color: #999;
     opacity: 0; /* Hidden by default */
     transition: opacity 0.3s ease;
@@ -152,7 +152,7 @@
     color: #ccc;
     font-weight: 600;
     margin-bottom: 0.5rem;
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
 }
 
 #sidebar-wrapper .sidebar-footer-versions .version-item {
@@ -170,7 +170,7 @@
 #sidebar-wrapper .sidebar-footer-versions .version-number {
     color: #4dabf7;
     font-weight: 600;
-    font-family: monospace;
+    font-family: var(--font-family-mono);
 }
 
 #sidebar-wrapper .sidebar-footer-versions .version-error {
@@ -192,7 +192,7 @@
 .version-number {
     color: #4dabf7;
     font-weight: 600;
-    font-family: monospace;
+    font-family: var(--font-family-mono);
 }
 
 .version-error {
@@ -235,7 +235,7 @@
 #page-content-wrapper .page-subtitle {
     margin-bottom: 1.5rem;
     color: #ccc;
-    font-size: 1rem;
+    font-size: var(--font-size-md);
 }
 
 /* 6. Responsive Behavior */

@@ -26,12 +26,6 @@ except ImportError:
 
 logger = get_logger(__name__)
 
-def get_qpu_health():
-    """Get overall QPU health status."""
-    # Placeholder for now - could be expanded to check multiple health metrics
-    return "N/A"
-
-
 def check_qpu_queue_status(qpu_name, queue_name):
     """
     Check if a QPU is online based on SLURM queue status.
