@@ -9,9 +9,8 @@ from .platforms import (
     get_current_branch_info
 )
 from .monitoring import (
-    get_qpu_health, 
-    get_available_qpus, 
-    get_qibo_versions,  
+    get_available_qpus,
+    get_qibo_versions,
 )
 
 from .utils import (
@@ -26,7 +25,6 @@ __all__ = [
     'list_repository_branches',
     'switch_repository_branch',
     'get_current_branch_info',
-    'get_qpu_health',
     'get_available_qpus',
     'get_qibo_versions',
     'detect_and_save_qibolab_version', 

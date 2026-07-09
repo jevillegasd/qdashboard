@@ -1886,9 +1886,9 @@ function makeResizable(handleId, cssVar, storageKey, min, max, widthFromEvent, o
         });
     }
 
-makeResizable('panel-builder-resize-handle', '--panel-builder-width', 'qd_panel_builder_width',
+makeResizable('panel-builder-resize-handle', '--builder-panel-width', 'qd_panel_builder_width',
     180, 600,
     function (e) {
-        var panel = document.getElementById('panel-builder');
+        var panel = document.querySelector('.panel-builder');
         return e.clientX - panel.getBoundingClientRect().left;
     });

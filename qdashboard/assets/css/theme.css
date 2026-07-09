@@ -41,6 +41,23 @@
     --space-4: 1rem;
     --space-5: 1.5rem;
 
+    /* Typography */
+    --font-family-base: 'IBM Plex Sans', sans-serif;
+    --font-family-mono: 'Courier New', Consolas, monospace;
+
+    /* Font-size scale — every component font-size should reference one of
+       these instead of a hand-picked rem value, so sizes stay consistent
+       across the app. */
+    --font-size-xs:   0.75rem;   /* small: micro/secondary text, badges, counts, code/log */
+    --font-size-sm:   0.8rem;    /* compact UI: buttons, tables, tabs, breadcrumbs */
+    --font-size-base: 0.875rem;  /* default body/component text */
+    --font-size-md:   1rem;      /* card-title, h5, emphasis */
+    --font-size-lg:   1.125rem;  /* h4, modal-title, sidebar heading */
+    --font-size-xl:   1.25rem;   /* h3 */
+    --font-size-2xl:  1.4rem;    /* h2 */
+    --font-size-3xl:  1.5rem;    /* h1 */
+    --font-size-4xl:  1.75rem;   /* large stat/version numbers */
+
     /* Shape */
     --radius: 3px;
     --radius-sm: 2px;
@@ -93,7 +110,7 @@
 
 .vsc-tab {
     padding: var(--space-2) var(--space-3);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--vsc-text-muted);
     background: transparent;
     border: none;
@@ -115,7 +132,7 @@
 /* Compact muted count badge */
 .vsc-badge {
     display: inline-block;
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
     line-height: 1.4;
     padding: 0 0.4em;
     border-radius: var(--radius-sm);
@@ -248,13 +265,15 @@ a:hover {
     background: var(--vsc-bg-elevated);
     border-bottom: var(--border-hairline);
     height: 36px;
-    overflow-x: auto;
 }
 
 .qd-tabs-list {
     display: flex;
     flex: 1;
     height: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
 }
 
 .qd-tab {
@@ -263,7 +282,7 @@ a:hover {
     gap: .4rem;
     padding: 0 .6rem;
     height: 100%;
-    font-size: .8rem;
+    font-size: var(--font-size-sm);
     color: var(--vsc-text-muted);
     border-right: var(--border-hairline);
     border-bottom: 2px solid transparent;
@@ -298,6 +317,8 @@ a:hover {
     flex-shrink: 0;
 }
 .qd-tab-add-btn:hover { color: var(--vsc-text); background: var(--vsc-bg-hover); }
+
+#qd-tab-add-menu { z-index: 1050; }
 
 .qd-tab-content {
     position: relative;
@@ -340,7 +361,7 @@ a:hover {
     height: 28px;
     background: var(--vsc-accent);
     color: #0a0a0a;
-    font-size: .72rem;
+    font-size: var(--font-size-xs);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -363,4 +384,4 @@ a:hover {
 .badge-fit-partial { background: #ffc107; color: #111; }
 .badge-fit-fail  { background: #dc3545; }
 .badge-fit-unknown { background: #6c757d; }
-.history-row { font-size: .8rem; }
+.history-row { font-size: var(--font-size-sm); }
