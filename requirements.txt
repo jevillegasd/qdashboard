@@ -8,3 +8,5 @@ pathlib2>=2.3.0
 PyYAML>=6.0.0
 python-dotenv>=1.0.0
 qcodes>=0.36.0
+asyncssh>=2.14.0
+asyncssh>=2.14.0

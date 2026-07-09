@@ -131,7 +131,7 @@ def get_qpu_queue_mapping(qrc_path):
 
 def get_available_qpus():
     """Get count of available QPUs from the platforms directory."""
-    root = os.path.normpath(os.environ.get('HOME'))
+    root = os.path.normpath(os.environ.get('HOME') or os.path.expanduser('~'))
     qrc_path = get_platforms_path(root)
     
     # Check if platforms directory exists
@@ -255,7 +255,7 @@ def get_qpu_list():
     Only directories committed to the repository's current HEAD are considered, so
     untracked or uncommitted directories (e.g. created via the file browser) are excluded.
     """
-    root = os.path.normpath(os.environ.get('HOME'))
+    root = os.path.normpath(os.environ.get('HOME') or os.path.expanduser('~'))
     qrc_path = get_platforms_path(root)
     qpus = []
 
@@ -503,7 +503,7 @@ def __get_parameters(platform) -> dict:
 def get_qpu_details():
     """Get detailed information about all available QPUs."""
     
-    root = os.path.normpath(os.environ.get('HOME'))
+    root = os.path.normpath(os.environ.get('HOME') or os.path.expanduser('~'))
     platforms_path = get_platforms_path(root)
     qpus_list = []
     qpu_names = get_qpu_list()

@@ -798,3 +798,401 @@ def find_latest_experiment(
 
     return None
 
+
+# =========================================================================== #
+# Remote submission (remote_slurm / remote_direct modes)                      #
+# =========================================================================== #
+
+def _build_remote_slurm_script(
+    experiment_id: str,
+    remote_exp_dir: str,
+    remote_runcard_path: str,
+    platform: str,
+    partition: str,
+    remote_platforms_base: str,
+    environment: str = None,
+    auto_update: bool = True,
+) -> str:
+    """Return the text of a SLURM batch script for execution on the remote host."""
+    remote_output_dir = f"{remote_exp_dir}/output"
+    remote_logs_dir = f"{remote_exp_dir}/logs"
+    activate_line = (
+        f"source {environment}/bin/activate" if environment else "# No environment specified"
+    )
+
+    return f"""#!/bin/bash
+#SBATCH --job-name={experiment_id}
+#SBATCH --partition={partition}
+#SBATCH --output={remote_logs_dir}/slurm_output.log
+#SBATCH --time=01:00:00
+
+export QIBOLAB_PLATFORMS={remote_platforms_base}
+export QIBO_PLATFORM={platform}
+
+mkdir -p {remote_output_dir} {remote_logs_dir}
+
+echo "Job ID: $SLURM_JOB_ID"
+echo "Experiment ID: {experiment_id}"
+echo "Platform: {platform}"
+echo "Start time: $(date)"
+
+cd {remote_exp_dir}
+
+{activate_line}
+
+echo "Running experiment..."
+qq run {remote_runcard_path} -o {remote_output_dir} -f{'' if auto_update else ' --no-update'}
+
+echo "End time: $(date)"
+echo "Exit code: $?"
+exit 0
+"""
+
+
+async def submit_experiment_remote(
+    runcard_data: Dict[str, Any],
+    config: Dict[str, Any],
+    settings,
+    ssh_manager,
+    environment: str = None,
+    auto_update: bool = True,
+) -> Dict[str, Any]:
+    """Submit an experiment to a remote host via SSH.
+
+    Supports both ``remote_slurm`` (sbatch) and ``remote_direct`` (qq run via
+    nohup) execution modes as indicated by *settings*.
+
+    The experiment directory is created both locally (for tracking and future
+    sync target) and on the remote (for actual execution).  The runcard is
+    uploaded via SFTP before submission.
+
+    Returns the same dict shape as :func:`submit_experiment`.
+    """
+    try:
+        if 'platform' not in runcard_data:
+            return {'success': False, 'message': 'Missing required field: platform'}
+
+        if not ssh_manager.is_connected():
+            return {
+                'success': False,
+                'message': 'Not connected to remote host.  Open Settings → Remote and click Connect.',
+            }
+
+        platform = runcard_data['platform']
+        effective_env = (
+            environment
+            or runcard_data.get('environment')
+            or settings.remote_environment
+            or None
+        )
+
+        # ------------------------------------------------------------------ #
+        # 1. Create local experiment directory (tracking + sync target)       #
+        # ------------------------------------------------------------------ #
+        ensure_directory_exists(config.get('data_dir', os.path.join(config['qd_root'], 'data')))
+        temp_dir = config.get('temp_dir') or get_temp_dir()
+        temp_runcard = create_temp_runcard_from_data(runcard_data, temp_dir)
+        try:
+            experiment_id = generate_experiment_id(temp_runcard, platform)
+        finally:
+            try:
+                os.unlink(temp_runcard)
+            except OSError:
+                pass
+
+        local_exp_dir = create_experiment_directory(experiment_id, platform, config)
+        local_runcard_path, _ = prepare_runcard_from_data(runcard_data, local_exp_dir)
+        date_str = experiment_id.split('-')[0]
+
+        # ------------------------------------------------------------------ #
+        # 2. Resolve remote home and build remote paths                       #
+        # ------------------------------------------------------------------ #
+        from ..remote.file_sync import _resolve_remote_home
+        remote_home = await _resolve_remote_home(ssh_manager)
+
+        def _rexpand(path: str) -> str:
+            return path.replace('~', remote_home, 1) if remote_home and path.startswith('~') else path
+
+        remote_root = _rexpand(settings.remote_root)
+        remote_exp_dir = f"{remote_root}/{platform}/{date_str}/{experiment_id}"
+        remote_runcard = f"{remote_exp_dir}/runcard.yml"
+        remote_script = f"{remote_exp_dir}/job_script.sh"
+
+        # ------------------------------------------------------------------ #
+        # 3. Create remote directories                                        #
+        # ------------------------------------------------------------------ #
+        _, _, rc = await ssh_manager.run(
+            f"mkdir -p {remote_exp_dir}/output {remote_exp_dir}/logs",
+            timeout=15,
+        )
+        if rc != 0:
+            return {
+                'success': False,
+                'message': f'Failed to create remote directory: {remote_exp_dir}',
+            }
+
+        # ------------------------------------------------------------------ #
+        # 4. Upload runcard via SFTP                                          #
+        # ------------------------------------------------------------------ #
+        from ..remote.file_sync import sftp_upload_file, sftp_upload_text
+        try:
+            await sftp_upload_file(local_runcard_path, remote_runcard, ssh_manager)
+        except Exception as _upload_err:
+            return {
+                'success': False,
+                'message': f'Failed to upload runcard to remote: {_upload_err}',
+            }
+
+        # ------------------------------------------------------------------ #
+        # 5. Determine SLURM partition and remote platforms path              #
+        # ------------------------------------------------------------------ #
+        partition = runcard_data.get('partition') or get_partition(platform) or 'default'
+        from ..remote.platforms_git import resolve_remote_platforms_path
+        remote_platforms_base = await resolve_remote_platforms_path(settings, ssh_manager)
+
+        # ------------------------------------------------------------------ #
+        # 6. Submit via sbatch or direct exec                                 #
+        # ------------------------------------------------------------------ #
+        job_id: Optional[str] = None
+        execution_note = ''
+
+        if settings.uses_slurm():
+            script_content = _build_remote_slurm_script(
+                experiment_id, remote_exp_dir, remote_runcard,
+                platform, partition, remote_platforms_base,
+                effective_env, auto_update,
+            )
+            try:
+                await sftp_upload_text(script_content, remote_script, ssh_manager)
+            except Exception as _script_err:
+                return {
+                    'success': False,
+                    'message': f'Failed to upload job script to remote: {_script_err}',
+                }
+            await ssh_manager.run(f"chmod +x {remote_script}", timeout=10)
+            stdout, stderr, rc = await ssh_manager.run(f"sbatch {remote_script}", timeout=30)
+            if rc != 0:
+                return {'success': False, 'message': f'sbatch failed: {stderr.strip()}'}
+            for line in stdout.splitlines():
+                if 'Submitted batch job' in line:
+                    job_id = line.split()[-1]
+                    break
+            execution_note = f'SLURM job {job_id} on {settings.remote_host}'
+            logger.info('Remote SLURM job: %s → job_id=%s', experiment_id, job_id)
+
+        else:
+            # remote_direct — launch qq run detached via nohup
+            if effective_env:
+                env_activate = f"source {effective_env}/bin/activate && "
+            else:
+                env_activate = ''
+            remote_output_dir = f"{remote_exp_dir}/output"
+            remote_log = f"{remote_exp_dir}/logs/slurm_output.log"
+            no_upd = '' if auto_update else ' --no-update'
+            direct_cmd = (
+                f"nohup bash -c '"
+                f"export QIBOLAB_PLATFORMS={remote_platforms_base}; "
+                f"{env_activate}"
+                f"qq run {remote_runcard} -o {remote_output_dir} -f{no_upd}"
+                f"' >> {remote_log} 2>&1 & echo $!"
+            )
+            stdout, stderr, rc = await ssh_manager.run(direct_cmd, timeout=30)
+            if rc != 0:
+                return {'success': False, 'message': f'Remote direct exec failed: {stderr.strip()}'}
+            pid = stdout.strip()
+            job_id = f"pid_{pid}"
+            execution_note = f'Direct exec PID {pid} on {settings.remote_host}'
+            logger.info('Remote direct exec: %s → PID %s', experiment_id, pid)
+
+        # ------------------------------------------------------------------ #
+        # 7. Save local metadata                                              #
+        # ------------------------------------------------------------------ #
+        metadata = {
+            'experiment_id': experiment_id,
+            'job_id': job_id,
+            'platform': platform,
+            'partition': partition,
+            'environment': effective_env,
+            'submitted_at': time.time(),
+            'experiment_dir': local_exp_dir,
+            'output_dir': os.path.join(local_exp_dir, 'output'),
+            'runcard_path': local_runcard_path,
+            'remote_exp_dir': remote_exp_dir,
+            'remote_host': settings.remote_host,
+            'execution_mode': settings.execution_mode,
+            'type': 'new_experiment',
+            'source': 'runcard_data',
+            'note': execution_note,
+        }
+        save_experiment_metadata(local_exp_dir, metadata)
+
+        # ------------------------------------------------------------------ #
+        # 8. Write to local DB                                                #
+        # ------------------------------------------------------------------ #
+        try:
+            from ..db.database import (
+                get_db_connection, get_or_create_qpu, upsert_experiment_run,
+                add_qpu_qubits, _extract_protocol_info,
+            )
+            with get_db_connection(config) as conn:
+                qpu_id = get_or_create_qpu(conn, platform)
+                proto_id, proto_name, qubit_list = _extract_protocol_info(runcard_data)
+                if qubit_list:
+                    add_qpu_qubits(conn, qpu_id, qubit_list)
+                upsert_experiment_run(conn, {
+                    'experiment_id': experiment_id,
+                    'qpu_id': qpu_id,
+                    'protocol_id': proto_id,
+                    'protocol_name': proto_name,
+                    'target_qubits': qubit_list,
+                    'submitted_at': metadata['submitted_at'],
+                    'slurm_job_id': job_id,
+                    'status': 'pending',
+                    'runcard_path': local_runcard_path,
+                    'output_dir': metadata['output_dir'],
+                })
+        except Exception as _db_exc:
+            logger.warning('Remote submit DB write failed (non-fatal): %s', _db_exc)
+
+        return {
+            'success': True,
+            'message': f'Experiment submitted: {execution_note}',
+            'experiment_id': experiment_id,
+            'job_id': job_id,
+            'experiment_dir': local_exp_dir,
+            'output_dir': metadata['output_dir'],
+            'metadata': metadata,
+        }
+
+    except Exception as exc:
+        logger.exception('submit_experiment_remote error')
+        return {'success': False, 'message': f'Remote submission error: {exc}'}
+
+
+# =========================================================================== #
+# Local direct submission (local_direct mode)                                 #
+# =========================================================================== #
+
+def submit_experiment_direct(
+    runcard_data: Dict[str, Any],
+    config: Dict[str, Any],
+    environment: str = None,
+    auto_update: bool = True,
+) -> Dict[str, Any]:
+    """Submit an experiment directly (no SLURM) on the local machine.
+
+    Launches ``qq run`` as a background process with ``start_new_session=True``
+    so it survives if the dashboard restarts.  The PID is stored as the
+    pseudo job-ID (prefixed ``local_``).
+
+    Returns the same dict shape as :func:`submit_experiment`.
+    """
+    try:
+        if 'platform' not in runcard_data:
+            return {'success': False, 'message': 'Missing required field: platform'}
+
+        platform = runcard_data['platform']
+        effective_env = environment or runcard_data.get('environment') or config.get('environment')
+
+        ensure_directory_exists(config.get('data_dir', os.path.join(config['qd_root'], 'data')))
+        temp_dir = config.get('temp_dir') or get_temp_dir()
+        temp_runcard = create_temp_runcard_from_data(runcard_data, temp_dir)
+        try:
+            experiment_id = generate_experiment_id(temp_runcard, platform)
+        finally:
+            try:
+                os.unlink(temp_runcard)
+            except OSError:
+                pass
+
+        local_exp_dir = create_experiment_directory(experiment_id, platform, config)
+        local_runcard_path, _ = prepare_runcard_from_data(runcard_data, local_exp_dir)
+        output_dir = os.path.join(local_exp_dir, 'output')
+        logs_dir = os.path.join(local_exp_dir, 'logs')
+        ensure_directory_exists(output_dir)
+        ensure_directory_exists(logs_dir)
+        log_file = os.path.join(logs_dir, 'slurm_output.log')
+
+        platforms_base = get_platforms_path(config.get('root', '')) or ''
+
+        cmd_parts = ['qq', 'run', local_runcard_path, '-o', output_dir, '-f']
+        if not auto_update:
+            cmd_parts.append('--no-update')
+
+        env_vars = os.environ.copy()
+        if platforms_base:
+            env_vars['QIBOLAB_PLATFORMS'] = platforms_base
+        env_vars['QIBO_PLATFORM'] = platform
+
+        # If a venv/conda environment is specified, wrap in a bash source
+        if effective_env:
+            activate = os.path.join(os.path.expanduser(effective_env), 'bin', 'activate')
+            if os.path.exists(activate):
+                cmd_parts = ['bash', '-c', f"source {activate} && " + ' '.join(cmd_parts)]
+
+        with open(log_file, 'w') as log_fh:
+            proc = subprocess.Popen(
+                cmd_parts,
+                stdout=log_fh,
+                stderr=subprocess.STDOUT,
+                env=env_vars,
+                start_new_session=True,
+            )
+
+        job_id = f"local_{proc.pid}"
+        metadata = {
+            'experiment_id': experiment_id,
+            'job_id': job_id,
+            'platform': platform,
+            'environment': effective_env,
+            'submitted_at': time.time(),
+            'experiment_dir': local_exp_dir,
+            'output_dir': output_dir,
+            'runcard_path': local_runcard_path,
+            'execution_mode': 'local_direct',
+            'type': 'new_experiment',
+            'source': 'runcard_data',
+        }
+        save_experiment_metadata(local_exp_dir, metadata)
+
+        try:
+            from ..db.database import (
+                get_db_connection, get_or_create_qpu, upsert_experiment_run,
+                add_qpu_qubits, _extract_protocol_info,
+            )
+            with get_db_connection(config) as conn:
+                qpu_id = get_or_create_qpu(conn, platform)
+                proto_id, proto_name, qubit_list = _extract_protocol_info(runcard_data)
+                if qubit_list:
+                    add_qpu_qubits(conn, qpu_id, qubit_list)
+                upsert_experiment_run(conn, {
+                    'experiment_id': experiment_id,
+                    'qpu_id': qpu_id,
+                    'protocol_id': proto_id,
+                    'protocol_name': proto_name,
+                    'target_qubits': qubit_list,
+                    'submitted_at': metadata['submitted_at'],
+                    'slurm_job_id': job_id,
+                    'status': 'running',
+                    'runcard_path': local_runcard_path,
+                    'output_dir': output_dir,
+                })
+        except Exception as _db_exc:
+            logger.warning('Direct submit DB write failed (non-fatal): %s', _db_exc)
+
+        logger.info('Local direct experiment started: %s (PID %s)', experiment_id, proc.pid)
+        return {
+            'success': True,
+            'message': f'Experiment started locally (PID {proc.pid})',
+            'experiment_id': experiment_id,
+            'job_id': job_id,
+            'experiment_dir': local_exp_dir,
+            'output_dir': output_dir,
+            'metadata': metadata,
+        }
+
+    except Exception as exc:
+        logger.exception('submit_experiment_direct error')
+        return {'success': False, 'message': f'Direct submission error: {exc}'}
+
+

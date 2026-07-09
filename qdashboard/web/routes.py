@@ -18,6 +18,7 @@ from starlette.responses import HTMLResponse
 
 from ..qpu.monitoring import get_available_qpus, get_qibo_versions, get_qpu_details, get_qpu_list, qpu_parameters
 from ..qpu.platforms import get_platforms_path, list_repository_branches, switch_repository_branch, get_current_branch_info, commit_changes, generate_commit_message, push_changes, stash_changes, list_stashes, apply_latest_stash, discard_changes, get_partition
+from ..remote import platforms_git as remote_platforms_git
 from ..qpu.slurm import get_slurm_status, get_slurm_output
 from ..qpu.topology import qpu_connectivity, infer_topology_from_connectivity, generate_topology_visualization
 from ..experiments.protocols import get_qibocal_protocols, get_protocol_attributes
@@ -36,6 +37,36 @@ router = APIRouter()
 def _get_config(request: Request) -> dict:
     """Helper to retrieve config from app state."""
     return request.app.state.config
+
+
+async def _remote_platforms_context(request: Request):
+    """Resolve the remote SSH connection + platforms path for platform
+    git/file operations, when the current execution mode is remote.
+
+    Returns:
+        ``None`` if execution mode is local — callers should use the local
+        ``qpu.platforms``/``get_platforms_path()`` path as before.
+        ``"not_connected"`` if remote mode is configured but not connected —
+        callers should return a 409 rather than silently falling back to
+        local git/file operations (all platform git operations must happen
+        on the remote host).
+        ``(ssh_manager, remote_path)`` if remote mode and connected.
+    """
+    settings = _get_remote_settings(request)
+    if not settings.is_remote():
+        return None
+    ssh_manager = request.app.state.ssh_manager
+    if not ssh_manager.is_connected():
+        return "not_connected"
+    remote_path = await remote_platforms_git.resolve_remote_platforms_path(settings, ssh_manager)
+    return ssh_manager, remote_path
+
+
+def _not_connected_response():
+    return Response(
+        content=json.dumps({'error': 'Not connected to remote host. Connect in Settings first.'}),
+        status_code=409, media_type='application/json',
+    )
 
 
 def _no_cache_headers() -> dict:
@@ -153,8 +184,17 @@ async def shell(request: Request):
     config = _get_config(request)
     qpu_details = get_qpu_details()
     platforms_path = get_platforms_path(config['root'])
-    git_branches_info = list_repository_branches(platforms_path) if platforms_path else None
-    git_current_branch_info = get_current_branch_info(platforms_path) if platforms_path else None
+    remote_ctx = await _remote_platforms_context(request)
+    if isinstance(remote_ctx, tuple):
+        ssh_manager, remote_path = remote_ctx
+        git_branches_info = await remote_platforms_git.list_repository_branches(ssh_manager, remote_path)
+        git_current_branch_info = await remote_platforms_git.get_current_branch_info(ssh_manager, remote_path)
+    elif remote_ctx == "not_connected":
+        git_branches_info = None
+        git_current_branch_info = None
+    else:
+        git_branches_info = list_repository_branches(platforms_path) if platforms_path else None
+        git_current_branch_info = get_current_branch_info(platforms_path) if platforms_path else None
 
     # Action Card Builder tab + Experiment Library panel
     protocols = get_qibocal_protocols()
@@ -370,17 +410,71 @@ async def qpus(request: Request):
     return RedirectResponse(url="/?open=qpu_status", status_code=307)
 
 
+def _platforms_mirror_dir(request: Request) -> str:
+    from ..core.config import get_qd_root
+    return os.path.join(get_qd_root(), 'platforms_mirror')
+
+
+async def _refresh_platforms_mirror(request: Request, ssh_manager) -> None:
+    """Best-effort mirror refresh after a mutating remote git op."""
+    try:
+        settings = _get_remote_settings(request)
+        await remote_platforms_git.sync_platforms_mirror(settings, ssh_manager, _platforms_mirror_dir(request))
+    except Exception as exc:
+        logger.warning("Failed to refresh platforms mirror: %s", exc)
+
+
+async def _write_platform_file(request: Request, relative_path: str, content: str):
+    """Write *content* to ``<platforms_dir>/relative_path``.
+
+    In remote mode this writes straight to the actual remote file via SFTP
+    (never the local read-only mirror, which would silently discard the edit
+    on the next sync) and refreshes the mirror afterwards. In local mode it's
+    an atomic local write, same as before.
+
+    Returns ``(True, None)`` on success, or ``(False, error_message)``.
+    """
+    remote_ctx = await _remote_platforms_context(request)
+    if remote_ctx == "not_connected":
+        return False, 'Not connected to remote host. Connect in Settings first.'
+    if isinstance(remote_ctx, tuple):
+        ssh_manager, remote_path = remote_ctx
+        await remote_platforms_git.write_remote_file(ssh_manager, remote_path, relative_path, content)
+        await _refresh_platforms_mirror(request, ssh_manager)
+        return True, None
+
+    config = _get_config(request)
+    platforms_path = get_platforms_path(config.get('root', ''))
+    if not platforms_path:
+        return False, 'Platforms directory not configured'
+    full_path = _safe_path_join(platforms_path, relative_path)
+    if full_path is None:
+        return False, 'Invalid platform path'
+    tmp_path = full_path + '.tmp'
+    with open(tmp_path, 'w') as f:
+        f.write(content)
+    os.replace(tmp_path, full_path)
+    return True, None
+
+
 @router.get("/api/platforms/branches", name="api_platforms_branches", tags=["Platforms"],
             summary="List all branches in the platforms repository")
 async def api_platforms_branches(request: Request):
     """API endpoint to get available branches."""
     try:
-        config = _get_config(request)
-        platforms_path = get_platforms_path(config['root'])
-        if not platforms_path:
-            return Response(content=json.dumps({'error': 'Platforms directory not available'}),
-                            status_code=404, media_type='application/json')
-        branches_info = list_repository_branches(platforms_path)
+        remote_ctx = await _remote_platforms_context(request)
+        if remote_ctx == "not_connected":
+            return _not_connected_response()
+        if isinstance(remote_ctx, tuple):
+            ssh_manager, remote_path = remote_ctx
+            branches_info = await remote_platforms_git.list_repository_branches(ssh_manager, remote_path)
+        else:
+            config = _get_config(request)
+            platforms_path = get_platforms_path(config['root'])
+            if not platforms_path:
+                return Response(content=json.dumps({'error': 'Platforms directory not available'}),
+                                status_code=404, media_type='application/json')
+            branches_info = list_repository_branches(platforms_path)
         if not branches_info:
             return Response(content=json.dumps({'error': 'Failed to retrieve branch information'}),
                             status_code=500, media_type='application/json')
@@ -394,7 +488,6 @@ async def api_platforms_branches(request: Request):
 async def api_platforms_switch(request: Request):
     """API endpoint to switch platform branch."""
     try:
-        config = _get_config(request)
         data = await request.json()
         if not data or 'branch' not in data:
             return Response(content=json.dumps({'error': 'Branch name is required'}),
@@ -402,11 +495,22 @@ async def api_platforms_switch(request: Request):
         branch_name = data['branch']
         create_if_not_exists = data.get('create', False)
         handle_changes = data.get('handle_changes', 'fail')
-        platforms_path = get_platforms_path(config['root'])
-        if not platforms_path:
-            return Response(content=json.dumps({'error': 'Platforms directory not available'}),
-                            status_code=404, media_type='application/json')
-        switch_result = switch_repository_branch(platforms_path, branch_name, create_if_not_exists, handle_changes)
+
+        remote_ctx = await _remote_platforms_context(request)
+        if remote_ctx == "not_connected":
+            return _not_connected_response()
+        if isinstance(remote_ctx, tuple):
+            ssh_manager, platforms_path = remote_ctx
+            switch_result = await remote_platforms_git.switch_repository_branch(
+                ssh_manager, platforms_path, branch_name, create_if_not_exists, handle_changes)
+        else:
+            config = _get_config(request)
+            platforms_path = get_platforms_path(config['root'])
+            if not platforms_path:
+                return Response(content=json.dumps({'error': 'Platforms directory not available'}),
+                                status_code=404, media_type='application/json')
+            switch_result = switch_repository_branch(platforms_path, branch_name, create_if_not_exists, handle_changes)
+
         if not switch_result['success']:
             return Response(
                 content=json.dumps({
@@ -414,7 +518,13 @@ async def api_platforms_switch(request: Request):
                     'has_changes': switch_result.get('has_changes', False),
                 }),
                 status_code=400, media_type='application/json')
-        current_branch_info = get_current_branch_info(platforms_path)
+
+        if isinstance(remote_ctx, tuple):
+            ssh_manager, platforms_path = remote_ctx
+            current_branch_info = await remote_platforms_git.get_current_branch_info(ssh_manager, platforms_path)
+            await _refresh_platforms_mirror(request, ssh_manager)
+        else:
+            current_branch_info = get_current_branch_info(platforms_path)
         qpu_details = get_qpu_details()
         response_data = {
             'success': True, 'branch': branch_name,
@@ -438,12 +548,19 @@ async def api_platforms_switch(request: Request):
 async def api_platforms_current(request: Request):
     """API endpoint to get current branch information."""
     try:
-        config = _get_config(request)
-        platforms_path = get_platforms_path(config['root'])
-        if not platforms_path:
-            return Response(content=json.dumps({'error': 'Platforms directory not available'}),
-                            status_code=404, media_type='application/json')
-        current_branch_info = get_current_branch_info(platforms_path)
+        remote_ctx = await _remote_platforms_context(request)
+        if remote_ctx == "not_connected":
+            return _not_connected_response()
+        if isinstance(remote_ctx, tuple):
+            ssh_manager, platforms_path = remote_ctx
+            current_branch_info = await remote_platforms_git.get_current_branch_info(ssh_manager, platforms_path)
+        else:
+            config = _get_config(request)
+            platforms_path = get_platforms_path(config['root'])
+            if not platforms_path:
+                return Response(content=json.dumps({'error': 'Platforms directory not available'}),
+                                status_code=404, media_type='application/json')
+            current_branch_info = get_current_branch_info(platforms_path)
         if not current_branch_info:
             return Response(content=json.dumps({'error': 'Failed to get current branch information'}),
                             status_code=500, media_type='application/json')
@@ -458,12 +575,20 @@ async def api_platforms_commit_message(request: Request):
     """API endpoint to preview the commit message that would be used for the
     currently pending (uncommitted) changes, without committing anything."""
     try:
-        config = _get_config(request)
-        platforms_path = get_platforms_path(config['root'])
-        if not platforms_path:
-            return Response(content=json.dumps({'error': 'Platforms directory not available'}),
-                            status_code=404, media_type='application/json')
-        return {'message': generate_commit_message(platforms_path)}
+        remote_ctx = await _remote_platforms_context(request)
+        if remote_ctx == "not_connected":
+            return _not_connected_response()
+        if isinstance(remote_ctx, tuple):
+            ssh_manager, platforms_path = remote_ctx
+            message = await remote_platforms_git.generate_commit_message(ssh_manager, platforms_path)
+        else:
+            config = _get_config(request)
+            platforms_path = get_platforms_path(config['root'])
+            if not platforms_path:
+                return Response(content=json.dumps({'error': 'Platforms directory not available'}),
+                                status_code=404, media_type='application/json')
+            message = generate_commit_message(platforms_path)
+        return {'message': message}
     except Exception as e:
         return _error_response(request, e)
 
@@ -473,17 +598,28 @@ async def api_platforms_commit_message(request: Request):
 async def api_platforms_commit(request: Request):
     """API endpoint to commit changes to the platforms repository."""
     try:
-        config = _get_config(request)
-        platforms_path = get_platforms_path(config['root'])
-        if not platforms_path:
-            return Response(content=json.dumps({'error': 'Platforms directory not available'}),
-                            status_code=404, media_type='application/json')
         data = await request.json() if request.headers.get('content-type', '').startswith('application/json') else {}
         commit_message = data.get('message')
-        result = commit_changes(platforms_path, commit_message)
+
+        remote_ctx = await _remote_platforms_context(request)
+        if remote_ctx == "not_connected":
+            return _not_connected_response()
+        if isinstance(remote_ctx, tuple):
+            ssh_manager, platforms_path = remote_ctx
+            result = await remote_platforms_git.commit_changes(ssh_manager, platforms_path, commit_message)
+        else:
+            config = _get_config(request)
+            platforms_path = get_platforms_path(config['root'])
+            if not platforms_path:
+                return Response(content=json.dumps({'error': 'Platforms directory not available'}),
+                                status_code=404, media_type='application/json')
+            result = commit_changes(platforms_path, commit_message)
+
         if not result['success']:
             return Response(content=json.dumps({'error': result.get('error', 'Commit failed')}),
                             status_code=400, media_type='application/json')
+        if isinstance(remote_ctx, tuple):
+            await _refresh_platforms_mirror(request, remote_ctx[0])
         return result
     except Exception as e:
         return _error_response(request, e)
@@ -494,17 +630,28 @@ async def api_platforms_commit(request: Request):
 async def api_platforms_stash(request: Request):
     """API endpoint to stash changes in the platforms repository."""
     try:
-        config = _get_config(request)
-        platforms_path = get_platforms_path(config['root'])
-        if not platforms_path:
-            return Response(content=json.dumps({'error': 'Platforms directory not available'}),
-                            status_code=404, media_type='application/json')
         data = await request.json() if request.headers.get('content-type', '').startswith('application/json') else {}
         stash_message = data.get('message', 'WIP: Stashed via QDashboard')
-        result = stash_changes(platforms_path, stash_message)
+
+        remote_ctx = await _remote_platforms_context(request)
+        if remote_ctx == "not_connected":
+            return _not_connected_response()
+        if isinstance(remote_ctx, tuple):
+            ssh_manager, platforms_path = remote_ctx
+            result = await remote_platforms_git.stash_changes(ssh_manager, platforms_path, stash_message)
+        else:
+            config = _get_config(request)
+            platforms_path = get_platforms_path(config['root'])
+            if not platforms_path:
+                return Response(content=json.dumps({'error': 'Platforms directory not available'}),
+                                status_code=404, media_type='application/json')
+            result = stash_changes(platforms_path, stash_message)
+
         if not result['success']:
             return Response(content=json.dumps({'error': result.get('error', 'Stash failed')}),
                             status_code=400, media_type='application/json')
+        if isinstance(remote_ctx, tuple):
+            await _refresh_platforms_mirror(request, remote_ctx[0])
         return result
     except Exception as e:
         return _error_response(request, e)
@@ -515,15 +662,25 @@ async def api_platforms_stash(request: Request):
 async def api_platforms_discard(request: Request):
     """API endpoint to discard all uncommitted changes."""
     try:
-        config = _get_config(request)
-        platforms_path = get_platforms_path(config['root'])
-        if not platforms_path:
-            return Response(content=json.dumps({'error': 'Platforms directory not available'}),
-                            status_code=404, media_type='application/json')
-        result = discard_changes(platforms_path)
+        remote_ctx = await _remote_platforms_context(request)
+        if remote_ctx == "not_connected":
+            return _not_connected_response()
+        if isinstance(remote_ctx, tuple):
+            ssh_manager, platforms_path = remote_ctx
+            result = await remote_platforms_git.discard_changes(ssh_manager, platforms_path)
+        else:
+            config = _get_config(request)
+            platforms_path = get_platforms_path(config['root'])
+            if not platforms_path:
+                return Response(content=json.dumps({'error': 'Platforms directory not available'}),
+                                status_code=404, media_type='application/json')
+            result = discard_changes(platforms_path)
+
         if not result['success']:
             return Response(content=json.dumps({'error': result.get('error', 'Discard failed')}),
                             status_code=400, media_type='application/json')
+        if isinstance(remote_ctx, tuple):
+            await _refresh_platforms_mirror(request, remote_ctx[0])
         return result
     except Exception as e:
         return _error_response(request, e)
@@ -534,12 +691,20 @@ async def api_platforms_discard(request: Request):
 async def api_platforms_list_stashes(request: Request):
     """API endpoint to list all stashes."""
     try:
-        config = _get_config(request)
-        platforms_path = get_platforms_path(config['root'])
-        if not platforms_path:
-            return Response(content=json.dumps({'error': 'Platforms directory not available'}),
-                            status_code=404, media_type='application/json')
-        result = list_stashes(platforms_path)
+        remote_ctx = await _remote_platforms_context(request)
+        if remote_ctx == "not_connected":
+            return _not_connected_response()
+        if isinstance(remote_ctx, tuple):
+            ssh_manager, platforms_path = remote_ctx
+            result = await remote_platforms_git.list_stashes(ssh_manager, platforms_path)
+        else:
+            config = _get_config(request)
+            platforms_path = get_platforms_path(config['root'])
+            if not platforms_path:
+                return Response(content=json.dumps({'error': 'Platforms directory not available'}),
+                                status_code=404, media_type='application/json')
+            result = list_stashes(platforms_path)
+
         if not result['success']:
             return Response(content=json.dumps({'error': result.get('error', 'Failed to list stashes')}),
                             status_code=400, media_type='application/json')
@@ -553,12 +718,19 @@ async def api_platforms_list_stashes(request: Request):
 async def api_platforms_push(request: Request):
     """API endpoint to push changes to the remote repository."""
     try:
-        config = _get_config(request)
-        platforms_path = get_platforms_path(config['root'])
-        if not platforms_path:
-            return Response(content=json.dumps({'error': 'Platforms directory not available'}),
-                            status_code=404, media_type='application/json')
-        result = push_changes(platforms_path)
+        remote_ctx = await _remote_platforms_context(request)
+        if remote_ctx == "not_connected":
+            return _not_connected_response()
+        if isinstance(remote_ctx, tuple):
+            ssh_manager, platforms_path = remote_ctx
+            result = await remote_platforms_git.push_changes(ssh_manager, platforms_path)
+        else:
+            config = _get_config(request)
+            platforms_path = get_platforms_path(config['root'])
+            if not platforms_path:
+                return Response(content=json.dumps({'error': 'Platforms directory not available'}),
+                                status_code=404, media_type='application/json')
+            result = push_changes(platforms_path)
         if not result['success']:
             return Response(content=json.dumps({'error': result.get('error', 'Push failed')}),
                             status_code=400, media_type='application/json')
@@ -760,8 +932,10 @@ async def api_action_nodes_save(request: Request, platform: str):
 
         nodes = _load_action_nodes(path)
         nodes[node_name] = {'action_card': action_card}
-        with open(path, 'w') as f:
-            json.dump(nodes, f, indent=2)
+        ok, err = await _write_platform_file(request, f"{platform}/action_nodes.json", json.dumps(nodes, indent=2))
+        if not ok:
+            return Response(content=json.dumps({'success': False, 'error': err}),
+                            status_code=409, media_type='application/json')
         return {'success': True, 'nodes': nodes}
     except Exception as e:
         return _error_response(request, e, {'success': False, 'error': str(e)})
@@ -782,8 +956,10 @@ async def api_action_nodes_delete(request: Request, platform: str, node_name: st
             return Response(content=json.dumps({'success': False, 'error': 'Action node not found'}),
                             status_code=404, media_type='application/json')
         del nodes[node_name]
-        with open(path, 'w') as f:
-            json.dump(nodes, f, indent=2)
+        ok, err = await _write_platform_file(request, f"{platform}/action_nodes.json", json.dumps(nodes, indent=2))
+        if not ok:
+            return Response(content=json.dumps({'success': False, 'error': err}),
+                            status_code=409, media_type='application/json')
         return {'success': True, 'nodes': nodes}
     except Exception as e:
         return _error_response(request, e, {'success': False, 'error': str(e)})
@@ -900,9 +1076,9 @@ async def submit_experiment_route(request: Request,
 
 
 @router.post("/api/submit_experiment_data", name="submit_experiment_data_route", tags=["Experiments"],
-             summary="Submit a new experiment to SLURM using a JSON runcard payload")
+             summary="Submit a new experiment using a JSON runcard payload")
 async def submit_experiment_data_route(request: Request):
-    """Submit a new experiment to SLURM using runcard data (JSON body)."""
+    """Submit a new experiment; routes to remote/direct/local-SLURM based on current settings."""
     try:
         config = _get_config(request)
         if not request.headers.get('content-type', '').startswith('application/json'):
@@ -924,10 +1100,36 @@ async def submit_experiment_data_route(request: Request):
             return Response(content=json.dumps({'success': False,
                             'message': 'Missing required field: platform'}),
                             status_code=400, media_type='application/json')
-        result = submit_experiment(runcard_data=runcard_data, config=config, environment=environment,
-                                   auto_update=auto_update)
+
+        # Route to the appropriate execution path based on settings
+        from ..core.config import get_remote_settings
+        settings = get_remote_settings()
+
+        if settings.is_remote():
+            from ..experiments.job_submission import submit_experiment_remote
+            result = await submit_experiment_remote(
+                runcard_data=runcard_data,
+                config=config,
+                settings=settings,
+                ssh_manager=request.app.state.ssh_manager,
+                environment=environment,
+                auto_update=auto_update,
+            )
+        elif settings.execution_mode == 'local_direct':
+            from ..experiments.job_submission import submit_experiment_direct
+            result = submit_experiment_direct(
+                runcard_data=runcard_data,
+                config=config,
+                environment=environment,
+                auto_update=auto_update,
+            )
+        else:
+            # Default: local_slurm (existing behaviour)
+            result = submit_experiment(runcard_data=runcard_data, config=config,
+                                       environment=environment, auto_update=auto_update)
+
         if result['success']:
-            logger.info(f"New experiment submitted with data: {result['experiment_id']}")
+            logger.info(f"Experiment submitted ({settings.execution_mode}): {result['experiment_id']}")
             return _sanitize_exp(result)
         return Response(content=json.dumps(_sanitize_exp(result)), status_code=400,
                         media_type='application/json')
@@ -1051,11 +1253,11 @@ async def qpu_parameters_file_put(request: Request, platform: str):
         except Exception:
             return Response(content=json.dumps({'success': False, 'message': 'Invalid JSON body'}),
                             status_code=400, media_type='application/json')
-        # Atomic write via temp file
-        tmp_path = params_file + '.tmp'
-        with open(tmp_path, 'w') as f:
-            json.dump(new_data, f, indent=2)
-        os.replace(tmp_path, params_file)
+        ok, err = await _write_platform_file(
+            request, f"{platform}/parameters.json", json.dumps(new_data, indent=2))
+        if not ok:
+            return Response(content=json.dumps({'success': False, 'message': err}),
+                            status_code=409, media_type='application/json')
         logger.info(f"Updated parameters.json for platform '{platform}'")
         return {'success': True, 'message': 'Parameters saved successfully'}
     except Exception as e:
@@ -1200,6 +1402,222 @@ def _extract_traceback(text: str, re_mod) -> dict:
                 'error_message': m.group(2).strip(),
                 'traceback': f'{m.group(1)}: {m.group(2).strip()}'}
     return {'found': False, 'error_type': '', 'error_message': '', 'traceback': ''}
+
+
+# =========================================================================== #
+# Settings API                                                                 #
+# =========================================================================== #
+
+def _get_remote_settings(request: Request):
+    """Load remote settings using the qd_root from app config."""
+    from ..remote.settings import load_remote_settings
+    qd_root = _get_config(request).get('qd_root', '~/.qdashboard')
+    return load_remote_settings(qd_root)
+
+
+def _save_remote_settings(request: Request, settings):
+    """Persist remote settings using qd_root from app config."""
+    from ..remote.settings import save_remote_settings
+    qd_root = _get_config(request).get('qd_root', '~/.qdashboard')
+    save_remote_settings(settings, qd_root)
+
+
+@router.get("/api/settings/remote", tags=["Settings"],
+            summary="Get remote execution settings")
+async def get_remote_settings_route(request: Request):
+    """Return the current remote execution settings as JSON."""
+    try:
+        settings = _get_remote_settings(request)
+        return settings.to_dict()
+    except Exception as e:
+        return _error_response(request, e)
+
+
+@router.put("/api/settings/remote", tags=["Settings"],
+            summary="Update remote execution settings")
+async def put_remote_settings_route(request: Request):
+    """Save remote execution settings.  Returns the updated settings dict."""
+    try:
+        from ..remote.settings import RemoteSettings, EXECUTION_MODES
+        data = await request.json()
+        settings = RemoteSettings.from_dict(data)
+        _save_remote_settings(request, settings)
+        logger.info("Remote settings updated: execution_mode=%s", settings.execution_mode)
+        return settings.to_dict()
+    except Exception as e:
+        return _error_response(request, e)
+
+
+@router.get("/api/settings/ssh_config", tags=["Settings"],
+            summary="Get parsed SSH config hosts and raw file content")
+async def get_ssh_config_route(request: Request):
+    """Return parsed Host entries and raw content from ``~/.ssh/config``."""
+    try:
+        from ..remote.ssh_config import parse_ssh_config, read_ssh_config_raw
+        entries = [e.to_dict() for e in parse_ssh_config()]
+        raw = read_ssh_config_raw()
+        return {'entries': entries, 'raw': raw}
+    except Exception as e:
+        return _error_response(request, e)
+
+
+@router.put("/api/settings/ssh_config", tags=["Settings"],
+            summary="Write raw content to ~/.ssh/config")
+async def put_ssh_config_route(request: Request):
+    """Overwrite ``~/.ssh/config`` with the supplied content (backup created)."""
+    try:
+        from ..remote.ssh_config import write_ssh_config_raw
+        data = await request.json()
+        content = data.get('content', '')
+        write_ssh_config_raw(content)
+        return {'success': True, 'message': 'SSH config saved (backup written to ~/.ssh/config.bak)'}
+    except Exception as e:
+        return _error_response(request, e)
+
+
+# =========================================================================== #
+# Remote connection API                                                        #
+# =========================================================================== #
+
+@router.post("/api/remote/connect", tags=["Remote"],
+             summary="Open SSH connection to the remote host")
+async def remote_connect_route(request: Request):
+    """Connect to the remote host defined in the current settings."""
+    try:
+        settings = _get_remote_settings(request)
+        if not settings.is_remote():
+            return {'success': False, 'message': 'Current execution mode is not remote.'}
+        if not settings.remote_host:
+            return {'success': False, 'message': 'No remote host configured.'}
+        ssh_manager = request.app.state.ssh_manager
+        await ssh_manager.connect(settings)
+        # Populate the local platforms mirror immediately so QPU Status /
+        # topology / partition lookups don't wait for the next background
+        # poll tick. Best-effort — a failed sync here shouldn't fail connect.
+        await _refresh_platforms_mirror(request, ssh_manager)
+        return {'success': True, 'message': f'Connected to {settings.remote_host}',
+                **ssh_manager.status_dict()}
+    except Exception as e:
+        return _error_response(request, e, {'success': False, 'message': str(e)})
+
+
+@router.post("/api/remote/disconnect", tags=["Remote"],
+             summary="Close the SSH connection")
+async def remote_disconnect_route(request: Request):
+    """Disconnect from the remote host."""
+    try:
+        ssh_manager = request.app.state.ssh_manager
+        await ssh_manager.disconnect()
+        return {'success': True, 'message': 'Disconnected.'}
+    except Exception as e:
+        return _error_response(request, e)
+
+
+@router.get("/api/remote/status", tags=["Remote"],
+            summary="Get SSH connection status")
+async def remote_status_route(request: Request):
+    """Return connection status and settings summary."""
+    try:
+        ssh_manager = request.app.state.ssh_manager
+        settings = _get_remote_settings(request)
+        return {
+            **ssh_manager.status_dict(),
+            'execution_mode': settings.execution_mode,
+            'auto_sync': settings.auto_sync,
+            'sync_interval': settings.sync_interval,
+        }
+    except Exception as e:
+        return _error_response(request, e)
+
+
+# =========================================================================== #
+# Data sync API                                                                #
+# =========================================================================== #
+
+@router.post("/api/remote/sync/{experiment_id}", tags=["Remote"],
+             summary="Sync a single experiment from the remote to local storage")
+async def remote_sync_experiment(request: Request, experiment_id: str):
+    """Pull output/, runcard.yml, and metadata for *experiment_id* from remote."""
+    try:
+        from ..remote.file_sync import sync_experiment_from_remote
+        config = _get_config(request)
+        settings = _get_remote_settings(request)
+        ssh_manager = request.app.state.ssh_manager
+        data_dir = config.get('data_dir', '')
+
+        if not ssh_manager.is_connected():
+            return {'success': False, 'message': 'Not connected to remote host.'}
+
+        # Resolve platform/date from local DB or experiment_id prefix
+        platform = ''
+        date_str = experiment_id.split('-')[0] if '-' in experiment_id else ''
+        try:
+            from ..db.database import get_db_connection, query_runs
+            with get_db_connection(config) as conn:
+                rows = query_runs(conn, limit=1000)
+                for row in rows:
+                    if row.get('experiment_id') == experiment_id:
+                        platform = row.get('qpu_name') or row.get('platform') or ''
+                        break
+        except Exception:
+            pass
+
+        if not platform or not date_str:
+            return {'success': False, 'message': 'Cannot determine platform/date for this experiment.'}
+
+        files = await sync_experiment_from_remote(
+            experiment_id, platform, date_str, settings, ssh_manager, data_dir
+        )
+        return {'success': True, 'files_synced': len(files), 'experiment_id': experiment_id}
+    except Exception as e:
+        return _error_response(request, e)
+
+
+@router.post("/api/remote/sync_all", tags=["Remote"],
+             summary="Sync all completed remote experiments to local storage")
+async def remote_sync_all(request: Request):
+    """Scan the remote data directory and pull any completed experiments."""
+    try:
+        from ..remote.file_sync import sync_all_completed
+        config = _get_config(request)
+        settings = _get_remote_settings(request)
+        ssh_manager = request.app.state.ssh_manager
+        data_dir = config.get('data_dir', '')
+
+        if not ssh_manager.is_connected():
+            return {'success': False, 'message': 'Not connected to remote host.'}
+
+        result = await sync_all_completed(settings, ssh_manager, data_dir)
+        return {'success': True, **result}
+    except Exception as e:
+        return _error_response(request, e)
+
+
+@router.get("/api/remote/sync_status", tags=["Remote"],
+            summary="Get sync status summary")
+async def remote_sync_status(request: Request):
+    """Return count of pending experiments awaiting sync and connection status."""
+    try:
+        config = _get_config(request)
+        settings = _get_remote_settings(request)
+        ssh_manager = request.app.state.ssh_manager
+        pending_count = 0
+        try:
+            from ..db.database import get_db_connection, query_runs, count_runs
+            with get_db_connection(config) as conn:
+                pending_count = count_runs(conn, status=['pending', 'running'])
+        except Exception:
+            pass
+        return {
+            'connected': ssh_manager.is_connected(),
+            'execution_mode': settings.execution_mode,
+            'pending_experiments': pending_count,
+            'auto_sync': settings.auto_sync,
+            'sync_interval': settings.sync_interval,
+        }
+    except Exception as e:
+        return _error_response(request, e)
+
 
 
 @router.get("/api/experiment_log/{experiment_id}", name="api_experiment_log",

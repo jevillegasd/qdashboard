@@ -114,6 +114,17 @@ def get_environment() -> Optional[str]:
     return get_config_value('environment')
 
 
+def get_remote_settings_path() -> str:
+    """Return the path to the remote settings JSON file."""
+    return os.path.join(get_qd_root(), 'remote_settings.json')
+
+
+def get_remote_settings():
+    """Load and return the current RemoteSettings object."""
+    from ..remote.settings import load_remote_settings
+    return load_remote_settings(get_qd_root())
+
+
 def ensure_directory_exists(directory_path: str) -> str:
     """
     Ensure a directory exists, creating it if necessary.
