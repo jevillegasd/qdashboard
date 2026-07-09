@@ -16,7 +16,7 @@ from fastapi import APIRouter, Request, Form, File, UploadFile, Query, HTTPExcep
 from fastapi.responses import FileResponse, Response, StreamingResponse, RedirectResponse
 from starlette.responses import HTMLResponse
 
-from ..qpu.monitoring import get_qpu_health, get_available_qpus, get_qibo_versions, get_qpu_details, get_qpu_list, qpu_parameters
+from ..qpu.monitoring import get_available_qpus, get_qibo_versions, get_qpu_details, get_qpu_list, qpu_parameters
 from ..qpu.platforms import get_platforms_path, list_repository_branches, switch_repository_branch, get_current_branch_info, commit_changes, generate_commit_message, push_changes, stash_changes, list_stashes, apply_latest_stash, discard_changes, get_partition
 from ..remote import platforms_git as remote_platforms_git
 from ..qpu.slurm import get_slurm_status, get_slurm_output
@@ -176,7 +176,6 @@ async def shell(request: Request):
     version_data = get_qibo_versions(request=request)
 
     # Slurm Monitor tab
-    qpu_health = get_qpu_health()
     available_qpus = get_available_qpus()
     slurm_queue_status = get_slurm_status()
     last_slurm_log = get_slurm_output()
@@ -229,7 +228,6 @@ async def shell(request: Request):
         request=request,
         qibo_versions=version_data['versions'],
         # Slurm Monitor
-        qpu_health=qpu_health,
         available_qpus=available_qpus,
         slurm_queue_status=slurm_queue_status,
         last_slurm_log=last_slurm_log,
