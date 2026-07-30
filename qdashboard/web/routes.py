@@ -916,6 +916,7 @@ async def submit_experiment_data_route(request: Request):
         runcard_data = data.get('runcard_data')
         environment = data.get('environment')
         auto_update = data.get('auto_update', True)
+        node_name = data.get('node_name') or None
         if not runcard_data:
             return Response(content=json.dumps({'success': False,
                             'message': 'No runcard_data provided'}),
@@ -925,7 +926,7 @@ async def submit_experiment_data_route(request: Request):
                             'message': 'Missing required field: platform'}),
                             status_code=400, media_type='application/json')
         result = submit_experiment(runcard_data=runcard_data, config=config, environment=environment,
-                                   auto_update=auto_update)
+                                   auto_update=auto_update, node_name=node_name)
         if result['success']:
             logger.info(f"New experiment submitted with data: {result['experiment_id']}")
             return _sanitize_exp(result)
