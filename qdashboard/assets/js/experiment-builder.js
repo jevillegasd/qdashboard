@@ -17,7 +17,8 @@
         // Action card builder state
         actionCard: {
             items: [],          // Array of experiments added to current action card
-            savedNodes: {}      // Dictionary of saved action nodes for current QPU
+            savedNodes: {},     // Dictionary of saved action nodes for current QPU
+            currentNodeName: null // Name of the saved action node currently loaded, if any
         }
     };
 
@@ -817,6 +818,8 @@
             if (e.dataTransfer.types.includes('application/x-action-tab-id')) return;
 
             const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+            // Manually adding a protocol diverges the card from any loaded node.
+            ExperimentBuilder.actionCard.currentNodeName = null;
             addExperimentToActionCard(data);
         });
 
@@ -976,6 +979,9 @@
 
         if (tabBtn) tabBtn.remove();
         if (actionItem) actionItem.remove();
+
+        // Removing a protocol diverges the card from any loaded node.
+        ExperimentBuilder.actionCard.currentNodeName = null;
 
         // Remove from action card items array
         ExperimentBuilder.actionCard.items = ExperimentBuilder.actionCard.items.filter(item => item.id !== experimentId);
@@ -1220,7 +1226,8 @@
                 body: JSON.stringify({
                     runcard_data: config,
                     environment: null,  // Could be made configurable later
-                    auto_update: autoUpdate
+                    auto_update: autoUpdate,
+                    node_name: ExperimentBuilder.actionCard.currentNodeName
                 })
             })
             .then(response => response.json())
@@ -1265,7 +1272,8 @@
 
         // Clear the state
         ExperimentBuilder.actionCard.items = [];
-        
+        ExperimentBuilder.actionCard.currentNodeName = null;
+
         // Disable buttons
         document.getElementById('generate-yaml-btn').disabled = true;
         document.getElementById('run-experiment-btn').disabled = true;
@@ -1302,6 +1310,7 @@
         .then(data => {
             if (data.success) {
                 ExperimentBuilder.actionCard.savedNodes = data.nodes;
+                ExperimentBuilder.actionCard.currentNodeName = nodeName;
                 updateActionNodesList();
                 showNotification(`Action node <strong>${nodeName}</strong> saved successfully.`, 'success');
             } else {
@@ -1374,6 +1383,9 @@
                 return Promise.reject();
             }
             ExperimentBuilder.actionCard.savedNodes = data.nodes;
+            if (ExperimentBuilder.actionCard.currentNodeName === oldName) {
+                ExperimentBuilder.actionCard.currentNodeName = trimmedName;
+            }
             return fetch(`/api/action_nodes/${selectedQpu}/${encodeURIComponent(oldName)}`, {method: 'DELETE'});
         })
         .then(r => r && r.json())
@@ -1400,6 +1412,7 @@
                 };
                 addExperimentToActionCard(experiment, savedItem);
             });
+            ExperimentBuilder.actionCard.currentNodeName = nodeName;
             showNotification(`Action node <strong>${nodeName}</strong> loaded.`, 'success');
         }
     }

@@ -190,8 +190,11 @@ def _build_where(platform: str, protocol: str, status: str,
         clauses.append("q.name = ?")
         params.append(platform)
     if protocol:
-        clauses.append("r.protocol_id = ?")
-        params.append(protocol)
+        # protocol_id may be a comma-joined list of action ids (e.g. an action
+        # card running "punchout,qubit_spectroscopy" together) — match if the
+        # requested protocol is any one of them, not just an exact full match.
+        clauses.append("(',' || r.protocol_id || ',') LIKE ?")
+        params.append(f"%,{protocol},%")
     if status:
         clauses.append("r.status = ?")
         params.append(status)
@@ -267,10 +270,21 @@ def get_run(conn: sqlite3.Connection, experiment_id: str) -> Optional[Dict[str, 
 
 
 def get_distinct_protocols(conn: sqlite3.Connection) -> List[Dict[str, str]]:
-    rows = conn.execute(
-        "SELECT DISTINCT protocol_id, protocol_name FROM experiment_runs ORDER BY protocol_id"
-    ).fetchall()
-    return [{"id": r["protocol_id"], "name": r["protocol_name"] or r["protocol_id"]} for r in rows]
+    """Return the individual protocols (action ids) used across all runs.
+
+    protocol_id rows can be a comma-joined list when a run bundled several
+    actions together (e.g. an action card running punchout + qubit
+    spectroscopy). The filter dropdown should offer each action on its own so
+    that run can be found under either protocol, not just the exact combo.
+    """
+    rows = conn.execute("SELECT DISTINCT protocol_id FROM experiment_runs").fetchall()
+    seen: Dict[str, str] = {}
+    for r in rows:
+        for pid in (r["protocol_id"] or "").split(","):
+            pid = pid.strip()
+            if pid and pid not in seen:
+                seen[pid] = pid.replace("_", " ").title()
+    return [{"id": pid, "name": seen[pid]} for pid in sorted(seen)]
 
 
 def get_distinct_qpus(conn: sqlite3.Connection) -> List[str]:
@@ -309,12 +323,20 @@ def _iter_actions(actions):
         yield from actions.values()
 
 
-def _extract_protocol_info(runcard_data: Dict) -> tuple:
+_MAX_PROTOCOL_NAME_LEN = 40
+
+
+def _extract_protocol_info(runcard_data: Dict, node_name: Optional[str] = None) -> tuple:
     """Return (protocol_id, protocol_name, target_qubits) from runcard.
 
     Works with both qibocal list-style actions and legacy dict-style actions.
     When multiple actions are present, *protocol_id* is the comma-joined list
     of all distinct action ids and *target_qubits* is the union of all targets.
+
+    If *node_name* is given (the action card was loaded from / saved as a
+    named action node), it is used as *protocol_name* verbatim instead of the
+    joined action names. Otherwise, when the joined name would be too long,
+    it is shortened to the first action's name plus " + ...".
     """
     actions = runcard_data.get("actions") or []
     if not actions:
@@ -338,7 +360,12 @@ def _extract_protocol_info(runcard_data: Dict) -> tuple:
             all_qubits.add(str(targets))
 
     protocol_id = ",".join(seen_ids) if seen_ids else "unknown"
-    protocol_name = " + ".join(pid.replace("_", " ").title() for pid in seen_ids)
+    if node_name:
+        protocol_name = node_name
+    else:
+        protocol_name = " + ".join(pid.replace("_", " ").title() for pid in seen_ids)
+        if len(protocol_name) > _MAX_PROTOCOL_NAME_LEN and len(seen_ids) > 1:
+            protocol_name = seen_ids[0].replace("_", " ").title() + " + ..."
     return protocol_id, protocol_name, sorted(all_qubits)
 
 
@@ -410,7 +437,9 @@ def scan_experiment_dir(experiment_dir: str) -> Optional[Dict[str, Any]]:
         with open(runcard_path) as f:
             rc = yaml.safe_load(f)
         if rc:
-            protocol_id, protocol_name, target_qubits = _extract_protocol_info(rc)
+            protocol_id, protocol_name, target_qubits = _extract_protocol_info(
+                rc, node_name=metadata.get("node_name")
+            )
     except Exception:
         pass
 

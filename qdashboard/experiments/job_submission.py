@@ -220,9 +220,9 @@ def submit_slurm_job(job_script_path: str) -> Tuple[bool, str, Optional[str]]:
         return False, error_msg, None
 
 
-def submit_experiment(runcard_path: str = None, runcard_data: Dict[str, Any] = None, 
+def submit_experiment(runcard_path: str = None, runcard_data: Dict[str, Any] = None,
                      config: Dict[str, Any] = None, environment: str = None,
-                     auto_update: bool = True) -> Dict[str, Any]:
+                     auto_update: bool = True, node_name: str = None) -> Dict[str, Any]:
     """
     Submit a new experiment to SLURM.
     
@@ -362,7 +362,9 @@ def submit_experiment(runcard_path: str = None, runcard_data: Dict[str, Any] = N
                 'type': 'new_experiment',
                 'source': 'runcard_path' if runcard_path else 'runcard_data'
             }
-            
+            if node_name:
+                metadata['node_name'] = node_name
+
             save_experiment_metadata(experiment_dir, metadata)
 
             # Write to experiment history DB (non-fatal)
@@ -372,7 +374,9 @@ def submit_experiment(runcard_path: str = None, runcard_data: Dict[str, Any] = N
                                            _extract_protocol_info)
                 with get_db_connection(config) as conn:
                     qpu_id = get_or_create_qpu(conn, platform)
-                    protocol_id, protocol_name, qubit_list = _extract_protocol_info(runcard_data_parsed)
+                    protocol_id, protocol_name, qubit_list = _extract_protocol_info(
+                        runcard_data_parsed, node_name=node_name
+                    )
                     if qubit_list:
                         add_qpu_qubits(conn, qpu_id, qubit_list)
                     upsert_experiment_run(conn, {
